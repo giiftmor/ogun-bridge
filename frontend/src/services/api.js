@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3333/api'
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
 
 class ApiClient {
   async request(endpoint, options = {}) {
@@ -63,6 +63,21 @@ class ApiClient {
 
   async getUserDetail(username) {
     return this.request(`/users/${username}/detail`)
+  }
+
+  async getUserProfile(username) {
+    return this.request(`/users/${username}/profile`)
+  }
+
+  async setUserAltEmail(username, altEmail) {
+    return this.request(`/users/${username}/alt-email`, {
+      method: 'PUT',
+      body: JSON.stringify({ altEmail }),
+    })
+  }
+
+  async forcePasswordReset(username) {
+    return this.request(`/invite/force-reset/${username}`, { method: 'POST' })
   }
 
   // Group endpoints
@@ -209,6 +224,42 @@ class ApiClient {
   async testMailConfig() {
     return this.request('/mail/test', {
       method: 'POST',
+    })
+  }
+
+  // Mail admin endpoints
+  async getMailStatus() {
+    return this.request('/mail/admin/status')
+  }
+
+  async createMailbox(username, email) {
+    return this.request('/mail/admin/mailbox', {
+      method: 'POST',
+      body: JSON.stringify({ username, email }),
+    })
+  }
+
+  async deleteMailbox(email) {
+    return this.request(`/mail/admin/mailbox/${email}`, {
+      method: 'DELETE',
+    })
+  }
+
+  async updateMailQuota(email, quotaInMB) {
+    return this.request('/mail/admin/quota', {
+      method: 'POST',
+      body: JSON.stringify({ email, quotaInMB }),
+    })
+  }
+
+  async getMailAdminConfig() {
+    return this.request('/mail/admin/config')
+  }
+
+  async saveMailAdminConfig(enabled, domain) {
+    return this.request('/mail/admin/config', {
+      method: 'POST',
+      body: JSON.stringify({ enabled, domain }),
     })
   }
 }

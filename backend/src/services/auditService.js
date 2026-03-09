@@ -118,3 +118,24 @@ export async function getAuditStats() {
     client.release()
   }
 }
+
+export async function getLastAuditLogByAction(entityId, action) {
+  const client = await pool.connect()
+  
+  try {
+    const result = await client.query(
+      `SELECT * FROM audit_log 
+       WHERE entity_id = $1 AND action = $2 
+       ORDER BY timestamp DESC 
+       LIMIT 1`,
+      [entityId, action]
+    )
+    
+    return result.rows[0] || null
+  } catch (error) {
+    logger.error('Failed to get last audit log:', error)
+    throw error
+  } finally {
+    client.release()
+  }
+}

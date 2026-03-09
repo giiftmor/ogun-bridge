@@ -14,6 +14,8 @@ import { PasswordManagement } from './pages/PasswordManagement'
 import { SelfServicePasswordChange } from './pages/SelfServicePasswordChange'
 import { UserDetail } from './pages/UserDetail'
 import { MailSettings } from './pages/MailSettings'
+import { MailAdmin } from './pages/MailAdmin'
+import { ProfileManagement } from './pages/ProfileManagement'
 import { apiClient } from './services/api'
 
 const queryClient = new QueryClient({
@@ -66,7 +68,9 @@ export function App() {
             <Route path="changes" element={<ChangesBrowser />} />
             <Route path="audit" element={<AuditViewer />} />
             <Route path="password" element={<PasswordManagement />} />
+            <Route path="profile" element={<ProfileManagement />} />
             <Route path="mail" element={<MailSettings />} />
+            <Route path="mail-admin" element={<MailAdmin />} />
             <Route path="schema" element={<SchemaMapper />} />
           </Route>
         </Routes>

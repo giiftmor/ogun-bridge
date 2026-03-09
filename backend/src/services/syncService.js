@@ -4,6 +4,17 @@ import { MailserverIntegration } from './mailserver.js'
 import { detectChanges } from './changeDetector.js'
 import { addLogToCache } from './logCache.js'
 
+// Helper to check if user is a service account
+const isServiceAccount = (user) => {
+  const username = user.username?.toLowerCase() || ''
+  if (user.is_service_account) return true
+  if (username.startsWith('ak-')) return true
+  if (username.includes('-outpost-')) return true
+  if (username.includes('_outpost_')) return true
+  if (username === 'ldap_api') return true
+  return false
+}
+
 // Sync state - shared across the app
 const syncState = {
   status: 'idle',
@@ -37,6 +48,7 @@ function getConfig() {
         title: 'title',
         department: 'ou',
         employee_number: 'employeeNumber',
+        alt_email: 'altEmail',
       },
     },
     mailserver: {
@@ -140,25 +152,35 @@ async function searchLDAPUsers(client, config, io) {
   const { searchEntries } = await client.search(config.ldap.userBaseDN, {
     scope: 'sub',
     filter: '(objectClass=inetOrgPerson)',
-    attributes: ['uid', 'mail', 'cn', 'sn', 'givenName'],
+    attributes: ['uid', 'mail', 'cn', 'sn', 'givenName', 'uidNumber', 'gidNumber', 'altEmail'],
   })
 
   broadcastLog(io, 'info',  `Found ${searchEntries.length} existing LDAP users`)
   return searchEntries
 }
 
-async function createLDAPUser(client, user, config, io) {
+async function createLDAPUser(client, user, config, io, existingUsers = []) {
   const dn = `uid=${user.username},${config.ldap.userBaseDN}`
+
+  // Get next uidNumber
+  const maxUid = existingUsers.reduce((max, u) => {
+    const uid = parseInt(u.uidNumber?.[0] || '0', 10)
+    return uid > max ? uid : max
+  }, 1000)
+  const nextUid = maxUid + 1
 
   const nameParts = (user.name || user.username).split(' ')
   const entry = {
-    objectClass: ['inetOrgPerson', 'organizationalPerson', 'person', 'top'],
+    objectClass: ['inetOrgPerson', 'organizationalPerson', 'person', 'top', 'posixAccount'],
     uid: user.username,
     cn: user.name || user.username,
     sn: nameParts.length > 1 ? nameParts[nameParts.length - 1] : user.username,
     givenName: nameParts[0] || user.username,
     mail: user.email || `${user.username}@${config.mailserver.domain}`,
     userPassword: `{SASL}${user.username}@${config.mailserver.domain}`,
+    uidNumber: nextUid.toString(),
+    gidNumber: nextUid.toString(),
+    homeDirectory: `/var/mail/${user.username}`,
   }
 
   // Add custom attributes from Authentik
@@ -189,6 +211,21 @@ async function updateLDAPUser(client, user, existingUser, config, io) {
 
   if (user.name && user.name !== existingUser.cn) {
     changes.push(new Attribute({ type: 'cn', values: [user.name] }))
+  }
+
+  // Sync altEmail from Authentik custom attributes to LDAP
+  if (user.attributes?.alt_email && user.attributes.alt_email !== existingUser.altEmail?.[0]) {
+    changes.push(new Attribute({ type: 'altEmail', values: [user.attributes.alt_email] }))
+  }
+
+  // Add uidNumber if missing (even if no other changes)
+  if (!existingUser.uidNumber || !existingUser.uidNumber[0]) {
+    const maxUid = 1000
+    const nextUid = maxUid + Math.floor(Math.random() * 9000)
+    changes.push(new Attribute({ type: 'objectClass', values: ['posixAccount'] }))
+    changes.push(new Attribute({ type: 'uidNumber', values: [nextUid.toString()] }))
+    changes.push(new Attribute({ type: 'gidNumber', values: [nextUid.toString()] }))
+    changes.push(new Attribute({ type: 'homeDirectory', values: [`/var/mail/${user.username}`] }))
   }
 
   if (changes.length === 0) return
@@ -305,23 +342,37 @@ async function runSyncCycle(io) {
     if (config.sync.createUsers || config.sync.updateUsers) {
       for (const authentikUser of authentikUsers) {
         try {
-          // Skip users without passwords (inactive)
-          if (!authentikUser.password_change_date) {
-            broadcastLog(io, 'info', `Skipping user without password: ${authentikUser.username}`)
+          // Skip service accounts
+          if (isServiceAccount(authentikUser)) {
+            broadcastLog(io, 'info', `Skipping service account: ${authentikUser.username}`)
+            continue
+          }
+
+          // Skip users who have never logged in (inactive)
+          if (!authentikUser.last_login) {
+            broadcastLog(io, 'info', `Skipping user who has never logged in: ${authentikUser.username}`)
             continue
           }
 
           const ldapUser = ldapUserMap.get(authentikUser.username)
+          
+          // Extract custom attributes from Authentik properties
+          const userWithAttributes = {
+            ...authentikUser,
+            attributes: authentikUser.properties || {},
+            email: authentikUser.email,
+            name: authentikUser.name,
+          }
 
           if (!ldapUser && config.sync.createUsers) {
-            await createLDAPUser(client, authentikUser, config)
+            await createLDAPUser(client, userWithAttributes, config, io, ldapUsers)
             created++
 
             if (authentikUser.email && config.mailserver.enabled) {
               await mailserver.createMailbox(authentikUser.username, authentikUser.email)
             }
           } else if (ldapUser && config.sync.updateUsers) {
-            await updateLDAPUser(client, authentikUser, ldapUser, config)
+            await updateLDAPUser(client, userWithAttributes, ldapUser, config, io)
             updated++
           }
         } catch (err) {
@@ -337,11 +388,16 @@ async function runSyncCycle(io) {
       }
     }
 
-    // Delete users not in Authentik
+    // Delete users not in Authentik or service accounts
     if (config.sync.deleteUsers) {
       for (const ldapUser of ldapUsers) {
-        if (!authentikUserMap.has(ldapUser.uid)) {
+        const isService = isServiceAccount({ username: ldapUser.uid })
+        
+        if (!authentikUserMap.has(ldapUser.uid) || isService) {
           try {
+            if (isService) {
+              broadcastLog(io, 'info', `Deleting service account from LDAP: ${ldapUser.uid}`)
+            }
             await deleteLDAPUser(client, ldapUser.uid, config)
             deleted++
             if (config.mailserver.enabled) {

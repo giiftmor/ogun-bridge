@@ -116,6 +116,41 @@ CREATE TABLE IF NOT EXISTS sync_history (
 
 CREATE INDEX IF NOT EXISTS idx_sync_history_started ON sync_history(started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sync_history_status ON sync_history(status);
+
+-- ============================================
+-- User Profiles Table
+-- Track user password status and alt-email
+-- ============================================
+CREATE TABLE IF NOT EXISTS user_profiles (
+  id SERIAL PRIMARY KEY,
+  username VARCHAR(255) UNIQUE NOT NULL,
+  alt_email VARCHAR(255),
+  password_method VARCHAR(50),                -- 'manual', 'email_invite', 'reset'
+  password_created_at TIMESTAMP,
+  password_synced_to_ldap BOOLEAN DEFAULT false,
+  password_synced_to_authentik BOOLEAN DEFAULT false,
+  email_invite_sent BOOLEAN DEFAULT false,
+  email_invite_sent_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_profiles_username ON user_profiles(username);
+CREATE INDEX IF NOT EXISTS idx_user_profiles_password_status ON user_profiles(password_method, password_synced_to_ldap);
+
+-- ============================================
+-- Webhooks Table
+-- Store webhook configurations for events
+-- ============================================
+CREATE TABLE IF NOT EXISTS webhooks (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  url VARCHAR(500) NOT NULL,
+  events VARCHAR[] DEFAULT '{}',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_webhooks_events ON webhooks(events);
 `
 
 // Helper to check if database exists

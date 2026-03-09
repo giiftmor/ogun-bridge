@@ -4,6 +4,7 @@ import { authentikClient } from '../services/authentikClient.js'
 import { logger } from '../utils/logger.js'
 import { addLogToCache } from '../services/logCache.js'
 import { createAuditLog, getAuditLogs } from '../services/auditService.js'
+import { ensureUserProfile, updateUserProfile, getUserProfile } from '../services/userProfileService.js'
 
 export const passwordRouter = express.Router()
 
@@ -167,7 +168,17 @@ passwordRouter.post('/sync/:username', async (req, res) => {
       source: 'api',
       success: authentikResult === 'success',
     })
-    
+
+    // Update user profile to track password creation
+    const existingProfile = await getUserProfile(username)
+    await ensureUserProfile(username, existingProfile?.alt_email || null)
+    await updateUserProfile(username, {
+      password_method: existingProfile?.password_method || 'manual',
+      password_created_at: new Date(),
+      password_synced_to_ldap: true,
+      password_synced_to_authentik: authentikResult === 'success',
+    })
+
     res.json({
       success: authentikResult === 'success',
       username,

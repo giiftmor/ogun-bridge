@@ -148,7 +148,7 @@ export class LDAPClient {
     try {
       return await this.search(`ou=people,${this.baseDN}`, {
         filter: '(objectClass=inetOrgPerson)',
-        attributes: ['uid', 'cn', 'sn', 'mail', 'memberOf'],
+        attributes: ['uid', 'cn', 'sn', 'mail', 'altEmail', 'memberOf'],
       })
     } catch (error) {
       logger.error('Failed to get LDAP users:', error)

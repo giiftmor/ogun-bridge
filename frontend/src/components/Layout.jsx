@@ -3,6 +3,7 @@ import {
   LayoutDashboard, 
   Users,
   UserCog,
+  User,
   FileText, 
   Settings, 
   Menu,
@@ -12,7 +13,8 @@ import {
   ClipboardList,
   Shield,
   KeyRound,
-  Mail
+  Mail,
+  Server
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/store/useAppStore'
@@ -32,12 +34,14 @@ const navigation = [
     category: 'Passwords',
     items: [
       { name: 'Passwords', href: '/password', icon: KeyRound },
+      { name: 'Profile', href: '/profile', icon: User },
     ]
   },
   {
     category: 'Mailing',
     items: [
       { name: 'Mail Settings', href: '/mail', icon: Mail },
+      { name: 'Mailboxes', href: '/mail-admin', icon: Server },
     ]
   },
   {

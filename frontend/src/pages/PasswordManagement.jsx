@@ -44,6 +44,11 @@ export function PasswordManagement() {
     queryFn: apiClient.getPasswordPolicy,
   })
 
+  const { data: users = [], isLoading: loadingUsers } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => apiClient.getUsers(),
+  })
+
   const { data: history = [], refetch: refetchHistory } = useQuery({
     queryKey: ['password-history', username],
     queryFn: () => apiClient.getPasswordHistory(username),
@@ -139,12 +144,18 @@ export function PasswordManagement() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="text-sm font-medium">Username</label>
-                <Input
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Enter username"
-                  className="mt-1"
-                />
+                <Select value={username} onValueChange={setUsername}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder={loadingUsers ? "Loading users..." : "Select a user"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {users.map((user) => (
+                      <SelectItem key={user.id} value={user.username}>
+                        {user.username} ({user.email || 'no email'})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div>
