@@ -1,25 +1,4 @@
-version: '3.8'
-
 services:
-  # PostgreSQL Database
-  postgres:
-    image: postgres:15-alpine
-    container_name: alsm-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${DB_NAME:-alsm_ui}
-      POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - alsm-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # Backend API
   backend:
     build:
@@ -32,8 +11,8 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3333
-      DB_HOST: postgres
-      DB_PORT: 5432
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
       DB_NAME: ${DB_NAME:-alsm_ui}
       DB_USER: ${DB_USER:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-postgres}
@@ -45,9 +24,8 @@ services:
       LDAP_BIND_PASSWORD: ${LDAP_BIND_PASSWORD}
       LDAP_BASE_DN: ${LDAP_BASE_DN}
       CORS_ORIGIN: http://localhost:3331
-    depends_on:
-      postgres:
-        condition: service_healthy
+    volumes:
+      - ./backend:/app
     networks:
       - alsm-network
 
@@ -71,6 +49,3 @@ services:
 networks:
   alsm-network:
     driver: bridge
-
-volumes:
-  postgres_data:

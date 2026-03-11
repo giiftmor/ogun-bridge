@@ -2,11 +2,8 @@ import express from 'express'
 import { getSyncState } from '../services/syncService.js'
 import { authentikClient } from '../services/authentikClient.js'
 import { ldapClient } from '../services/ldapClient.js'
-import { getChanges } from '../lib/changes.js'
-import { logger } from '../utils/logger.js'
 
 export const healthRouter = express.Router()
-
 
 healthRouter.get('/', async (req, res) => {
   const syncState = getSyncState()
