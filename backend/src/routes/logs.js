@@ -1,8 +1,11 @@
 import express from 'express'
 import { getCachedLogs, searchLogs } from '../services/logCache.js'
 import { logger } from '../utils/logger.js'
+import { authenticate } from '../middleware/auth.js'
 
 export const logsRouter = express.Router()
+
+logsRouter.use(authenticate)
 
 logsRouter.get('/', async (req, res) => {
   try {

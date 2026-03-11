@@ -1,6 +1,9 @@
 import express from 'express'
+import { authenticate } from '../middleware/auth.js'
 
 export const schemaRouter = express.Router()
+
+schemaRouter.use(authenticate)
 
 schemaRouter.get('/mappings', async (req, res) => {
   // Return current mappings

@@ -1,6 +1,6 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Toaster } from 'react-hot-toast'
 import { Layout } from './components/Layout'
 import { Dashboard } from './pages/Dashboard'
@@ -16,6 +16,7 @@ import { UserDetail } from './pages/UserDetail'
 import { MailSettings } from './pages/MailSettings'
 import { MailAdmin } from './pages/MailAdmin'
 import { ProfileManagement } from './pages/ProfileManagement'
+import { Login } from './pages/Login'
 import { apiClient } from './services/api'
 
 const queryClient = new QueryClient({
@@ -27,6 +28,49 @@ const queryClient = new QueryClient({
     },
   },
 })
+
+function ProtectedRoute({ children }) {
+  const [loading, setLoading] = useState(true)
+  const [authenticated, setAuthenticated] = useState(false)
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const token = localStorage.getItem('auth_token')
+      if (!token) {
+        setAuthenticated(false)
+        setLoading(false)
+        return
+      }
+
+      try {
+        const user = await apiClient.getCurrentUser()
+        localStorage.setItem('user', JSON.stringify(user))
+        setAuthenticated(true)
+      } catch (e) {
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('user')
+        setAuthenticated(false)
+      }
+      setLoading(false)
+    }
+
+    checkAuth()
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900">
+        <div className="text-gray-500 dark:text-gray-400">Loading...</div>
+      </div>
+    )
+  }
+
+  if (!authenticated) {
+    return <Navigate to="/login" replace />
+  }
+
+  return children
+}
 
 export function App() {
   useEffect(() => {
@@ -55,11 +99,16 @@ export function App() {
       <Toaster position="top-right" />
       <BrowserRouter>
         <Routes>
-          {/* Self-service password change - standalone page */}
+          {/* Public routes */}
+          <Route path="/login" element={<Login />} />
           <Route path="/self-service-password" element={<SelfServicePasswordChange />} />
-          
-          {/* Admin routes with layout */}
-          <Route path="/" element={<Layout />}>
+
+          {/* Protected routes */}
+          <Route path="/" element={
+            <ProtectedRoute>
+              <Layout />
+            </ProtectedRoute>
+          }>
             <Route index element={<Dashboard />} />
             <Route path="users" element={<UserBrowser />} />
             <Route path="users/:username" element={<UserDetail />} />
@@ -73,6 +122,9 @@ export function App() {
             <Route path="mail-admin" element={<MailAdmin />} />
             <Route path="schema" element={<SchemaMapper />} />
           </Route>
+
+          {/* Catch all - redirect to login */}
+          <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </BrowserRouter>
     </QueryClientProvider>

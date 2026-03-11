@@ -1,19 +1,29 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
 
+const getToken = () => localStorage.getItem('auth_token')
+
 class ApiClient {
   async request(endpoint, options = {}) {
     const url = `${API_BASE_URL}${endpoint}`
+    const token = getToken()
 
     const config = {
       ...options,
       headers: {
         'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         ...options.headers,
       },
     }
 
     try {
       const response = await fetch(url, config)
+
+      if (response.status === 401) {
+        localStorage.removeItem('auth_token')
+        window.location.href = '/login'
+        throw new Error('Session expired')
+      }
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({ message: response.statusText }))
@@ -27,6 +37,65 @@ class ApiClient {
     }
   }
 
+  // Auth endpoints
+  async login(username, password) {
+    const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Login failed' }))
+      throw new Error(error.message || 'Login failed')
+    }
+
+    const data = await response.json()
+    localStorage.setItem('auth_token', data.token)
+    return data
+  }
+
+  async logout() {
+    const token = getToken()
+    if (token) {
+      try {
+        await fetch(`${API_BASE_URL}/auth/logout`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+        })
+      } catch (e) {
+        console.warn('Logout request failed:', e)
+      }
+    }
+    localStorage.removeItem('auth_token')
+  }
+
+  async getCurrentUser() {
+    return this.request('/auth/me')
+  }
+
+  async register(username, password, email, role = 'viewer') {
+    const response = await fetch(`${API_BASE_URL}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password, email, role }),
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Registration failed' }))
+      throw new Error(error.message || 'Registration failed')
+    }
+
+    return response.json()
+  }
+
+  async changePassword(currentPassword, newPassword) {
+    return this.request('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    })
+  }
+
   // Dashboard endpoints
   async getDashboardStats() {
     return this.request('/dashboard/stats')
@@ -37,7 +106,7 @@ class ApiClient {
   }
 
   async getSystemHealth() {
-    return this.request('/dashboard/health')
+    return this.request('/health')
   }
 
   // User endpoints

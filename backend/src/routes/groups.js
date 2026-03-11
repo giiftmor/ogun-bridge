@@ -2,8 +2,11 @@ import express from 'express'
 import { authentikClient } from '../services/authentikClient.js'
 import { ldapClient } from '../services/ldapClient.js'
 import { logger } from '../utils/logger.js'
+import { authenticate } from '../middleware/auth.js'
 
 export const groupsRouter = express.Router()
+
+groupsRouter.use(authenticate)
 
 groupsRouter.get('/', async (req, res) => {
   try {

@@ -5,8 +5,11 @@ import { logger } from '../utils/logger.js'
 import { addLogToCache } from '../services/logCache.js'
 import { createAuditLog, getAuditLogs } from '../services/auditService.js'
 import { ensureUserProfile, updateUserProfile, getUserProfile } from '../services/userProfileService.js'
+import { authenticate, requireRole } from '../middleware/auth.js'
 
 export const passwordRouter = express.Router()
+
+passwordRouter.use(authenticate)
 
 const PASSWORD_POLICY = {
   minLength: 8,

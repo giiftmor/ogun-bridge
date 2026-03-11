@@ -1,4 +1,4 @@
-import { Link, Outlet, useLocation } from 'react-router-dom'
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { 
   LayoutDashboard, 
   Users,
@@ -14,7 +14,8 @@ import {
   Shield,
   KeyRound,
   Mail,
-  Server
+  Server,
+  LogOut
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/store/useAppStore'
@@ -173,6 +174,24 @@ export function Layout() {
               <Moon className="h-5 w-5" />
             )}
           </Button>
+
+          {/* User & Logout */}
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground hidden sm:inline">
+              {JSON.parse(localStorage.getItem('user') || '{}').username || 'User'}
+            </span>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                localStorage.removeItem('auth_token')
+                localStorage.removeItem('user')
+                window.location.href = '/login'
+              }}
+            >
+              <LogOut className="h-5 w-5" />
+            </Button>
+          </div>
         </header>
 
         {/* Page Content */}

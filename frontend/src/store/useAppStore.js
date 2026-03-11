@@ -9,6 +9,13 @@ const getInitialTheme = () => {
   return 'light'
 }
 
+const getStoredToken = () => {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('auth_token')
+  }
+  return null
+}
+
 export const useAppStore = create((set, get) => ({
   // UI State
   sidebarOpen: true,
@@ -23,9 +30,24 @@ export const useAppStore = create((set, get) => ({
     document.documentElement.classList.toggle('dark', newTheme === 'dark')
   },
 
+  // Auth State
+  token: getStoredToken(),
+  setToken: (token) => {
+    if (token) {
+      localStorage.setItem('auth_token', token)
+    } else {
+      localStorage.removeItem('auth_token')
+    }
+    set({ token })
+  },
+
   // User State
   currentUser: null,
   setCurrentUser: (user) => set({ currentUser: user }),
+  logout: () => {
+    localStorage.removeItem('auth_token')
+    set({ token: null, currentUser: null })
+  },
 
   // Dashboard Stats
   dashboardStats: null,

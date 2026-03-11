@@ -5,8 +5,11 @@ import { Change, Attribute } from 'ldapts'
 import { logger } from '../utils/logger.js'
 import { getAuditLogs, getLastAuditLogByAction } from '../services/auditService.js'
 import { addLogToCache } from '../services/logCache.js'
+import { authenticate } from '../middleware/auth.js'
 
 export const usersRouter = express.Router()
+
+usersRouter.use(authenticate)
 
 // Helper to check if user is a service account
 const isServiceAccount = (user) => {

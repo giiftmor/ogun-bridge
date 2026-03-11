@@ -1,40 +1,44 @@
 # ALSM-UI Implementation Status
 
 ## Document Information
-- **Version**: 2.2.0
-- **Date**: February 25, 2026
-- **Status**: Production - Phase 2 Complete
-- **Last Updated**: February 25, 2026
+- **Version**: 2.3.0
+- **Date**: March 10, 2026
+- **Status**: Phase 2 Complete, Phase 3 Partial
+- **Last Updated**: March 10, 2026
 
 ---
 
 ## Table of Contents
 1. [Executive Summary](#executive-summary)
 2. [Overall Progress](#overall-progress)
-3. [Phase 1 - Completed](#phase-1-completed)
+3. [Phase 1 - Completed](#phase-1---completed)
 4. [Phase 2 - Completed](#phase-2---completed)
-5. [Technical Debt & Known Issues](#technical-debt--known-issues)
-6. [Next Steps](#next-steps)
+5. [Phase 3 - Partial](#phase-3---partial)
+6. [Security & Authentication](#security--authentication)
+7. [Technical Debt & Known Issues](#technical-debt--known-issues)
+8. [Next Steps](#next-steps)
+9. [Optional Improvements](#optional-improvements)
 
 ---
 
 ## Executive Summary
 
-### Project Status: **Phase 2 Complete - Production**
+### Project Status: **Phase 2 Complete, Phase 3 Partial**
 
-The Authentik LDAP Sync Management UI (ALSM-UI) has successfully completed Phase 1 and Phase 2. All core functionality is now in production.
+The Authentik LDAP Sync Management UI (ALSM-UI) has completed Phase 1, Phase 2, and partially Phase 3 (approval workflow). Core functionality is in production.
 
 ### Key Achievements
 - ✅ **Integrated Sync Service** - Moved from standalone Docker to unified backend
 - ✅ **Real-time Monitoring** - Dashboard with live sync status
 - ✅ **PostgreSQL Database** - Migrated from SQLite for production readiness
 - ✅ **Change Detection** - Automated detection of LDAP drift
+- ✅ **Approval Workflow UI** - Review and approve/reject pending changes
 - ✅ **Fixed Critical Bug** - Resolved "Invalid Attribute Syntax" error for akadmin user
 
 ### Completed Features
 - ✅ WebSocket real-time log streaming
 - ✅ Password validation detection
-- ✅ Change approval workflow UI
+- ✅ Change approval workflow UI (`/changes`)
 - ✅ Password sync to LDAP + Authentik
 - ✅ Self-service password change
 - ✅ Password expiration policies
@@ -45,76 +49,21 @@ The Authentik LDAP Sync Management UI (ALSM-UI) has successfully completed Phase
 ### Project Status
 - **Phase 1**: Complete ✅
 - **Phase 2**: Complete ✅
-- **Status**: Production Ready
+- **Phase 3**: Partial (Approval UI done, RBAC pending) ⚠️
+- **Phase 4**: Not Started ❌
+- **Status**: Production Ready (authentication needed)
 
 ---
 
 ## Overall Progress
 
-### Architecture Overview (As Built)
+### Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Frontend (Port 3331)                         │
-│                    React 18 + Vite                              │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐      │
-│  │Dashboard │ │   User   │ │  Schema  │ │     Log      │      │
-│  │  Stats   │ │ Browser  │ │  Mapper  │ │   Viewer     │      │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────────┘      │
-└────────────────────────┬────────────────────────────────────────┘
-                         │
-                    REST + WebSocket
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────────┐
-│              Backend (Port 3333) - Node.js 25.6.1               │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │  Integrated Services:                                     │  │
-│  │  • API Routes (dashboard, users, schema, changes, sync)  │  │
-│  │  • Sync Service (runs every 5 minutes)                   │  │
-│  │  • Change Detector (detects LDAP drift)                  │  │
-│  │  • Authentik Client (native fetch)                       │  │
-│  │  • LDAP Client (ldapts library)                          │  │
-│  │  • Mailserver Integration (Docker exec)                  │  │
-│  │  • WebSocket Server (Socket.io)                          │  │
-│  └───────────────────────────────────────────────────────────┘  │
-└─────┬───────────────┬───────────────┬──────────────┬────────────┘
-      │               │               │              │
-      ▼               ▼               ▼              ▼
-┌──────────┐  ┌──────────────┐  ┌─────────┐  ┌──────────────┐
-│PostgreSQL│  │  Authentik   │  │ 389 DS  │  │  Mailserver  │
-│   DB     │  │  (Port 9000) │  │(Port 389│  │   (Docker)   │
-│          │  │              │  │         │  │              │
-└──────────┘  └──────────────┘  └─────────┘  └──────────────┘
-```
+The complete system architecture is documented in [TECHNICAL-ARCHITECTURE-v2.md](./TECHNICAL-ARCHITECTURE-v2.md).
 
-### Technology Stack (Final)
+### Technology Stack
 
-**Frontend:**
-- React 18 + Vite
-- Tailwind CSS + shadcn/ui
-- React Query (TanStack Query)
-- Zustand (state management)
-- Socket.io Client (WebSocket)
-- React Router v6
-
-**Backend:**
-- Node.js v25.6.1
-- Express 4.x
-- Socket.io (WebSocket server)
-- ldapts 4.2.6 (LDAP client - replaces deprecated ldapjs)
-- pg 8.11.0 (PostgreSQL client)
-- Winston (logging)
-- Native fetch API (replaces axios)
-
-**Database:**
-- PostgreSQL (production)
-- ~~SQLite~~ (deprecated - migrated to Postgres)
-
-**Deployment:**
-- Direct install on host (no Docker for backend)
-- Frontend: Vite dev server with `--host` flag
-- Backend: Node.js with ES modules
+The tech stack is documented in [README.md](./README.md#tech-stack).
 
 ---
 
@@ -328,30 +277,79 @@ GET  /api/changes/stats/summary # Statistics
 - [ ] Create UI badge for inactive users
 - [ ] Add filter for "inactive" status
 
-### 2.3 Approval Queue UI (Not Started)
+### 2.3 Approval Queue UI
 
-**Status:** ⏳ Pending
+**Status:** ✅ Complete
 
-**Planned Features:**
+**Features:**
 - View all pending changes
 - Before/after comparison
 - Approve/reject buttons
 - Bulk approval
 - Change preview
 
-**UI Route:** `/changes` (not yet created)
+**UI Route:** `/changes`
 
-### 2.4 Apply Approved Changes (Not Started)
+### 2.4 Apply Approved Changes
 
-**Status:** ⏳ Pending
+**Status:** ✅ Complete
 
-**Planned Logic:**
-When admin approves a change:
-1. Revert LDAP to match Authentik (Authentik is source of truth)
-2. Update change status to 'applied'
-3. Log to `audit_log` table
-4. Create snapshot in `versions` table
-5. Broadcast success to UI
+---
+
+## Phase 3 - Partial
+
+### 3.1 Approval Workflow
+
+**Status:** ✅ Complete
+
+- `/changes` page for reviewing pending changes
+- Approve/reject functionality
+- Real-time updates via WebSocket
+- Change stats and filtering
+
+### 3.2 Role-Based Access Control (RBAC)
+
+**Status:** ✅ Complete
+
+- Admin/Reviewer/Viewer roles
+- Token-based session management (7-day expiry)
+- Role-based route protection
+- Session cleanup (hourly)
+
+### 3.3 Version Control & Rollback
+
+**Status:** ❌ Not Implemented
+
+- User state snapshots before changes
+- Point-in-time recovery
+- One-click rollback
+
+---
+
+## Security & Authentication
+
+### Current State
+
+| Feature | Status |
+|---------|--------|
+| Authentication | ✅ Implemented (Token-based) |
+| Authorization/RBAC | ✅ Implemented (Admin/Reviewer/Viewer) |
+| HTTPS | ❌ Not Configured |
+
+### Implemented Features
+
+- **Token-based authentication** - 7-day session tokens
+- **Role-based access control** - Admin, Reviewer, Viewer roles
+- **Password hashing** - bcrypt
+- **Session management** - Auto cleanup of expired sessions
+- **Protected routes** - All API endpoints require auth
+
+### Requirements for Production
+
+1. ~~**Authentication**~~ - ✅ DONE
+2. ~~**Role-Based Access**~~ - ✅ DONE
+3. **HTTPS** - TLS encryption for all traffic
+4. **Rate Limiting** - Prevent brute force attacks
 
 ---
 
@@ -507,6 +505,17 @@ All issues from Phase 1 are now resolved!
 
 9. **Navigation Restructuring** (Priority: Medium) - ✅ DONE
    - Categorized by function: Sync, Passwords, Mailing, Logs, System
+
+### Priority Items (Next)
+
+10. **Authentication System** (Priority: Critical)
+    - User login
+    - Session management
+    - Required before production
+
+11. **Role-Based Access Control** (Priority: High)
+    - Admin/Reviewer/Viewer roles
+    - Permission-based UI
 
 ---
 

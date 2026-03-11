@@ -2,8 +2,11 @@ import express from 'express'
 import { logger } from '../utils/logger.js'
 import { addLogToCache } from '../services/logCache.js'
 import { createAuditLog } from '../services/auditService.js'
+import { authenticate } from '../middleware/auth.js'
 
 export const mailRouter = express.Router()
+
+mailRouter.use(authenticate)
 
 let mailConfig = {
   host: process.env.SMTP_HOST || 'smtp.example.com',

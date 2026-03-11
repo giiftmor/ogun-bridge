@@ -7,8 +7,11 @@ import { triggerWebhook, getWebhooks, createWebhook, deleteWebhook, testWebhook 
 import { ensureUserProfile, updateUserProfile } from '../services/userProfileService.js'
 import { addLogToCache } from '../services/logCache.js'
 import { createAuditLog } from '../services/auditService.js'
+import { authenticate } from '../middleware/auth.js'
 
 export const inviteRouter = express.Router()
+
+inviteRouter.use(authenticate)
 
 // Send password invite to a single user
 inviteRouter.post('/send/:username', async (req, res) => {

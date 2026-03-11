@@ -1,0 +1,9 @@
+{
+  "host": "mail.spectres.co.za",
+  "port": 587,
+  "secure": false,
+  "user": "admin",
+  "password": "Kali@1403",
+  "fromName": "ALSM",
+  "fromAddress": "alsm@spectres.co.za"
+}

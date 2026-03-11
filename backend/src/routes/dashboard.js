@@ -4,8 +4,11 @@ import { ldapClient } from '../services/ldapClient.js'
 import { getSyncState } from '../services/syncService.js'
 import { getChanges } from '../services/changeDetector.js'
 import { logger } from '../utils/logger.js'
+import { authenticate } from '../middleware/auth.js'
 
 export const dashboardRouter = express.Router()
+
+dashboardRouter.use(authenticate)
 
 let lastActivityCache = null
 

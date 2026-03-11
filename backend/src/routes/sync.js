@@ -1,7 +1,10 @@
 import express from 'express'
 import { getSyncState, startSyncService, stopSyncService, triggerManualSync } from '../services/syncService.js'
+import { authenticate } from '../middleware/auth.js'
 
 export const syncRouter = express.Router()
+
+syncRouter.use(authenticate)
 
 // GET /api/sync/status - Current sync state
 syncRouter.get('/status', (req, res) => {

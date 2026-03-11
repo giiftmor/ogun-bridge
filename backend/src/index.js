@@ -9,6 +9,7 @@ import { Server } from 'socket.io'
 import cors from 'cors'
 import helmet from 'helmet'
 
+import { healthRouter } from './routes/health.js'
 import { dashboardRouter } from './routes/dashboard.js'
 import { usersRouter } from './routes/users.js'
 import { groupsRouter } from './routes/groups.js'
@@ -22,7 +23,9 @@ import { testRouter } from './routes/test.js'
 import { mailRouter } from './routes/mail.js'
 import { mailAdminRouter } from './routes/mailAdmin.js'
 import { inviteRouter } from './routes/invite.js'
+import { authRouter } from './routes/auth.js'
 import { setupWebSocket } from './services/websocket.js'
+import { cleanupExpiredSessions, authenticate, optionalAuth } from './middleware/auth.js'
 import { addLogToCache } from './services/logCache.js'
 import { startSyncService, stopSyncService } from './services/syncService.js'
 import { logger } from './utils/logger.js'
@@ -68,6 +71,7 @@ app.get('/health', (req, res) => {
 })
 
 // API Routes
+app.use('/api/health', healthRouter) // Health check moved to dashboardRouter for better organization
 app.use('/api/dashboard', dashboardRouter)
 app.use('/api/users', usersRouter)
 app.use('/api/groups', groupsRouter)
@@ -81,10 +85,14 @@ app.use('/api/test', testRouter)
 app.use('/api/mail', mailRouter)
 app.use('/api/mail/admin', mailAdminRouter)
 app.use('/api/invite', inviteRouter)
+app.use('/api/auth', authRouter)
 
 
 // WebSocket setup
 setupWebSocket(io)
+
+// Session cleanup - run every hour
+setInterval(cleanupExpiredSessions, 60 * 60 * 1000)
 
 // Error handling
 app.use((err, req, res, next) => {

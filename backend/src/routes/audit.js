@@ -1,8 +1,11 @@
 import express from 'express'
 import { getAuditLogs, getAuditStats, createAuditLog } from '../services/auditService.js'
 import { logger } from '../utils/logger.js'
+import { authenticate } from '../middleware/auth.js'
 
 export const auditRouter = express.Router()
+
+auditRouter.use(authenticate)
 
 auditRouter.get('/', async (req, res) => {
   try {

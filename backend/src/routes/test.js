@@ -2,8 +2,12 @@ import express from 'express'
 import { ldapClient } from '../services/ldapClient.js'
 import { authentikClient } from '../services/authentikClient.js'
 import { logger } from '../utils/logger.js'
+import { authenticate, requireRole } from '../middleware/auth.js'
 
 export const testRouter = express.Router()
+
+testRouter.use(authenticate)
+testRouter.use(requireRole('admin'))
 
 testRouter.get('/ldap-password/:username', async (req, res) => {
   try {

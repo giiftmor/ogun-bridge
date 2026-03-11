@@ -1,8 +1,11 @@
 import express from 'express'
 import { getChanges, getPendingChanges, getChangeById, updateChangeStatus, applyChange } from '../services/changeDetector.js'
 import { logger } from '../utils/logger.js'
+import { authenticate } from '../middleware/auth.js'
 
 export const changesRouter = express.Router()
+
+changesRouter.use(authenticate)
 
 // GET /api/changes - List all changes with optional filters
 changesRouter.get('/', async (req, res) => {

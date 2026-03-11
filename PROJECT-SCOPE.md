@@ -171,77 +171,20 @@ ldap-sync  | 2026-02-16T16:46:29.718Z [error]: Failed to create LDAP user
 
 ## Solution Overview
 
-### Proposed Architecture
+### Architecture
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                    NEW: Management UI Layer                       │
-│                                                                   │
-│  ┌────────────────────────────────────────────────────────────┐ │
-│  │                    React Dashboard (Port 3001)              │ │
-│  │                                                              │ │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐  │ │
-│  │  │Dashboard │ │  User    │ │  Schema  │ │   Approval   │  │ │
-│  │  │  Stats   │ │ Browser  │ │  Mapper  │ │    Queue     │  │ │
-│  │  └──────────┘ └──────────┘ └──────────┘ └──────────────┘  │ │
-│  │                                                              │ │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐  │ │
-│  │  │   Log    │ │ Version  │ │ Settings │ │     Audit    │  │ │
-│  │  │  Viewer  │ │ History  │ │ & Config │ │     Trail    │  │ │
-│  │  └──────────┘ └──────────┘ └──────────┘ └──────────────┘  │ │
-│  └───────────────────────────┬──────────────────────────────┘ │
-│                               │                                 │
-└───────────────────────────────┼─────────────────────────────────┘
-                                │
-                    ┌───────────▼────────────┐
-                    │  Management API Server │
-                    │  (Node.js/Express)     │
-                    │  Port 3003             │
-                    └───┬────────────────┬───┘
-                        │                │
-        ┌───────────────▼──┐    ┌───────▼────────────┐
-        │  Change Queue DB │    │  Version Control   │
-        │  (SQLite)        │    │  DB (SQLite)       │
-        └──────────────────┘    └────────────────────┘
-                │                        │
-                └────────┬───────────────┘
-                         │
-        ┌────────────────▼──────────────────┐
-        │  Existing Components (Unchanged)  │
-        ├───────────────────────────────────┤
-        │                                    │
-        │  Authentik ←→ Sync Service ←→ LDAP│
-        │                                    │
-        └────────────────────────────────────┘
-```
+For the complete system architecture diagram and component details, see [TECHNICAL-ARCHITECTURE-v2.md](./TECHNICAL-ARCHITECTURE-v2.md).
 
 ### Key Components
 
-#### 1. React Frontend (Port 3001)
+#### 1. React Frontend (Port 3331)
 - Modern, responsive UI built with React 18
 - Real-time updates via WebSocket
 - Component library: shadcn/ui + Tailwind CSS
 - State management: Zustand
 - Data fetching: React Query
 
-#### 2. Management API (Port 3003)
-- Express.js REST API
-- WebSocket server for real-time logs
-- Authentik API client
-- LDAP client for direct queries
-- Change detection engine
-- Approval workflow engine
-
-#### 3. Data Persistence
-- **Change Queue DB**: Pending approvals, change history
-- **Version Control DB**: User snapshots, rollback data
-- **Audit Log DB**: Complete change audit trail
-
-#### 4. Integration Points
-- Authentik API (existing)
-- 389 DS LDAP (existing)
-- Sync Service health endpoint (existing)
-- Docker logs API (new)
+> **Note:** For detailed component specifications, database schema, and API details, see [TECHNICAL-ARCHITECTURE-v2.md](./TECHNICAL-ARCHITECTURE-v2.md).
 
 ---
 
@@ -303,56 +246,56 @@ ldap-sync  | 2026-02-16T16:46:29.718Z [error]: Failed to create LDAP user
 - Configurable alert rules
 
 #### Phase 3: Approval Workflow (Week 3)
-✅ **Approval Interface**
+🔄 **Approval Interface** - IN PROGRESS
 - Review pending changes
 - Approve/reject/edit
 - Bulk operations
 - Comment on changes
 
-✅ **Role-Based Access**
+❌ **Role-Based Access** - NOT IMPLEMENTED
 - Admin: full control
 - Reviewer: approve changes
 - Viewer: read-only access
 - Custom roles
 
-✅ **Version Control**
+❌ **Version Control** - NOT IMPLEMENTED
 - Snapshot user state before changes
 - Track all modifications
 - Store complete history
 - Enable point-in-time recovery
 
-✅ **Rollback System**
+❌ **Rollback System** - NOT IMPLEMENTED
 - One-click rollback to previous version
 - Preview rollback changes
 - Rollback with approval
 - Batch rollback support
 
 #### Phase 4: Polish & Production (Week 4)
-✅ **Auto-Fix Suggestions**
+❌ **Auto-Fix Suggestions** - NOT IMPLEMENTED
 - AI-powered error analysis
 - Suggest field mappings
 - Auto-generate missing values
 - One-click fixes
 
-✅ **Conflict Resolution**
+❌ **Conflict Resolution** - NOT IMPLEMENTED
 - Visual conflict comparison
 - Choose Authentik/LDAP/Manual
 - Merge strategies
 - Conflict resolution rules
 
-✅ **Configuration Management**
+❌ **Configuration Management** - NOT IMPLEMENTED
 - Edit sync-config.yaml from UI
 - Validate before saving
 - Test configuration
 - Backup/restore configs
 
-✅ **Documentation**
-- User guide
-- API documentation
-- Troubleshooting guide
-- Video tutorials
+❌ **Documentation** - PARTIAL
+- User guide - NOT IMPLEMENTED
+- API documentation - IN README.md
+- Troubleshooting guide - NOT IMPLEMENTED
+- Video tutorials - NOT IMPLEMENTED
 
-### Out of Scope (Completed in Phase 2)
+### Implemented Beyond Scope
 ✅ **Password synchronization** - IMPLEMENTED
    - Password sync to LDAP + Authentik
    - Self-service password change
@@ -365,8 +308,12 @@ ldap-sync  | 2026-02-16T16:46:29.718Z [error]: Failed to create LDAP user
 ❌ Advanced RBAC with custom attributes
 ❌ Integration with external ticketing systems
 ❌ Machine learning for change prediction
-❌ Multi-language support
+❌ Multi-language support (i18n)
 ❌ Mobile apps
+❌ Bulk user operations
+❌ CSV/JSON export
+❌ MFA integration
+❌ Session management
 
 ---
 
@@ -579,7 +526,7 @@ Create these Authentik users for testing:
 - [ ] Test end-to-end flow
 
 #### Deliverables
-- ✅ Working UI accessible at http://localhost:3001
+- ✅ Working UI accessible at http://localhost:3331
 - ✅ Dashboard showing live stats
 - ✅ User browser with search
 - ✅ Schema mapper with validation
@@ -951,122 +898,15 @@ authentik-ldap-sync-ui/
 
 ### Tech Stack Details
 
-```yaml
-Frontend:
-  Framework: React 18.2
-  Build Tool: Vite 7.0
-  UI Library: shadcn/ui + Tailwind CSS
-  State: Zustand 4.4
-  Data Fetching: React Query 5.0
-  Router: React Router 6.20
-  Charts: Recharts 2.10
-  WebSocket: socket.io-client 4.6
-  Notifications: react-hot-toast
-
-Backend:
-  Runtime: Node.js 25+
-  Framework: Express 4.18
-  Database: PostgreSQL (via node-postgres)
-  LDAP: ldapts (modern LDAP client)
-  WebSocket: socket.io 4.6
-  Logging: winston 3.11
-  Validation: zod 3.22
-  
-DevOps:
-  Container: Docker 24.0
-  Orchestration: Docker Compose 2.0
-  CI/CD: GitHub Actions
-  Database: PostgreSQL 15+
-   
-Testing:
-  Unit: Vitest 1.0
-  E2E: Playwright 1.40
-  API: Supertest 6.3
-```
+The complete tech stack is documented in [README.md](./README.md#tech-stack).
 
 ### Environment Variables
 
-```bash
-# Frontend (.env)
-VITE_API_URL=http://localhost:3333
-VITE_WS_URL=ws://localhost:3333
-VITE_APP_NAME="Authentik LDAP Sync Manager"
-
-# Backend (.env)
-NODE_ENV=development
-PORT=3333
-AUTHENTIK_URL=http://localhost:9000
-AUTHENTIK_TOKEN=your_api_token_here
-LDAP_HOST=172.17.0.1
-LDAP_PORT=389
-LDAP_BIND_DN=cn=Directory Manager,dc=spectres,dc=co,dc=za
-LDAP_BIND_PASSWORD=your_password_here
-LDAP_BASE_DN=dc=spectres,dc=co,dc=za
-DATABASE_URL=postgresql://user:pass@localhost:5432/alsm
-LOG_LEVEL=info
-```
+Environment variables are documented in [README.md](./README.md#environment-variables).
 
 ### Database Schema
 
-```sql
--- changes table
-CREATE TABLE changes (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  change_type TEXT NOT NULL, -- 'create', 'update', 'delete'
-  source_system TEXT NOT NULL, -- 'authentik' or 'ldap'
-  target_system TEXT NOT NULL,
-  entity_type TEXT NOT NULL, -- 'user' or 'group'
-  entity_id TEXT NOT NULL,
-  entity_data TEXT NOT NULL, -- JSON
-  old_data TEXT, -- JSON
-  new_data TEXT NOT NULL, -- JSON
-  status TEXT NOT NULL, -- 'pending', 'approved', 'rejected', 'applied'
-  risk_level TEXT NOT NULL, -- 'low', 'medium', 'high'
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  created_by TEXT,
-  reviewed_at DATETIME,
-  reviewed_by TEXT,
-  applied_at DATETIME,
-  comment TEXT,
-  error TEXT
-);
-
--- versions table
-CREATE TABLE versions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  entity_type TEXT NOT NULL,
-  entity_id TEXT NOT NULL,
-  version_number INTEGER NOT NULL,
-  snapshot_data TEXT NOT NULL, -- JSON
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  created_by TEXT,
-  change_description TEXT,
-  UNIQUE(entity_type, entity_id, version_number)
-);
-
--- audit_log table
-CREATE TABLE audit_log (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id TEXT NOT NULL,
-  action TEXT NOT NULL,
-  entity_type TEXT,
-  entity_id TEXT,
-  details TEXT, -- JSON
-  ip_address TEXT,
-  user_agent TEXT,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
--- users table (for UI authentication)
-CREATE TABLE users (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  username TEXT UNIQUE NOT NULL,
-  email TEXT UNIQUE NOT NULL,
-  role TEXT NOT NULL, -- 'admin', 'reviewer', 'viewer'
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  last_login DATETIME
-);
-```
+The complete PostgreSQL database schema is documented in [TECHNICAL-ARCHITECTURE-v2.md](./TECHNICAL-ARCHITECTURE-v2.md#database-design).
 
 ---
 
@@ -1093,22 +933,18 @@ These features are **not required** for core functionality but can enhance the s
 
 ## Next Steps
 
-1. **Phase 2 Complete** - All core features implemented
-2. **Production Deployment** - Deploy to production environment
-3. **User Training** - Train administrators on new features
-4. **Monitoring Setup** - Configure alerts and dashboards
-5. **Gather Feedback** - Collect user feedback for Phase 3
+For the latest implementation status and next steps, see [IMPLEMENTATION-STATUS.md](./IMPLEMENTATION-STATUS.md).
 
 ---
 
 **Document Control**
-- Version: 2.0.0 (February 25, 2026)
-- Previous Version: 1.0.0 (February 16, 2026)
-- Next Review: March 1, 2026
-- Review Frequency: Monthly
+- Version: 2.1.0 (March 10, 2026)
+- Previous Version: 2.0.0 (February 25, 2026)
+- Next Review: Monthly
 - Owner: Development Team
-- Approvers: Technical Lead, Product Owner
-- Status: **Production** - Phase 2 Complete
+- Status: **Phase 1-2 Complete, Phase 3-4 Pending**
+
+> **Note:** For the current implementation status, see [IMPLEMENTATION-STATUS.md](./IMPLEMENTATION-STATUS.md).
 
 ---
 

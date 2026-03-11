@@ -2,8 +2,11 @@ import express from 'express'
 import { logger } from '../utils/logger.js'
 import { MailserverIntegration } from '../services/mailserver.js'
 import { ldapClient } from '../services/ldapClient.js'
+import { authenticate } from '../middleware/auth.js'
 
 export const mailAdminRouter = express.Router()
+
+mailAdminRouter.use(authenticate)
 
 const getMailserverConfig = () => ({
   enabled: process.env.MAILSERVER_ENABLED !== 'false',

@@ -151,6 +151,42 @@ CREATE TABLE IF NOT EXISTS webhooks (
 );
 
 CREATE INDEX IF NOT EXISTS idx_webhooks_events ON webhooks(events);
+
+-- ============================================
+-- Auth Users Table
+-- Users who can log into ALSM UI
+-- ============================================
+CREATE TABLE IF NOT EXISTS auth_users (
+  id SERIAL PRIMARY KEY,
+  username VARCHAR(255) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  email VARCHAR(255),
+  role VARCHAR(50) DEFAULT 'viewer',           -- 'admin', 'reviewer', 'viewer'
+  active BOOLEAN DEFAULT true,
+  last_login TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_users_username ON auth_users(username);
+CREATE INDEX IF NOT EXISTS idx_auth_users_role ON auth_users(role);
+
+-- ============================================
+-- Auth Sessions Table
+-- Active login sessions
+-- ============================================
+CREATE TABLE IF NOT EXISTS auth_sessions (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES auth_users(id) ON DELETE CASCADE,
+  token VARCHAR(255) UNIQUE NOT NULL,
+  ip_address VARCHAR(45),
+  user_agent VARCHAR(500),
+  expires_at TIMESTAMP NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_token ON auth_sessions(token);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires ON auth_sessions(expires_at);
 `
 
 // Helper to check if database exists
