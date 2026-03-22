@@ -24,6 +24,15 @@ services:
       LDAP_BIND_PASSWORD: ${LDAP_BIND_PASSWORD}
       LDAP_BASE_DN: ${LDAP_BASE_DN}
       CORS_ORIGIN: http://localhost:3331
+      SMTP_HOST: ${SMTP_HOST:-localhost}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-ALSM}
+      SMTP_FROM_ADDRESS: ${SMTP_FROM_ADDRESS:-}
+      MAILSERVER_ENABLED: ${MAILSERVER_ENABLED:-true}
+      MAILSERVER_DOMAIN: ${MAILSERVER_DOMAIN:-spectres.co.za}
     volumes:
       - ./backend:/app
     networks:
@@ -36,7 +45,7 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_URL: /api
-        VITE_WS_URL: ws://localhost:3333
+        VITE_WS_URL: /socket.io
     container_name: alsm-frontend
     restart: unless-stopped
     ports:

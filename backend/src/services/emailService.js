@@ -120,15 +120,18 @@ If you didn't request this email, please contact your system administrator.
 `
 
   try {
+    // Send to altEmail if set, otherwise fallback to primary email
+    const recipientAddress = altEmail || to
+    
     const info = await transporter.sendMail({
       from: `"${fromName}" <${fromAddress}>`,
-      to: altEmail ? `${to}, ${altEmail}` : to,
+      to: recipientAddress,
       subject: `Welcome to Spectres.co.za - Create Your Account`,
       text: textContent,
       html: htmlContent,
     })
 
-    logger.info('Password creation email sent', { to, messageId: info.messageId })
+    logger.info('Password creation email sent', { to: recipientAddress, messageId: info.messageId, altEmailUsed: !!altEmail })
     return { success: true, messageId: info.messageId }
   } catch (error) {
     logger.error('Failed to send password creation email', { error: error.message, to })

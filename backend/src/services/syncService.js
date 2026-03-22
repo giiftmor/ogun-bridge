@@ -1,8 +1,19 @@
 import { Client, Attribute, Change } from 'ldapts'
+import crypto from 'crypto'
 import { logger } from '../utils/logger.js'
 import { MailserverIntegration } from './mailserver.js'
 import { detectChanges } from './changeDetector.js'
 import { addLogToCache } from './logCache.js'
+
+function hashPasswordSSHA512(password) {
+  const salt = crypto.randomBytes(16)
+  const hash = crypto.createHash('sha512')
+  hash.update(password)
+  hash.update(salt)
+  const digest = hash.digest()
+  const combined = Buffer.concat([digest, salt])
+  return `{SSHA512}${combined.toString('base64')}`
+}
 
 // Helper to check if user is a service account
 const isServiceAccount = (user) => {
@@ -177,7 +188,7 @@ async function createLDAPUser(client, user, config, io, existingUsers = []) {
     sn: nameParts.length > 1 ? nameParts[nameParts.length - 1] : user.username,
     givenName: nameParts[0] || user.username,
     mail: user.email || `${user.username}@${config.mailserver.domain}`,
-    userPassword: `{SASL}${user.username}@${config.mailserver.domain}`,
+    userPassword: hashPasswordSSHA512(`${user.username}:${Date.now()}`),
     uidNumber: nextUid.toString(),
     gidNumber: nextUid.toString(),
     homeDirectory: `/var/mail/${user.username}`,
@@ -214,8 +225,10 @@ async function updateLDAPUser(client, user, existingUser, config, io) {
   }
 
   // Sync altEmail from Authentik custom attributes to LDAP
-  if (user.attributes?.alt_email && user.attributes.alt_email !== existingUser.altEmail?.[0]) {
-    changes.push(new Attribute({ type: 'altEmail', values: [user.attributes.alt_email] }))
+  const currentAltEmail = existingUser.altEmail?.[0] || null
+  const newAltEmail = user.attributes?.alt_email || null
+  if (newAltEmail && newAltEmail !== currentAltEmail) {
+    changes.push(new Attribute({ type: 'altEmail', values: [newAltEmail] }))
   }
 
   // Add uidNumber if missing (even if no other changes)
@@ -259,6 +272,19 @@ async function deleteLDAPUser(client, username, config, io) {
 
 // ─── Group Sync ───────────────────────────────────────────────────────────────
 
+async function getCurrentGroupMembers(client, groupDN) {
+  try {
+    const result = await client.search(groupDN, {
+      scope: 'base',
+      attributes: ['member'],
+    })
+    const entry = result.searchEntries[0]
+    return entry?.member || []
+  } catch (err) {
+    return []
+  }
+}
+
 async function syncGroups(client, config, io) {
   try {
     const groups = await fetchAuthentikGroups(config)
@@ -283,12 +309,36 @@ async function syncGroups(client, config, io) {
         broadcastLog(io, 'info',  'Created LDAP group', { group: group.name })
       } catch (err) {
         if (err.message.includes('Already Exists') || err.code === 68) {
-          await client.modify(dn, [
-            new Change({
-              operation: 'replace',
-              modification: new Attribute({ type: 'member', values: members }),
-            }),
-          ])
+          const currentMembers = await getCurrentGroupMembers(client, dn)
+          
+          for (const newMember of members) {
+            if (!currentMembers.includes(newMember)) {
+              await client.modify(dn, [
+                new Change({
+                  operation: 'add',
+                  modification: new Attribute({ type: 'member', values: [newMember] }),
+                }),
+              ])
+            }
+          }
+          
+          for (const oldMember of currentMembers) {
+            if (!members.includes(oldMember)) {
+              try {
+                await client.modify(dn, [
+                  new Change({
+                    operation: 'delete',
+                    modification: new Attribute({ type: 'member', values: [oldMember] }),
+                  }),
+                ])
+              } catch (err) {
+                if (!err.message.includes('does not exist')) {
+                  throw err
+                }
+              }
+            }
+          }
+          
           broadcastLog(io, 'info',  'Updated LDAP group', { group: group.name })
         } else {
           throw err
@@ -296,13 +346,14 @@ async function syncGroups(client, config, io) {
       }
     }
   } catch (error) {
+    console.error('Group sync error:', error)
     broadcastLog(io, 'error',  'Group sync failed', { error: error.message })
   }
 }
 
 // ─── Main Sync Cycle ──────────────────────────────────────────────────────────
 
-async function runSyncCycle(io) {
+async function runSyncCycle(io, force = false) {
   if (syncState.status === 'running') {
     broadcastLog(io, 'warn','Sync already running, skipping cycle')
     return
@@ -348,8 +399,8 @@ async function runSyncCycle(io) {
             continue
           }
 
-          // Skip users who have never logged in (inactive)
-          if (!authentikUser.last_login) {
+          // Skip users who have never logged in (inactive) - unless force sync
+          if (!authentikUser.last_login && !force) {
             broadcastLog(io, 'info', `Skipping user who has never logged in: ${authentikUser.username}`)
             continue
           }
@@ -550,7 +601,8 @@ export function stopSyncService(io) {
   broadcastLog(io, 'info',  'Sync service stopped')
 }
 
-export async function triggerManualSync(io) {
-  broadcastLog(io, 'info',  'Manual sync triggered')
-  await runSyncCycle(io)
+export async function triggerManualSync(io, force = false) {
+  const type = force ? 'FORCE' : 'Manual'
+  broadcastLog(io, 'info',  `${type} sync triggered`)
+  await runSyncCycle(io, force)
 } 

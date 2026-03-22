@@ -1,5 +1,16 @@
 import { Client, Attribute, Change } from 'ldapts'
+import crypto from 'crypto'
 import { logger } from '../utils/logger.js'
+
+function hashPasswordSSHA512(password) {
+  const salt = crypto.randomBytes(16)
+  const hash = crypto.createHash('sha512')
+  hash.update(password)
+  hash.update(salt)
+  const digest = hash.digest()
+  const combined = Buffer.concat([digest, salt])
+  return `{SSHA512}${combined.toString('base64')}`
+}
 
 export class LDAPClient {
   constructor() {
@@ -40,18 +51,19 @@ export class LDAPClient {
     
     try {
       const userDN = `uid=${username},ou=people,${this.baseDN}`
+      const hashedPassword = hashPasswordSSHA512(newPassword)
       
       await this.client.modify(userDN, [
         new Change({
           operation: 'replace',
           modification: new Attribute({
             type: 'userPassword',
-            values: [newPassword],
+            values: [hashedPassword],
           }),
         }),
       ])
       
-      logger.info(`Password set for LDAP user: ${username}`)
+      logger.info(`Password set for LDAP user: ${username} (SSHA512)`)
       return true
     } catch (error) {
       logger.error(`Failed to set LDAP password for ${username}:`, error.message)

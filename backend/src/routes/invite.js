@@ -24,9 +24,8 @@ inviteRouter.post('/send/:username', async (req, res) => {
       return res.status(404).json({ error: 'User not found in Authentik' })
     }
     
-    // Get altEmail from LDAP
-    const lUser = await ldapClient.getUser(username)
-    const altEmail = lUser?.altEmail?.[0] || null
+    // Get altEmail from Authentik attributes (primary source)
+    const altEmail = aUser.attributes?.alt_email || null
     
     // Send email
     const result = await sendPasswordCreationEmail(
@@ -95,8 +94,7 @@ inviteRouter.post('/send-bulk', async (req, res) => {
           continue
         }
         
-        const lUser = await ldapClient.getUser(username)
-        const altEmail = lUser?.altEmail?.[0] || null
+        const altEmail = aUser.attributes?.alt_email || null
         
         const result = await sendPasswordCreationEmail(
           aUser.email,
@@ -219,9 +217,8 @@ inviteRouter.post('/force-reset/:username', async (req, res) => {
       return res.status(404).json({ error: 'User not found in Authentik' })
     }
     
-    // Get altEmail from LDAP
-    const lUser = await ldapClient.getUser(username)
-    const altEmail = lUser?.altEmail?.[0] || null
+    // Get altEmail from Authentik attributes (primary source)
+    const altEmail = aUser.attributes?.alt_email || null
     
     // Invalidate password in Authentik by forcing password change
     try {

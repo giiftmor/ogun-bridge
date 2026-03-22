@@ -18,19 +18,22 @@ syncRouter.get('/history', (req, res) => {
 })
 
 // POST /api/sync/run - Trigger manual sync
+// Query params: ?force=true to sync all users including inactive
 syncRouter.post('/run', async (req, res) => {
   const state = getSyncState()
+  const force = req.query.force === 'true'
 
   if (state.status === 'running') {
     return res.status(409).json({ error: 'Sync already running' })
   }
 
   // Trigger async - don't wait for it to finish
-  triggerManualSync(req.app.get('io')).catch(err => {
-    console.error('Manual sync error:', err)
+  triggerManualSync(req.app.get('io'), force).catch(err => {
+    console.error('Sync error:', err)
   })
 
-  res.json({ message: 'Sync triggered', status: 'running' })
+  const type = force ? 'Force' : 'Manual'
+  res.json({ message: `${type} sync triggered`, status: 'running', force })
 })
 
 // POST /api/sync/stop - Stop sync scheduler

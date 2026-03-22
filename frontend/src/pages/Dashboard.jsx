@@ -1,16 +1,48 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Activity, Users, AlertCircle, CheckCircle2, Clock } from 'lucide-react'
+import { Activity, Users, AlertCircle, CheckCircle2, Clock, RefreshCw, Zap } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { apiClient } from '@/services/api'
 import { useAppStore } from '@/store/useAppStore'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { wsService } from '@/services/websocket'
+import { toast } from 'react-hot-toast'
 
 export function Dashboard() {
-  const { setDashboardStats, setSyncStatus } = useAppStore()
+  const { setDashboardStats, setSyncStatus, syncStatus } = useAppStore()
+  const queryClient = useQueryClient()
+  const [showForceConfirm, setShowForceConfirm] = useState(false)
+
+  const syncMutation = useMutation({
+    mutationFn: () => fetch('/api/sync/run', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` }
+    }).then(r => r.json()),
+    onSuccess: () => {
+      toast.success('Sync started')
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
+    },
+    onError: () => {
+      toast.error('Sync failed or already running')
+    }
+  })
+
+  const forceSyncMutation = useMutation({
+    mutationFn: () => fetch('/api/sync/run?force=true', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` }
+    }).then(r => r.json()),
+    onSuccess: () => {
+      setShowForceConfirm(false)
+      toast.success('Force sync started - syncing all users')
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
+    },
+    onError: () => {
+      toast.error('Sync failed or already running')
+    }
+  })
 
   // Fetch dashboard stats
   const { data: stats, isLoading } = useQuery({
@@ -102,12 +134,71 @@ export function Dashboard() {
                 </div>
               </div>
             </div>
-            <Badge variant={getStatusVariant(stats?.syncStatus)}>
-              {stats?.syncStatus || 'Unknown'}
-            </Badge>
+            <div className="flex items-center gap-3">
+              {syncStatus?.status === 'running' && (
+                <Badge variant="warning">Sync Running...</Badge>
+              )}
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => syncMutation.mutate()}
+                disabled={syncMutation.isPending || syncStatus?.status === 'running'}
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
+                Sync Now
+              </Button>
+              <Button 
+                variant="destructive" 
+                size="sm"
+                onClick={() => setShowForceConfirm(true)}
+                disabled={forceSyncMutation.isPending || syncStatus?.status === 'running'}
+              >
+                <Zap className={`h-4 w-4 mr-2 ${forceSyncMutation.isPending ? 'animate-spin' : ''}`} />
+                Force Sync
+              </Button>
+              <Badge variant={getStatusVariant(stats?.syncStatus)}>
+                {stats?.syncStatus || 'Unknown'}
+              </Badge>
+            </div>
           </div>
         </CardContent>
       </Card>
+
+      {/* Force Sync Confirmation */}
+      {showForceConfirm && (
+        <Card className="border-red-500 bg-red-50 dark:bg-red-950/20">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Zap className="h-5 w-5 text-red-500" />
+                <div>
+                  <div className="font-semibold">Force Sync Warning</div>
+                  <div className="text-sm text-muted-foreground">
+                    This will sync ALL users from Authentik including those who have never logged in.
+                    This may create LDAP accounts for inactive users.
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => setShowForceConfirm(false)}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  variant="destructive" 
+                  size="sm"
+                  onClick={() => forceSyncMutation.mutate()}
+                >
+                  Confirm Force Sync
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stats Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
