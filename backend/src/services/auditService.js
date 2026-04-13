@@ -139,3 +139,32 @@ export async function getLastAuditLogByAction(entityId, action) {
     client.release()
   }
 }
+
+const PASSWORD_ACTIONS = [
+  'password_invite_sent',
+  'password_force_reset',
+  'password_changed',
+  'password_reset'
+]
+
+export async function getLastPasswordAction(entityId) {
+  const client = await pool.connect()
+  
+  try {
+    const placeholders = PASSWORD_ACTIONS.map((_, i) => `$${i + 2}`).join(', ')
+    const result = await client.query(
+      `SELECT * FROM audit_log 
+       WHERE entity_id = $1 AND action IN (${placeholders})
+       ORDER BY timestamp DESC 
+       LIMIT 1`,
+      [entityId, ...PASSWORD_ACTIONS]
+    )
+    
+    return result.rows[0] || null
+  } catch (error) {
+    logger.error('Failed to get last password action:', error)
+    throw error
+  } finally {
+    client.release()
+  }
+}

@@ -16,7 +16,11 @@ import { UserDetail } from './pages/UserDetail'
 import { MailSettings } from './pages/MailSettings'
 import { MailAdmin } from './pages/MailAdmin'
 import { ProfileManagement } from './pages/ProfileManagement'
+import { VersionHistory } from './pages/VersionHistory'
 import { Login } from './pages/Login'
+import { ForgotPassword } from './pages/ForgotPassword'
+import { ResetPassword } from './pages/ResetPassword'
+import { OperationsCenter } from './pages/OperationsCenter'
 import { apiClient } from './services/api'
 
 const queryClient = new QueryClient({
@@ -101,6 +105,8 @@ export function App() {
         <Routes>
           {/* Public routes */}
           <Route path="/login" element={<Login />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password/:token" element={<ResetPassword />} />
           <Route path="/self-service-password" element={<SelfServicePasswordChange />} />
 
           {/* Protected routes */}
@@ -118,8 +124,10 @@ export function App() {
             <Route path="audit" element={<AuditViewer />} />
             <Route path="password" element={<PasswordManagement />} />
             <Route path="profile" element={<ProfileManagement />} />
+            <Route path="versions" element={<VersionHistory />} />
             <Route path="mail" element={<MailSettings />} />
             <Route path="mail-admin" element={<MailAdmin />} />
+            <Route path="operations" element={<OperationsCenter />} />
             <Route path="schema" element={<SchemaMapper />} />
           </Route>
 

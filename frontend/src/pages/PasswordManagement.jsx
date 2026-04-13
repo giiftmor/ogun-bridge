@@ -114,10 +114,25 @@ export function PasswordManagement() {
 
   const getRequirementStatus = (requirement) => {
     if (!newPassword) return null
-    if (!validation) return 'pending'
     
-    const met = !validation.errors.some(e => e.toLowerCase().includes(requirement))
-    return met ? 'met' : 'failed'
+    switch (requirement) {
+      case '10 characters':
+        return newPassword.length >= 10 ? 'met' : 'pending'
+      case 'uppercase':
+        return /[A-Z]/.test(newPassword) ? 'met' : 'pending'
+      case 'lowercase':
+        return /[a-z]/.test(newPassword) ? 'met' : 'pending'
+      case 'number':
+        return /[0-9]/.test(newPassword) ? 'met' : 'pending'
+      case 'special':
+        return /[!@#$%^&*]/.test(newPassword) ? 'met' : 'pending'
+      case 'no spaces':
+        return !/\s/.test(newPassword) ? 'met' : 'pending'
+      default:
+        if (!validation) return 'pending'
+        const met = !validation.errors.some(e => e.toLowerCase().includes(requirement))
+        return met ? 'met' : 'pending'
+    }
   }
 
   return (
@@ -145,16 +160,14 @@ export function PasswordManagement() {
               <div>
                 <label className="text-sm font-medium">Username</label>
                 <Select value={username} onValueChange={setUsername}>
-                  <SelectTrigger className="mt-1">
-                    <SelectValue placeholder={loadingUsers ? "Loading users..." : "Select a user"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {users.map((user) => (
-                      <SelectItem key={user.id} value={user.username}>
-                        {user.username} ({user.email || 'no email'})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
+                  <SelectItem value="" disabled>
+                    {loadingUsers ? "Loading users..." : "Select a user"}
+                  </SelectItem>
+                  {users.map((user) => (
+                    <SelectItem key={user.id} value={user.username}>
+                      {user.username} ({user.email || 'no email'})
+                    </SelectItem>
+                  ))}
                 </Select>
               </div>
 
@@ -183,16 +196,11 @@ export function PasswordManagement() {
               <div>
                 <label className="text-sm font-medium">Password Expiration</label>
                 <Select value={expirationDays?.toString() || 'null'} onValueChange={(val) => setExpirationDays(val === 'null' ? null : parseInt(val))}>
-                  <SelectTrigger className="mt-1">
-                    <SelectValue placeholder="Select expiration" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {EXPIRATION_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value ?? 'null'} value={opt.value?.toString() ?? 'null'}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
+                  {EXPIRATION_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value ?? 'null'} value={opt.value?.toString() ?? 'null'}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
                 </Select>
               </div>
 
@@ -251,8 +259,8 @@ export function PasswordManagement() {
           <CardContent>
             <div className="space-y-3">
               <Requirement 
-                label="Minimum 8 characters"
-                status={getRequirementStatus('8 characters')}
+                label="Minimum 10 characters"
+                status={getRequirementStatus('10 characters')}
               />
               <Requirement 
                 label="At least one uppercase letter"
@@ -265,6 +273,14 @@ export function PasswordManagement() {
               <Requirement 
                 label="At least one number"
                 status={getRequirementStatus('number')}
+              />
+              <Requirement 
+                label="One special character (!@#$%^&*)"
+                status={getRequirementStatus('special')}
+              />
+              <Requirement 
+                label="No spaces allowed"
+                status={getRequirementStatus('no spaces')}
               />
             </div>
 

@@ -1,6 +1,6 @@
 import { io } from 'socket.io-client'
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'http://localhost:3333'
+const WS_URL = import.meta.env.VITE_WS_URL || '/socket.io'
 
 class WebSocketService {
   constructor() {
@@ -12,7 +12,7 @@ class WebSocketService {
     if (this.socket?.connected) return
 
     this.socket = io(WS_URL, {
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: 5,

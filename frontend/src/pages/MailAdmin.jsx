@@ -18,11 +18,13 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { SkeletonCard, SkeletonList } from '@/components/ui/skeleton'
+import { ConfirmDialog } from '@/components/ui/dialog'
 import toast from 'react-hot-toast'
 import { apiClient } from '@/services/api'
 
 export function MailAdmin() {
   const queryClient = useQueryClient()
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', description: '', onConfirm: null })
   const [showCreate, setShowCreate] = useState(false)
   const [newMailbox, setNewMailbox] = useState({ username: '', email: '' })
 
@@ -245,9 +247,15 @@ export function MailAdmin() {
                       variant="ghost" 
                       size="icon"
                       onClick={() => {
-                        if (confirm(`Delete mailbox ${mbx.email}?`)) {
-                          deleteMutation.mutate(mbx.email)
-                        }
+                        setConfirmDialog({
+                          open: true,
+                          title: 'Delete Mailbox',
+                          description: `Are you sure you want to delete mailbox ${mbx.email}? This action cannot be undone.`,
+                          onConfirm: () => {
+                            deleteMutation.mutate(mbx.email)
+                            setConfirmDialog({ open: false })
+                          }
+                        })
                       }}
                       disabled={deleteMutation.isPending}
                     >
@@ -308,6 +316,14 @@ export function MailAdmin() {
           </CardContent>
         </Card>
       </div>
+      <ConfirmDialog
+        open={confirmDialog.open}
+        onClose={() => setConfirmDialog({ open: false })}
+        onConfirm={confirmDialog.onConfirm}
+        title={confirmDialog.title}
+        description={confirmDialog.description}
+        loading={deleteMutation.isPending}
+      />
     </div>
   )
 }

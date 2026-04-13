@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation } from '@tanstack/react-query'
 import { 
   User, 
   Mail, 
@@ -13,17 +13,23 @@ import {
   ArrowLeft,
   Users,
   Activity,
-  RefreshCw
+  RefreshCw,
+  Save,
+  X
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
 import { apiClient } from '@/services/api'
+import toast from 'react-hot-toast'
 
 export function UserDetail() {
   const { username } = useParams()
   const navigate = useNavigate()
   const [refreshing, setRefreshing] = useState(false)
+  const [altEmail, setAltEmail] = useState('')
+  const [isEditingAltEmail, setIsEditingAltEmail] = useState(false)
 
   const { data: userDetail, isLoading, error, refetch } = useQuery({
     queryKey: ['user-detail', username],
@@ -31,10 +37,49 @@ export function UserDetail() {
     enabled: !!username,
   })
 
+  const { data: userProfile } = useQuery({
+    queryKey: ['user-profile', username],
+    queryFn: () => apiClient.getUserProfile(username),
+    enabled: !!username,
+  })
+
+  // Initialize altEmail when profile loads
+  useEffect(() => {
+    if (userProfile?.altEmail !== undefined && !altEmail) {
+      setAltEmail(userProfile.altEmail || '')
+    }
+  }, [userProfile])
+
+  const setAltEmailMutation = useMutation({
+    mutationFn: ({ username, altEmail }) => apiClient.setUserAltEmail(username, altEmail),
+    onSuccess: (data) => {
+      toast.success(`Alt-email updated for ${username}`)
+      setIsEditingAltEmail(false)
+      refetch()
+    },
+    onError: (error) => {
+      toast.error(`Failed to update alt-email: ${error.message}`)
+    },
+  })
+
   const handleRefresh = async () => {
     setRefreshing(true)
     await refetch()
     setRefreshing(false)
+  }
+
+  const handleSaveAltEmail = () => {
+    setAltEmailMutation.mutate({ username, altEmail: altEmail || null })
+  }
+
+  const handleCancelAltEmail = () => {
+    setIsEditingAltEmail(false)
+    setAltEmail(userProfile?.altEmail || '')
+  }
+
+  // Initialize altEmail when profile loads
+  if (userProfile?.altEmail && !altEmail && !isEditingAltEmail) {
+    setAltEmail(userProfile.altEmail)
   }
 
   if (isLoading) {
@@ -226,6 +271,54 @@ export function UserDetail() {
                 <DetailRow label="UID" value={ldap.uid} />
                 <DetailRow label="DN" value={ldap.dn} />
                 <DetailRow label="Email" value={ldap.mail} />
+                
+                {/* Alt Email - Editable */}
+                <div>
+                  <p className="text-sm text-muted-foreground mb-2">Alternate Email (for password invites)</p>
+                  {isEditingAltEmail ? (
+                    <div className="flex gap-2">
+                      <Input
+                        type="email"
+                        value={altEmail}
+                        onChange={(e) => setAltEmail(e.target.value)}
+                        placeholder="user@example.com"
+                        className="flex-1"
+                      />
+                      <Button
+                        size="sm"
+                        onClick={handleSaveAltEmail}
+                        disabled={setAltEmailMutation.isPending}
+                      >
+                        {setAltEmailMutation.isPending ? (
+                          <RefreshCw className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Save className="h-4 w-4" />
+                        )}
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={handleCancelAltEmail}>
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className={userProfile?.altEmail ? 'font-medium' : 'text-muted-foreground'}>
+                          {userProfile?.altEmail || 'Not set'}
+                        </span>
+                        {userProfile?.altEmail && (
+                          <Badge variant="success" className="text-xs">Active</Badge>
+                        )}
+                      </div>
+                      <Button size="sm" variant="outline" onClick={() => setIsEditingAltEmail(true)}>
+                        Edit
+                      </Button>
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Password invitation emails will be sent here
+                  </p>
+                </div>
+                
                 <DetailRow label="Common Name" value={ldap.cn} />
                 <DetailRow label="Surname" value={ldap.sn} />
                 

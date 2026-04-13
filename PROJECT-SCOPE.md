@@ -1,8 +1,8 @@
 # Authentik LDAP Sync Management UI - Project Scope
 
 ## Document Version
-- **Version**: 2.0.0
-- **Date**: February 25, 2026
+- **Version**: 2.1.0
+- **Date**: March 11, 2026
 - **Author**: System Documentation
 - **Project Name**: Authentik LDAP Sync Management UI (ALSM-UI)
 - **Status**: Production - Phase 2 Complete
@@ -302,6 +302,34 @@ For the complete system architecture diagram and component details, see [TECHNIC
    - Password expiration policies
    - Password history via audit logs
 
+✅ **Profile Management System** - IMPLEMENTED
+   - User profile with service access visualization
+   - Password status display
+   - Force password reset functionality
+   - Service access based on groups (mail, vpn, media, cloud)
+
+✅ **Password Invite System** - IMPLEMENTED
+   - Send password creation emails to users
+   - Bulk send capability
+   - Force password reset workflow
+
+✅ **Webhook System** - IMPLEMENTED
+   - CRUD operations for webhooks
+   - Event-based triggers (password_created)
+   - Webhook testing capability
+
+✅ **Mail Admin Functions** - IMPLEMENTED
+   - Mailbox management (create/delete)
+   - Quota management per mailbox
+   - Mail server status monitoring
+
+✅ **Authentication System** - IMPLEMENTED
+   - User registration with role selection
+   - Login with session management
+   - Role-based access (admin, reviewer, viewer)
+   - Password hashing with bcrypt
+   - Session tokens with 7-day expiry
+
 ### Out of Scope (Future Enhancements)
 ❌ Multi-tenant support
 ❌ LDAP schema designer
@@ -313,7 +341,7 @@ For the complete system architecture diagram and component details, see [TECHNIC
 ❌ Bulk user operations
 ❌ CSV/JSON export
 ❌ MFA integration
-❌ Session management
+⚠️ Session management - IMPLEMENTED (token-based)
 
 ---
 
@@ -915,8 +943,8 @@ The complete PostgreSQL database schema is documented in [TECHNICAL-ARCHITECTURE
 These features are **not required** for core functionality but can enhance the system. See [IMPLEMENTATION-STATUS.md](./IMPLEMENTATION-STATUS.md#optional-improvements) for the complete list.
 
 ### Priority Additions
-1. **Keyboard Shortcuts** - Press `/` to focus search, `Esc` to close modals
-2. **Role-Based Access Control** - Admin/Reviewer/Viewer roles
+1. ~~**Role-Based Access Control**~~ - ✅ IMPLEMENTED (Admin/Reviewer/Viewer)
+2. **Keyboard Shortcuts** - Press `/` to focus search, `Esc` to close modals
 3. **Multi-Language Support** - i18n for internationalization
 4. **Export Functionality** - CSV/JSON export for data
 5. **Form Validation** - react-hook-form + zod
@@ -928,6 +956,7 @@ These features are **not required** for core functionality but can enhance the s
 - Audit log retention policies
 - LDAP group hierarchy visualization
 - Calendar-based sync scheduling
+- ~~Session Management~~ - ✅ IMPLEMENTED (token-based, 7-day expiry)
 
 ---
 
@@ -938,11 +967,12 @@ For the latest implementation status and next steps, see [IMPLEMENTATION-STATUS.
 ---
 
 **Document Control**
-- Version: 2.1.0 (March 10, 2026)
+- Version: 2.1.0 (March 11, 2026)
 - Previous Version: 2.0.0 (February 25, 2026)
+- Changes: Added implemented features beyond original scope
 - Next Review: Monthly
 - Owner: Development Team
-- Status: **Phase 1-2 Complete, Phase 3-4 Pending**
+- Status: **Phase 1-2 Complete, Phase 3 Partial, Phase 4 Pending**
 
 > **Note:** For the current implementation status, see [IMPLEMENTATION-STATUS.md](./IMPLEMENTATION-STATUS.md).
 

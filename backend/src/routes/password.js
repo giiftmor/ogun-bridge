@@ -2,6 +2,7 @@ import express from 'express'
 import { ldapClient } from '../services/ldapClient.js'
 import { authentikClient } from '../services/authentikClient.js'
 import { logger } from '../utils/logger.js'
+import { loggingService } from '../services/loggingService.js'
 import { addLogToCache } from '../services/logCache.js'
 import { createAuditLog, getAuditLogs } from '../services/auditService.js'
 import { ensureUserProfile, updateUserProfile, getUserProfile } from '../services/userProfileService.js'
@@ -11,25 +12,19 @@ export const passwordRouter = express.Router()
 
 passwordRouter.use(authenticate)
 
-const PASSWORD_POLICY = {
-  minLength: 8,
+export const PASSWORD_POLICY = {
+  minLength: 10,
   requireUppercase: true,
   requireLowercase: true,
   requireNumber: true,
-  requireSpecial: false,
+  requireSpecial: true,
+  noSpaces: true,
 }
 
-// Validate password against policy
-passwordRouter.post('/validate', (req, res) => {
-  const { password } = req.body
-  
-  if (!password) {
-    return res.status(400).json({ valid: false, errors: ['Password is required'] })
-  }
-  
+export function validatePassword(password) {
   const errors = []
   
-  if (password.length < PASSWORD_POLICY.minLength) {
+  if (!password || password.length < PASSWORD_POLICY.minLength) {
     errors.push(`Password must be at least ${PASSWORD_POLICY.minLength} characters`)
   }
   
@@ -49,11 +44,27 @@ passwordRouter.post('/validate', (req, res) => {
     errors.push('Password must contain at least one special character (!@#$%^&*)')
   }
   
-  res.json({
+  if (PASSWORD_POLICY.noSpaces && /\s/.test(password)) {
+    errors.push('Password must not contain spaces')
+  }
+  
+  return {
     valid: errors.length === 0,
     errors,
     policy: PASSWORD_POLICY,
-  })
+  }
+}
+
+// Validate password against policy
+passwordRouter.post('/validate', (req, res) => {
+  const { password } = req.body
+  
+  if (!password) {
+    return res.status(400).json({ valid: false, errors: ['Password is required'] })
+  }
+  
+  const validation = validatePassword(password)
+  res.json(validation)
 })
 
 // Get password policy
@@ -87,6 +98,11 @@ passwordRouter.post('/sync/:username', async (req, res) => {
     
     if (!password) {
       return res.status(400).json({ error: 'Password is required' })
+    }
+
+    const validation = validatePassword(password)
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.errors.join(', ') })
     }
     
     addLogToCache({
@@ -234,23 +250,10 @@ passwordRouter.post('/change', async (req, res) => {
       return res.status(401).json({ error: 'Current password is incorrect' })
     }
     
-    // Validate new password
-    const validationErrors = []
-    if (newPassword.length < PASSWORD_POLICY.minLength) {
-      validationErrors.push(`Password must be at least ${PASSWORD_POLICY.minLength} characters`)
-    }
-    if (PASSWORD_POLICY.requireUppercase && !/[A-Z]/.test(newPassword)) {
-      validationErrors.push('Password must contain at least one uppercase letter')
-    }
-    if (PASSWORD_POLICY.requireLowercase && !/[a-z]/.test(newPassword)) {
-      validationErrors.push('Password must contain at least one lowercase letter')
-    }
-    if (PASSWORD_POLICY.requireNumber && !/[0-9]/.test(newPassword)) {
-      validationErrors.push('Password must contain at least one number')
-    }
-    
-    if (validationErrors.length > 0) {
-      return res.status(400).json({ valid: false, errors: validationErrors })
+    // Validate new password using shared validation
+    const validation = validatePassword(newPassword)
+    if (!validation.valid) {
+      return res.status(400).json({ valid: false, errors: validation.errors })
     }
     
     // Set new password in LDAP
@@ -293,6 +296,7 @@ passwordRouter.post('/change', async (req, res) => {
       success: true,
     })
     
+    loggingService.info('PASSWORD', `Password changed for ${username}`, { username })
     addLogToCache({
       timestamp: new Date().toISOString(),
       level: 'info',

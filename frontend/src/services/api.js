@@ -74,6 +74,31 @@ class ApiClient {
     return this.request('/auth/me')
   }
 
+  async forgotPassword(usernameOrEmail) {
+    return this.request('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ username: usernameOrEmail.includes('@') ? undefined : usernameOrEmail, email: usernameOrEmail.includes('@') ? usernameOrEmail : undefined }),
+    })
+  }
+
+  async verifyResetToken(token) {
+    return this.request(`/auth/verify-reset-token/${token}`)
+  }
+
+  async resetPassword(token, newPassword) {
+    return this.request('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, newPassword }),
+    })
+  }
+
+  async resendResetToken(usernameOrEmail) {
+    return this.request('/auth/resend-reset-token', {
+      method: 'POST',
+      body: JSON.stringify({ username: usernameOrEmail.includes('@') ? undefined : usernameOrEmail, email: usernameOrEmail.includes('@') ? usernameOrEmail : undefined }),
+    })
+  }
+
   async register(username, password, email, role = 'viewer') {
     const response = await fetch(`${API_BASE_URL}/auth/register`, {
       method: 'POST',
@@ -107,6 +132,20 @@ class ApiClient {
 
   async getSystemHealth() {
     return this.request('/health')
+  }
+
+  async testService(service) {
+    return this.request(`/health/test-service/${service}`, { method: 'POST' })
+  }
+
+  async getOperationsLogs(params = {}) {
+    const { category = 'all', level = 'all', limit = 100 } = params
+    const query = new URLSearchParams({ category, level, limit: limit.toString() }).toString()
+    return this.request(`/operations/logs?${query}`)
+  }
+
+  async getOperationsStats() {
+    return this.request('/operations/stats')
   }
 
   // User endpoints
@@ -329,6 +368,36 @@ class ApiClient {
     return this.request('/mail/admin/config', {
       method: 'POST',
       body: JSON.stringify({ enabled, domain }),
+    })
+  }
+
+  // Version control endpoints
+  async getVersionHistory(entityType, entityId, limit = 20) {
+    return this.request(`/versions/history/${entityType}/${entityId}?limit=${limit}`)
+  }
+
+  async getVersion(entityType, entityId, versionNumber) {
+    return this.request(`/versions/${entityType}/${entityId}/${versionNumber}`)
+  }
+
+  async getLatestVersion(entityType, entityId) {
+    return this.request(`/versions/${entityType}/${entityId}/latest`)
+  }
+
+  async getAllVersionedEntities() {
+    return this.request('/versions/entities')
+  }
+
+  async createSnapshot(entityType, entityId, snapshotData, description) {
+    return this.request('/versions/snapshot', {
+      method: 'POST',
+      body: JSON.stringify({ entity_type: entityType, entity_id: entityId, snapshot_data: snapshotData, description }),
+    })
+  }
+
+  async rollbackToVersion(entityType, entityId, versionNumber) {
+    return this.request(`/versions/rollback/${entityType}/${entityId}/${versionNumber}`, {
+      method: 'POST',
     })
   }
 }

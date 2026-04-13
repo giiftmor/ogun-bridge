@@ -1,10 +1,10 @@
 # ALSM-UI Implementation Status
 
 ## Document Information
-- **Version**: 2.3.0
-- **Date**: March 10, 2026
+- **Version**: 2.5.0
+- **Date**: March 28, 2026
 - **Status**: Phase 2 Complete, Phase 3 Partial
-- **Last Updated**: March 10, 2026
+- **Last Updated**: March 28, 2026
 
 ---
 
@@ -17,7 +17,8 @@
 6. [Security & Authentication](#security--authentication)
 7. [Technical Debt & Known Issues](#technical-debt--known-issues)
 8. [Next Steps](#next-steps)
-9. [Optional Improvements](#optional-improvements)
+9. [Undocumented Features](#undocumented-features-found-in-codebase)
+10. [Optional Improvements](#optional-improvements)
 
 ---
 
@@ -34,10 +35,17 @@ The Authentik LDAP Sync Management UI (ALSM-UI) has completed Phase 1, Phase 2, 
 - ✅ **Change Detection** - Automated detection of LDAP drift
 - ✅ **Approval Workflow UI** - Review and approve/reject pending changes
 - ✅ **Fixed Critical Bug** - Resolved "Invalid Attribute Syntax" error for akadmin user
+- ✅ **Authentication System** - Complete login/logout/register with bcrypt
+- ✅ **RBAC** - Admin/Reviewer/Viewer roles with protected routes
+- ✅ **Session Management** - Token-based sessions with 7-day expiry
+- ✅ **Profile Management** - User profiles with service access visualization
+- ✅ **Password Invite System** - Email-based password creation workflow
+- ✅ **Webhook System** - Event notifications for external services
+- ✅ **Mail Admin** - Mailbox management and quota control
 
 ### Completed Features
 - ✅ WebSocket real-time log streaming
-- ✅ Password validation detection
+- ✅ Password validation detection (skip inactive users)
 - ✅ Change approval workflow UI (`/changes`)
 - ✅ Password sync to LDAP + Authentik
 - ✅ Self-service password change
@@ -45,13 +53,24 @@ The Authentik LDAP Sync Management UI (ALSM-UI) has completed Phase 1, Phase 2, 
 - ✅ User Detail (PID) page
 - ✅ Mail Settings page
 - ✅ Frontend improvements (toasts, skeletons, debounce)
+- ✅ Profile Management page
+- ✅ Password Invite System (send/bulk/force-reset)
+- ✅ Webhook System
+- ✅ Mail Admin functions
+- ✅ Authentication System with RBAC
+- ✅ Session Management
+- ✅ **Force Sync** - Sync all users including inactive
+- ✅ **SSHA512 Password Scheme** - Compatible with Dovecot mailserver
+- ✅ **memberOf Plugin Support** - Group membership updates trigger memberOf
+- ✅ **altEmail from Authentik** - Invite emails sent to user's altEmail attribute
+- ✅ **SMTP Configuration** - Full email pipeline via docker-compose
 
 ### Project Status
 - **Phase 1**: Complete ✅
 - **Phase 2**: Complete ✅
-- **Phase 3**: Partial (Approval UI done, RBAC pending) ⚠️
+- **Phase 3**: Partial (Approval UI done, RBAC complete, Version Control pending) ⚠️
 - **Phase 4**: Not Started ❌
-- **Status**: Production Ready (authentication needed)
+- **Status**: Production Ready (authentication implemented, LDAP/Mailserver integration fixed)
 
 ---
 
@@ -178,28 +197,21 @@ const entry = {
 }
 ```
 
-### 1.6 Log Viewer (Completed - Needs Debugging)
+### 1.6 Log Viewer (Completed)
 
-**Status:** ⚠️ Built but not working
+**Status:** ✅ Working
 
-**Features Implemented:**
-- Real-time log streaming (UI component ready)
+**Features:**
+- Real-time log streaming via WebSocket
 - Log filtering by level, search, user
 - Clean log display with timestamps
 - WebSocket subscription to 'logs' channel
+- Export logs functionality
 
-**Current Issue:**
-- WebSocket connects successfully
-- Frontend subscribes to 'logs' channel
-- Backend `broadcastLog()` function implemented
-- **But:** Logs not appearing in UI
-- **Likely cause:** WebSocket subscription timing or channel mismatch
-
-**Debug Status:**
-- WebSocket connection: ✅ Working
-- Channel subscription: ✅ Working  
-- Backend emitting: ⚠️ Needs verification
-- Frontend receiving: ❌ Not working
+**Implementation:**
+- Backend broadcasts to 'logs' channel via `broadcastLog()`
+- Frontend subscribes via Socket.io client
+- All sync operations emit logs (user create/update/delete, group sync, etc.)
 
 ### 1.7 Database Migration (Completed)
 
@@ -254,28 +266,24 @@ POST /api/changes/:id/reject   # Reject change
 GET  /api/changes/stats/summary # Statistics
 ```
 
-### 2.2 Password Validation Detection (In Progress)
+### 2.2 Password Validation Detection (Completed)
 
-**Status:** 🔄 Planning
+**Status:** ✅ Done
 
-**Goal:** Detect users without passwords in Authentik and mark as inactive
+**Implementation:**
+- Uses `last_login` field from Authentik to detect inactive users
+- Skips LDAP sync for users who have never logged in
+- Logs skipped users during sync cycle
+- Force sync bypasses this check
 
-**Discovery:**
-- Authentik API returns `password_change_date` field
-- If `null` → user has no password set
-- Should skip LDAP sync for passwordless users
-- Store as special change type: "inactive_user"
-
-**Implementation Plan:**
-1. Check `password_change_date` in sync
-2. Skip LDAP creation if null
-3. Store in `changes` table with type='inactive_user'
-4. Show in UI with special badge "No Password Set"
-
-**Next Steps:**
-- [ ] Add password check to `syncService.js`
-- [ ] Create UI badge for inactive users
-- [ ] Add filter for "inactive" status
+**Code Location:** `backend/src/services/syncService.js:402-406`
+```javascript
+// Skip users who have never logged in (inactive) - unless force sync
+if (!authentikUser.last_login && !force) {
+  broadcastLog(io, 'info', `Skipping user who has never logged in: ${authentikUser.username}`)
+  continue
+}
+```
 
 ### 2.3 Approval Queue UI
 
@@ -318,11 +326,20 @@ GET  /api/changes/stats/summary # Statistics
 
 ### 3.3 Version Control & Rollback
 
-**Status:** ❌ Not Implemented
+**Status:** ✅ Implemented
 
-- User state snapshots before changes
-- Point-in-time recovery
-- One-click rollback
+- User state snapshots automatically created before sync changes
+- Point-in-time recovery via version history
+- One-click rollback UI at `/versions`
+- Snapshots for both users and groups
+- Snapshot data stored in PostgreSQL `versions` table
+- API endpoints: `/api/versions/*`
+
+**Implementation:**
+- `backend/src/services/versionService.js` - Snapshot CRUD operations
+- `backend/src/routes/versions.js` - REST API endpoints
+- `frontend/src/pages/VersionHistory.jsx` - Version history UI
+- Integrated into syncService.js - Auto-snapshots before update/delete
 
 ---
 
@@ -359,8 +376,19 @@ GET  /api/changes/stats/summary # Statistics
 
 All critical issues from Phase 1 have been resolved:
 - ✅ "All" Filter in User Browser - Fixed
-- ✅ Group Sync Failing - Fixed  
-- ✅ WebSocket Log Streaming - Fixed (event name mismatch + missing io param)
+- ✅ Group Sync Failing - Fixed (individual member add/delete operations)
+- ✅ WebSocket Log Streaming - Working
+
+### Integration Fixes (March 2026)
+
+**LDAP/Mailserver Integration Issues Resolved:**
+1. ✅ **Password Scheme Mismatch** - Changed LDAP from PBKDF2-SHA512 to SSHA512 (Dovecot compatible)
+2. ✅ **Mailserver LDAP Host** - Fixed IP from 172.18.0.1 to 192.168.0.200
+3. ✅ **memberOf Plugin** - Enabled; group sync uses individual add/delete to trigger memberOf
+4. ✅ **Network Isolation** - ALSM backend joined to mail-network
+5. ✅ **SMTP Env Vars** - Added SMTP_* variables to docker-compose.yml
+6. ✅ **altEmail Source** - Now gets altEmail from Authentik attributes (not LDAP)
+7. ✅ **Frontend WebSocket** - Fixed VITE_WS_URL to use relative path (/socket.io)
 
 ### Technical Debt
 
@@ -398,11 +426,9 @@ All critical issues from Phase 1 have been resolved:
 
 ### Security Considerations
 
-**1. No Authentication (Critical)**
-- **Status:** Not implemented
-- **Impact:** Anyone can access the UI
-- **Priority:** High for production
-- **Planned:** Phase 4
+**1. ~~No Authentication~~** ✅ Implemented
+- Token-based authentication with 7-day expiry
+- All API endpoints protected
 
 **2. API Token in .env**
 - **Status:** Plain text in environment file
@@ -413,6 +439,14 @@ All critical issues from Phase 1 have been resolved:
 - **Status:** Hardcoded origins
 - **Risk:** Low in development
 - **Future:** Environment-based configuration
+
+**4. HTTPS (Not Configured)**
+- **Status:** Not implemented
+- **Priority:** High for production
+
+**5. Rate Limiting (Not Implemented)**
+- **Status:** Not implemented
+- **Priority:** Medium for production
 
 ---
 
@@ -469,12 +503,30 @@ All issues from Phase 1 are now resolved!
 ### Immediate (This Week)
 
 1. ~~**Fix WebSocket Logs**~~ ✅ DONE
-2. ~~**Fix "All" Filter"~~ ✅ DONE (was already resolved)
+2. ~~**Fix "All" Filter"~~ ✅ DONE
 3. ~~**Password Validation**~~ ✅ DONE
-   - Skip LDAP sync for passwordless users
-   - Track inactive users in changes table
-   - Add UI badge for inactive users
-   - Add "Inactive" filter in User Browser
+   - Skip LDAP sync for users who never logged in
+   - Skip inactive users unless force sync
+
+4. ~~**Force Sync**~~ ✅ DONE
+   - POST /api/sync/run?force=true syncs all users including inactive
+   - UI buttons for "Sync Now" and "Force Sync" on Dashboard
+
+5. ~~**SSHA512 Password Scheme**~~ ✅ DONE
+   - LDAP password hashing changed from PBKDF2-SHA512 to SSHA512
+   - Compatible with Dovecot mailserver authentication
+
+6. ~~**memberOf Plugin Support**~~ ✅ DONE
+   - Group sync uses individual add/delete operations
+   - Triggers OpenLDAP memberOf overlay
+
+7. ~~**altEmail from Authentik**~~ ✅ DONE
+   - Invite emails sent to altEmail from Authentik attributes
+   - Falls back to primary email if altEmail not set
+
+8. ~~**SMTP Configuration**~~ ✅ DONE
+   - Added SMTP_* env vars to docker-compose.yml
+   - Full email pipeline working for invites
 
 ### Short Term (Next Sprint)
 
@@ -508,14 +560,25 @@ All issues from Phase 1 are now resolved!
 
 ### Priority Items (Next)
 
-10. **Authentication System** (Priority: Critical)
-    - User login
-    - Session management
-    - Required before production
+10. ~~**Authentication System**~~ ✅ DONE
+    - User login/logout/register
+    - Session management (7-day tokens)
+    - bcrypt password hashing
 
-11. **Role-Based Access Control** (Priority: High)
+11. ~~**Role-Based Access Control**~~ ✅ DONE
     - Admin/Reviewer/Viewer roles
     - Permission-based UI
+    - Protected routes
+
+### Remaining Objectives (March 2026)
+
+| Priority | Feature | Status |
+|----------|---------|--------|
+| High | ~~Version Control & Rollback~~ | ✅ DONE |
+| High | HTTPS/TLS Configuration | ❌ Not Configured |
+| Medium | Rate Limiting | ❌ Not Implemented |
+| Low | Console Logger Timezone Fix | ❌ Not Fixed |
+| Low | Enhanced Error Handling | ❌ Not Implemented |
 
 ---
 
@@ -574,12 +637,12 @@ These are enhancements that are **not required** for core functionality but coul
 | **Conflict Resolution UI** | Visual comparison when Authentik and LDAP differ |
 | **Auto-Fix Suggestions** | AI-powered error analysis and fixes |
 | **Configuration UI** | Edit sync settings from UI instead of env vars |
-| **Session Management** | View active sessions, force logout |
-| **MFA Integration** | Support for TOTP, WebAuthn, backup codes |
+| ~~**Session Management**~~ | ✅ Implemented (token-based, 7-day expiry, hourly cleanup) |
+| ~~**MFA Integration**~~ | Support for TOTP, WebAuthn, backup codes |
 | **LDAP Group Hierarchy** | Visual tree view of nested groups |
 | **Audit Log Retention** | Configurable log retention policies |
 | **Data Import** | Bulk user import from CSV |
-| **Webhooks** | External notifications when changes occur |
+| ~~**Webhooks**~~ | ✅ Implemented (create, test, delete, event triggers) |
 | **Password Policy Engine** | Custom password complexity rules |
 | **User Activity Analytics** | Login history, activity timeline |
 
@@ -594,6 +657,204 @@ These are enhancements that are **not required** for core functionality but coul
 | **Template System** | User templates for批量 creation |
 | **Audit Log Search** | Advanced search with regex, date ranges |
 | **Dashboard Customization** | User-configurable widgets |
+
+---
+
+## Undocumented Features (Found in Codebase)
+
+The following features exist in the codebase but were **not documented** in PROJECT-SCOPE.md or previous versions of this document. This section serves to catalog them for awareness and future documentation updates.
+
+### 1. Profile Management System
+
+**Route:** `/api/users/profile/:username` (backend) | `/profile` (frontend)
+
+**Features:**
+- User profile with service access visualization
+- Password status display (has password, last changed, expires)
+- Force password reset functionality
+- Service access based on groups (mail, vpn, media, cloud)
+- Quick actions: refresh, change password, send password email, force reset
+
+**Database Table:** `user_profiles`
+- Tracks password methods: `manual`, `email_invite`, `reset`
+- Alt email tracking
+- Email invite status and timestamp
+- Password sync status to LDAP and Authentik
+
+**Files:**
+- `backend/src/services/userProfileService.js`
+- `frontend/src/pages/ProfileManagement.jsx`
+
+---
+
+### 2. Password Invite System
+
+**Routes:**
+- `POST /api/invite/send/:username` - Send password creation email to single user
+- `POST /api/invite/send-bulk` - Send password creation emails to multiple users
+- `POST /api/invite/force-reset/:username` - Force password reset (invalidate and send email)
+
+**Features:**
+- Send password creation/invite emails to users
+- Bulk send capability
+- Force password reset functionality
+- Updates user profile with invite status
+- Creates audit log entries
+
+**Files:**
+- `backend/src/routes/invite.js`
+- `backend/src/services/emailService.js`
+
+---
+
+### 3. Webhook System
+
+**Routes:**
+- `GET /api/invite/webhooks` - List all webhooks
+- `POST /api/invite/webhooks` - Create webhook
+- `DELETE /api/invite/webhooks/:id` - Delete webhook
+- `POST /api/invite/webhooks/:id/test` - Test webhook
+
+**Features:**
+- CRUD operations for webhooks
+- Event-based triggers (password_created, etc.)
+- Webhook testing capability
+- Triggered after password creation
+
+**Database Table:** `webhooks`
+- Stores webhook configurations
+- Event subscriptions per webhook
+
+**Files:**
+- `backend/src/routes/invite.js`
+- `backend/src/services/webhookService.js`
+
+---
+
+### 4. Mail Admin Functions
+
+**Routes:** `/api/mail/admin`
+- `GET /api/mail/admin/status` - Get mail server status and mailbox list
+- `POST /api/mail/admin/mailbox` - Create mailbox
+- `DELETE /api/mail/admin/mailbox/:email` - Delete mailbox
+- `POST /api/mail/admin/quota` - Update mailbox quota
+- `GET /api/mail/admin/config` - Get mail config
+- `POST /api/mail/admin/config` - Update mail config
+
+**Features:**
+- Mailbox management (create/delete)
+- Quota management per mailbox
+- Mail server status monitoring
+- LDAP mode integration
+
+**Files:**
+- `backend/src/routes/mailAdmin.js`
+- `backend/src/services/mailserver.js`
+
+---
+
+### 5. Authentication & User Management
+
+**Routes:** `/api/auth`
+- `POST /api/auth/register` - Register new user
+- `POST /api/auth/login` - User login
+- `POST /api/auth/logout` - User logout
+- `GET /api/auth/me` - Get current user
+- `GET /api/auth/users` - List all users (admin)
+- `DELETE /api/auth/users/:id` - Delete user (admin)
+- `PUT /api/auth/users/:id/role` - Change user role (admin)
+- `PUT /api/auth/users/:id/toggle` - Enable/disable user (admin)
+- `POST /api/auth/users/:id/reset-password` - Admin password reset
+- `POST /api/auth/change-password` - Self password change
+
+**Features:**
+- User registration with role selection
+- Login with session management
+- Role-based access (admin, reviewer, viewer)
+- User enable/disable
+- Password reset by admin
+- Self-service password change
+
+**Database Tables:** `auth_users`, `auth_sessions`
+- User accounts with password hashing
+- Session tokens with 7-day expiry
+- Role-based permissions
+
+**Files:**
+- `backend/src/routes/auth.js`
+- `backend/src/middleware/auth.js`
+
+---
+
+### 6. Session Management
+
+**Features:**
+- Token-based sessions with 7-day expiry
+- Automatic session cleanup (hourly)
+- Multiple sessions per user support
+- IP address and user agent tracking
+- Session validation on protected routes
+
+**Files:**
+- `backend/src/middleware/auth.js`
+
+---
+
+### Database Tables Summary
+
+| Table | Purpose | Status |
+|-------|---------|--------|
+| `changes` | Detected LDAP changes awaiting approval | ✅ Documented |
+| `versions` | Snapshots for rollback capability | ✅ Documented |
+| `audit_log` | Complete change history | ✅ Documented |
+| `sync_history` | Track sync cycles | ✅ Documented |
+| `user_profiles` | Track user password status and alt-email | ❌ **Undocumented** |
+| `webhooks` | Webhook configurations | ❌ **Undocumented** |
+| `auth_users` | Users who can log into ALSM UI | ⚠️ Partial |
+| `auth_sessions` | Active login sessions | ❌ **Undocumented** |
+
+---
+
+### Backend Routes vs Documentation
+
+| Route | In PROJECT-SCOPE? | In IMPLEMENTATION-STATUS? |
+|-------|-------------------|---------------------------|
+| `/api/health` | ✅ | ✅ |
+| `/api/dashboard` | ✅ | ✅ |
+| `/api/users` | ✅ | ✅ |
+| `/api/groups` | ✅ | ✅ |
+| `/api/schema` | ✅ | ✅ |
+| `/api/changes` | ✅ | ✅ |
+| `/api/sync` | ✅ | ✅ |
+| `/api/logs` | ✅ | ✅ |
+| `/api/password` | ✅ | ✅ |
+| `/api/audit` | ✅ | ✅ |
+| `/api/mail` | ✅ | ✅ |
+| `/api/mail/admin` | ❌ | ❌ |
+| `/api/invite` | ❌ | ❌ |
+| `/api/auth` | ⚠️ Partial | ⚠️ Partial |
+| `/api/test` | ❌ | ❌ |
+
+---
+
+### Frontend Pages vs Documentation
+
+| Page | Route | In PROJECT-SCOPE? | In IMPLEMENTATION-STATUS? |
+|------|-------|-------------------|---------------------------|
+| Dashboard | `/` | ✅ | ✅ |
+| UserBrowser | `/users` | ✅ | ✅ |
+| UserDetail | `/users/:username` | ✅ | ✅ |
+| GroupBrowser | `/groups` | ✅ | ✅ |
+| LogViewer | `/logs` | ✅ | ✅ |
+| SchemaMapper | `/schema` | ✅ | ✅ |
+| ChangesBrowser | `/changes` | ✅ | ✅ |
+| AuditViewer | `/audit` | ✅ | ✅ |
+| PasswordManagement | `/password` | ✅ | ✅ |
+| SelfServicePasswordChange | `/self-service-password` | ⚠️ Partial | ✅ |
+| ProfileManagement | `/profile` | ❌ | ❌ |
+| MailSettings | `/mail` | ✅ | ✅ |
+| MailAdmin | `/mail-admin` | ❌ | ❌ |
+| Login | `/login` | ⚠️ Partial | ⚠️ Partial |
 
 ---
 
@@ -728,16 +989,31 @@ ALSM becomes the central **Identity Management (IDM) hub** for password and secu
 
 ## Conclusion
 
-Phase 1 is **95% complete** with minor bugs to fix. Phase 2 is **40% complete** with change detection working but UI pending. The project is on track for completion, with the core sync integration successfully delivered.
+Phase 1 is **100% complete**. Phase 2 is **100% complete**. Phase 3 is **~90% complete** (Approval UI, RBAC, Force Sync, Password Validation, Version Control all done). Phase 4 has not started.
 
-### Current State: Production-Ready for Monitoring ✅
-### Target State: Production-Ready for Change Management 🎯
+The project now includes several undocumented features discovered during codebase analysis:
+- Profile Management System
+- Password Invite System
+- Webhook System
+- Mail Admin Functions
+- Complete Authentication System
+- Session Management
+- Force Sync
+- SSHA512 Password Scheme
+- memberOf Plugin Support
+- SMTP Configuration
+
+### Current State: Production-Ready (LDAP/Mailserver Integration Fixed) ✅
+### Target State: Production Deployment 🎯
 
 ---
 
 **Document Control**
-- Next Update: February 21, 2026
-- Update Frequency: Every 2 days during active development
+- Version: 2.5.0 (March 28, 2026)
+- Previous Version: 2.4.0 (March 11, 2026)
+- Changes: Updated implemented features (Force Sync, SSHA512, memberOf, altEmail, SMTP), marked WebSocket as working, added Integration Fixes section
+- Next Update: As needed
+- Update Frequency: As features are added or changed
 - Owner: Development Team
 - Status: Living Document
 

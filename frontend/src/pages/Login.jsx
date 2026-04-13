@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { apiClient } from '../services/api'
 
@@ -87,7 +87,13 @@ export function Login() {
           </button>
         </form>
 
-        <div className="mt-6 text-center">
+        <div className="mt-6 text-center space-y-2">
+          <Link
+            to="/forgot-password"
+            className="block text-sm text-blue-600 dark:text-blue-400 hover:underline"
+          >
+            Forgot Password?
+          </Link>
           <p className="text-sm text-gray-500 dark:text-gray-400">
             Contact your administrator if you need access.
           </p>

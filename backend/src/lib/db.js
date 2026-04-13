@@ -181,12 +181,50 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
   token VARCHAR(255) UNIQUE NOT NULL,
   ip_address VARCHAR(45),
   user_agent VARCHAR(500),
-  expires_at TIMESTAMP NOT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_token ON auth_sessions(token);
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires ON auth_sessions(expires_at);
+
+-- ============================================
+-- Password Reset Tokens Table
+-- Store password reset tokens
+-- ============================================
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES auth_users(id) ON DELETE CASCADE,
+  token VARCHAR(255) UNIQUE NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_token ON password_reset_tokens(token);
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_expires ON password_reset_tokens(expires_at);
+
+-- ============================================
+-- Mail Settings Table
+-- Store SMTP configuration
+-- ============================================
+CREATE TABLE IF NOT EXISTS mail_settings (
+  id SERIAL PRIMARY KEY,
+  host VARCHAR(255) NOT NULL DEFAULT 'smtp.example.com',
+  port INTEGER DEFAULT 587,
+  secure BOOLEAN DEFAULT false,
+  username VARCHAR(255),
+  password VARCHAR(255),
+  from_name VARCHAR(255) DEFAULT 'ALSM',
+  from_address VARCHAR(255) DEFAULT 'alsm@example.com',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Insert default settings if not exists
+INSERT INTO mail_settings (id, host, port, secure, from_name, from_address)
+SELECT 1, 'smtp.example.com', 587, false, 'ALSM', 'alsm@example.com'
+WHERE NOT EXISTS (SELECT 1 FROM mail_settings WHERE id = 1);
 `
 
 // Helper to check if database exists

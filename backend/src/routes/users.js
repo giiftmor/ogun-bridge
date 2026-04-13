@@ -3,7 +3,7 @@ import { authentikClient } from '../services/authentikClient.js'
 import { ldapClient } from '../services/ldapClient.js'
 import { Change, Attribute } from 'ldapts'
 import { logger } from '../utils/logger.js'
-import { getAuditLogs, getLastAuditLogByAction } from '../services/auditService.js'
+import { getAuditLogs, getLastAuditLogByAction, getLastPasswordAction } from '../services/auditService.js'
 import { addLogToCache } from '../services/logCache.js'
 import { authenticate } from '../middleware/auth.js'
 
@@ -41,7 +41,7 @@ usersRouter.get('/', async (req, res) => {
     const ldapMap = new Map(ldapUsers.map(u => [u.uid, u]))
     
     // Combine and add sync status
-    const users = authentikUsers.map(aUser => {
+    const users = await Promise.all(authentikUsers.map(async (aUser) => {
       const lUser = ldapMap.get(aUser.username)
       
       let syncStatus = 'not_synced'
@@ -58,6 +58,21 @@ usersRouter.get('/', async (req, res) => {
       
       const hasPassword = !!aUser.password_change_date
       
+      // Get last password action
+      let lastPasswordAction = null
+      try {
+        const lastAction = await getLastPasswordAction(aUser.username)
+        if (lastAction) {
+          lastPasswordAction = {
+            action: lastAction.action,
+            timestamp: lastAction.timestamp,
+            actor: lastAction.actor,
+          }
+        }
+      } catch (e) {
+        // Ignore errors - non-critical
+      }
+      
       return {
         id: aUser.pk,
         username: aUser.username,
@@ -68,23 +83,20 @@ usersRouter.get('/', async (req, res) => {
         error,
         hasPassword,
         lastSynced: lUser ? new Date().toISOString() : null,
+        lastPasswordAction,
       }
-    })
+    }))
     
     // Filter by status if requested
     const filtered = (status && status !== 'all')
       ? users.filter(u => u.syncStatus === status)
       : users
-    // Filter by status if requested (but skip if status is 'all')
-    // const filtered = (status && status !== 'all')
-    //   ? users.filter(u => u.syncStatus === status)
-    //   : users
 
 
     res.json(filtered)
   } catch (error) {
     logger.error('Error fetching users:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to fetch users' })
   }
 })
 

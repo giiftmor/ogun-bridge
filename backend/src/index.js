@@ -24,6 +24,8 @@ import { mailRouter } from './routes/mail.js'
 import { mailAdminRouter } from './routes/mailAdmin.js'
 import { inviteRouter } from './routes/invite.js'
 import { authRouter } from './routes/auth.js'
+import { versionRouter } from './routes/versions.js'
+import { operationsRouter } from './routes/operations.js'
 import { setupWebSocket } from './services/websocket.js'
 import { cleanupExpiredSessions, authenticate, optionalAuth } from './middleware/auth.js'
 import { addLogToCache } from './services/logCache.js'
@@ -86,6 +88,8 @@ app.use('/api/mail', mailRouter)
 app.use('/api/mail/admin', mailAdminRouter)
 app.use('/api/invite', inviteRouter)
 app.use('/api/auth', authRouter)
+app.use('/api/versions', versionRouter)
+app.use('/api/operations', operationsRouter)
 
 
 // WebSocket setup

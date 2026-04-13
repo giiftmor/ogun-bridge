@@ -192,6 +192,36 @@ function UserListItem({ user, selected, onClick }) {
     }
   }
 
+  const getRelativeTime = (timestamp) => {
+    if (!timestamp) return ''
+    const now = new Date()
+    const then = new Date(timestamp)
+    const diffMs = now - then
+    const diffMins = Math.floor(diffMs / 60000)
+    const diffHours = Math.floor(diffMs / 3600000)
+    const diffDays = Math.floor(diffMs / 86400000)
+    
+    if (diffMins < 1) return 'just now'
+    if (diffMins < 60) return `${diffMins}m ago`
+    if (diffHours < 24) return `${diffHours}h ago`
+    return `${diffDays}d ago`
+  }
+
+  const getPasswordActionInfo = (action) => {
+    switch (action) {
+      case 'password_invite_sent':
+        return { icon: '📧', label: 'Invite', variant: 'default' }
+      case 'password_force_reset':
+        return { icon: '🔄', label: 'Force reset', variant: 'error' }
+      case 'password_changed':
+        return { icon: '🔑', label: 'Changed', variant: 'success' }
+      case 'password_reset':
+        return { icon: '🔑', label: 'Reset', variant: 'warning' }
+      default:
+        return { icon: '❓', label: action, variant: 'secondary' }
+    }
+  }
+
   return (
     <button
       onClick={onClick}
@@ -214,6 +244,13 @@ function UserListItem({ user, selected, onClick }) {
           {user.name && (
             <div className="text-sm text-muted-foreground truncate">
               {user.name}
+            </div>
+          )}
+          {user.lastPasswordAction && (
+            <div className="mt-1">
+              <Badge variant={getPasswordActionInfo(user.lastPasswordAction.action).variant} className="text-xs">
+                {getPasswordActionInfo(user.lastPasswordAction.action).icon} {getPasswordActionInfo(user.lastPasswordAction.action).label} {getRelativeTime(user.lastPasswordAction.timestamp)}
+              </Badge>
             </div>
           )}
         </div>

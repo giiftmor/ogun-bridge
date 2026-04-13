@@ -4,6 +4,7 @@ import { logger } from '../utils/logger.js'
 import { MailserverIntegration } from './mailserver.js'
 import { detectChanges } from './changeDetector.js'
 import { addLogToCache } from './logCache.js'
+import { createSnapshot } from './versionService.js'
 
 function hashPasswordSSHA512(password) {
   const salt = crypto.randomBytes(16)
@@ -214,6 +215,14 @@ async function createLDAPUser(client, user, config, io, existingUsers = []) {
 
 async function updateLDAPUser(client, user, existingUser, config, io) {
   const dn = `uid=${user.username},${config.ldap.userBaseDN}`
+  
+  // Create snapshot before update for rollback capability
+  try {
+    await createSnapshot('user', user.username, existingUser, 'sync', 'Auto-snapshot before sync update')
+  } catch (err) {
+    logger.warn(`Failed to create snapshot for ${user.username}:`, err.message)
+  }
+
   const changes = []
 
   if (user.email && user.email !== existingUser.mail) {
@@ -260,6 +269,16 @@ async function updateLDAPUser(client, user, existingUser, config, io) {
 
 async function deleteLDAPUser(client, username, config, io) {
   const dn = `uid=${username},${config.ldap.userBaseDN}`
+
+  // Create snapshot before delete for rollback capability
+  try {
+    const { searchEntries } = await client.search(dn, { attributes: ['uid', 'cn', 'sn', 'mail', 'altEmail', 'uidNumber', 'gidNumber'] })
+    if (searchEntries[0]) {
+      await createSnapshot('user', username, searchEntries[0], 'sync', 'Auto-snapshot before sync delete')
+    }
+  } catch (err) {
+    logger.warn(`Failed to create snapshot for deleted user ${username}:`, err.message)
+  }
 
   if (config.sync.dryRun) {
     broadcastLog(io, 'info',  '[DRY RUN] Would delete LDAP user', { username, dn })
@@ -309,6 +328,14 @@ async function syncGroups(client, config, io) {
         broadcastLog(io, 'info',  'Created LDAP group', { group: group.name })
       } catch (err) {
         if (err.message.includes('Already Exists') || err.code === 68) {
+          // Create snapshot before group update for rollback capability
+          try {
+            const currentMembers = await getCurrentGroupMembers(client, dn)
+            await createSnapshot('group', group.name, { members: currentMembers }, 'sync', 'Auto-snapshot before group sync')
+          } catch (snapErr) {
+            logger.warn(`Failed to create snapshot for group ${group.name}:`, snapErr.message)
+          }
+          
           const currentMembers = await getCurrentGroupMembers(client, dn)
           
           for (const newMember of members) {

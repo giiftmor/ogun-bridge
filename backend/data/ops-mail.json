@@ -1,0 +1,698 @@
+[
+  {
+    "id": "1776123551556-kc09ceqh8",
+    "timestamp": "2026-04-13T23:39:11.556Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "172.17.0.1",
+      "port": 2525,
+      "latency": 187,
+      "success": true
+    }
+  },
+  {
+    "id": "1776107787944-ff1eg13hc",
+    "timestamp": "2026-04-13T19:16:27.944Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "172.17.0.1",
+      "port": 2525,
+      "latency": 176,
+      "success": true
+    }
+  },
+  {
+    "id": "1776105530916-vmsvzmr23",
+    "timestamp": "2026-04-13T18:38:50.916Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "success": false,
+      "error": "Invalid login: 535 Invalid AUTH PLAIN format"
+    }
+  },
+  {
+    "id": "1776099748475-1a885f03e",
+    "timestamp": "2026-04-13T17:02:28.475Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "success": false,
+      "error": "Connection timeout"
+    }
+  },
+  {
+    "id": "1776091616537-699h46f5q",
+    "timestamp": "2026-04-13T14:46:56.537Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "100.96.233.80",
+      "port": 587,
+      "latency": 187,
+      "success": true
+    }
+  },
+  {
+    "id": "1776091301838-j5gfqh42s",
+    "timestamp": "2026-04-13T14:41:41.838Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "100.96.233.80",
+      "port": 587,
+      "latency": 61,
+      "success": true
+    }
+  },
+  {
+    "id": "1776091268911-s63akehw0",
+    "timestamp": "2026-04-13T14:41:08.911Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "100.96.233.80",
+      "port": 587,
+      "latency": 149,
+      "success": true
+    }
+  },
+  {
+    "id": "1776011859489-7x7fsamom",
+    "timestamp": "2026-04-12T16:37:39.489Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 1303,
+      "success": true
+    }
+  },
+  {
+    "id": "1775961602347-8vymlvwzg",
+    "timestamp": "2026-04-12T02:40:02.347Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 535,
+      "success": true
+    }
+  },
+  {
+    "id": "1775961598828-svdxtlnko",
+    "timestamp": "2026-04-12T02:39:58.828Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 6425,
+      "success": true
+    }
+  },
+  {
+    "id": "1775891593888-egm6hmvyi",
+    "timestamp": "2026-04-11T07:13:13.888Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 5469,
+      "success": true
+    }
+  },
+  {
+    "id": "1775856560803-mtf0sfk3b",
+    "timestamp": "2026-04-10T21:29:20.803Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 3562,
+      "success": true
+    }
+  },
+  {
+    "id": "1775850726479-drhk9kur8",
+    "timestamp": "2026-04-10T19:52:06.479Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 8627,
+      "success": true
+    }
+  },
+  {
+    "id": "1775744140291-jbh48cqu7",
+    "timestamp": "2026-04-09T14:15:40.291Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 7817,
+      "success": true
+    }
+  },
+  {
+    "id": "1775714766367-dbiwj0tkt",
+    "timestamp": "2026-04-09T06:06:06.367Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 7617,
+      "success": true
+    }
+  },
+  {
+    "id": "1775645060636-8hx5stuib",
+    "timestamp": "2026-04-08T10:44:20.636Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 5988,
+      "success": true
+    }
+  },
+  {
+    "id": "1775629019390-yohe4uryn",
+    "timestamp": "2026-04-08T06:16:59.390Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 1748,
+      "success": true
+    }
+  },
+  {
+    "id": "1775628856696-oxd8b9fpq",
+    "timestamp": "2026-04-08T06:14:16.695Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 4463,
+      "success": true
+    }
+  },
+  {
+    "id": "1775628748869-0hvs9w5in",
+    "timestamp": "2026-04-08T06:12:28.869Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 6088,
+      "success": true
+    }
+  },
+  {
+    "id": "1775624160450-bpy9e3wgc",
+    "timestamp": "2026-04-08T04:56:00.450Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 4900,
+      "success": true
+    }
+  },
+  {
+    "id": "1775623550857-m3txgr2lk",
+    "timestamp": "2026-04-08T04:45:50.857Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 6593,
+      "success": true
+    }
+  },
+  {
+    "id": "1775594287296-fh1okoezl",
+    "timestamp": "2026-04-07T20:38:07.296Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 1909,
+      "success": true
+    }
+  },
+  {
+    "id": "1775593936862-tnpe8g425",
+    "timestamp": "2026-04-07T20:32:16.862Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 1777,
+      "success": true
+    }
+  },
+  {
+    "id": "1775593613445-lmy6q3rhq",
+    "timestamp": "2026-04-07T20:26:53.445Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 8588,
+      "success": true
+    }
+  },
+  {
+    "id": "1775592626957-a8dowgq7m",
+    "timestamp": "2026-04-07T20:10:26.957Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 499,
+      "success": true
+    }
+  },
+  {
+    "id": "1775592606512-zic2mltau",
+    "timestamp": "2026-04-07T20:10:06.512Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 474,
+      "success": true
+    }
+  },
+  {
+    "id": "1775592571572-60jyphjxr",
+    "timestamp": "2026-04-07T20:09:31.572Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 4639,
+      "success": true
+    }
+  },
+  {
+    "id": "1775592350375-zyk2f0zkl",
+    "timestamp": "2026-04-07T20:05:50.375Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 508,
+      "success": true
+    }
+  },
+  {
+    "id": "1775592247100-t5ydfmdi2",
+    "timestamp": "2026-04-07T20:04:07.100Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 2282,
+      "success": true
+    }
+  },
+  {
+    "id": "1775592164738-mu33b75py",
+    "timestamp": "2026-04-07T20:02:44.738Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 5750,
+      "success": true
+    }
+  },
+  {
+    "id": "1775591440601-3k98hazgd",
+    "timestamp": "2026-04-07T19:50:40.601Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 1929,
+      "success": true
+    }
+  },
+  {
+    "id": "1775591272328-raqrs5rm8",
+    "timestamp": "2026-04-07T19:47:52.328Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 475,
+      "success": true
+    }
+  },
+  {
+    "id": "1775591231389-afu0dqnro",
+    "timestamp": "2026-04-07T19:47:11.389Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 2380,
+      "success": true
+    }
+  },
+  {
+    "id": "1775590212266-nt9g2vphs",
+    "timestamp": "2026-04-07T19:30:12.266Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 452,
+      "success": true
+    }
+  },
+  {
+    "id": "1775590110986-z1xqa1l0j",
+    "timestamp": "2026-04-07T19:28:30.986Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 508,
+      "success": true
+    }
+  },
+  {
+    "id": "1775590079329-tkipzq3rr",
+    "timestamp": "2026-04-07T19:27:59.329Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 2577,
+      "success": true
+    }
+  },
+  {
+    "id": "1775589432718-szpie3u55",
+    "timestamp": "2026-04-07T19:17:12.718Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 3272,
+      "success": true
+    }
+  },
+  {
+    "id": "1775588357565-plj2uic80",
+    "timestamp": "2026-04-07T18:59:17.565Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 1775,
+      "success": true
+    }
+  },
+  {
+    "id": "1775588129437-74m4tcsr4",
+    "timestamp": "2026-04-07T18:55:29.437Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 512,
+      "success": true
+    }
+  },
+  {
+    "id": "1775588109919-4jnuku8c3",
+    "timestamp": "2026-04-07T18:55:09.919Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 510,
+      "success": true
+    }
+  },
+  {
+    "id": "1775588094281-yc5e203td",
+    "timestamp": "2026-04-07T18:54:54.281Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 2270,
+      "success": true
+    }
+  },
+  {
+    "id": "1775587878856-1u915519g",
+    "timestamp": "2026-04-07T18:51:18.856Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 487,
+      "success": true
+    }
+  },
+  {
+    "id": "1775587874022-vaxlxarho",
+    "timestamp": "2026-04-07T18:51:14.022Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 5775,
+      "success": true
+    }
+  },
+  {
+    "id": "1775585285670-miawh2f6h",
+    "timestamp": "2026-04-07T18:08:05.670Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "host": "102.209.119.200",
+      "port": 587,
+      "latency": 577,
+      "success": true
+    }
+  },
+  {
+    "id": "1775585266371-gyca447r8",
+    "timestamp": "2026-04-07T18:07:46.371Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "success": false,
+      "error": "Hostname/IP does not match certificate's altnames: IP: 102.209.119.200 is not in the cert's list: "
+    }
+  },
+  {
+    "id": "1775585240387-k9h46glqn",
+    "timestamp": "2026-04-07T18:07:20.387Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "success": false,
+      "error": "Hostname/IP does not match certificate's altnames: IP: 102.209.119.200 is not in the cert's list: "
+    }
+  },
+  {
+    "id": "1775585212329-ehusaaqy8",
+    "timestamp": "2026-04-07T18:06:52.329Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "success": false,
+      "error": "Connection timeout"
+    }
+  },
+  {
+    "id": "1775585186607-1x19955gp",
+    "timestamp": "2026-04-07T18:06:26.607Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "success": false,
+      "error": "Connection timeout"
+    }
+  },
+  {
+    "id": "1775585171163-0az6s18dt",
+    "timestamp": "2026-04-07T18:06:11.163Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "success": false,
+      "error": "Hostname/IP does not match certificate's altnames: Host: smtp.spectres.co.za. is not in the cert's altnames: DNS:mail.spectres.co.za"
+    }
+  },
+  {
+    "id": "1775585141799-795hsdc09",
+    "timestamp": "2026-04-07T18:05:41.799Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "success": false,
+      "error": "Invalid greeting. response=421 4.3.0 mailserver.spectres.co.za Server local error: 421 4.3.0 mailserver.spectres.co.za Server local error"
+    }
+  },
+  {
+    "id": "1775585113615-skmskkr9z",
+    "timestamp": "2026-04-07T18:05:13.615Z",
+    "level": "info",
+    "category": "MAIL",
+    "message": "Mail: connection_test",
+    "metadata": {
+      "operation": "connection_test",
+      "success": false,
+      "error": "Hostname/IP does not match certificate's altnames: IP: 172.17.0.1 is not in the cert's list: "
+    }
+  }
+]

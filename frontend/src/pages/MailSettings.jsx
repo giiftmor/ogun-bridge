@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Mail, Send, Save, TestTube, Loader2, CheckCircle, XCircle, Server } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -11,19 +11,33 @@ import { apiClient } from '@/services/api'
 
 export function MailSettings() {
   const [settings, setSettings] = useState({
-    host: 'smtp.example.com',
-    port: '587',
+    host: '',
+    port: '',
     secure: false,
     user: '',
     password: '',
-    fromName: 'ALSM',
-    fromAddress: 'alsm@example.com',
+    fromName: '',
+    fromAddress: '',
   })
 
   const { data: mailConfig, isLoading } = useQuery({
     queryKey: ['mail-config'],
     queryFn: () => apiClient.getMailConfig(),
   })
+
+  useEffect(() => {
+    if (mailConfig) {
+      setSettings({
+        host: mailConfig.host || '',
+        port: mailConfig.port?.toString() || '',
+        secure: mailConfig.secure || false,
+        user: mailConfig.user || '',
+        password: '',
+        fromName: mailConfig.fromName || '',
+        fromAddress: mailConfig.fromAddress || '',
+      })
+    }
+  }, [mailConfig])
 
   const saveMutation = useMutation({
     mutationFn: (data) => apiClient.saveMailConfig(data),

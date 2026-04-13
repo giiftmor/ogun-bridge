@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { SkeletonCard } from '@/components/ui/skeleton'
 import toast from 'react-hot-toast'
@@ -25,6 +26,7 @@ import { apiClient } from '@/services/api'
 
 export function ProfileManagement() {
   const [username, setUsername] = useState('')
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', description: '', onConfirm: null })
 
   const { data: users = [], isLoading: loadingUsers } = useQuery({
     queryKey: ['users'],
@@ -341,9 +343,15 @@ export function ProfileManagement() {
                     <Button 
                       variant="default"
                       onClick={() => {
-                        if (confirm(`Send password creation email to ${profile.email || profile.username}?`)) {
-                          forceResetMutation.mutate(profile.username)
-                        }
+                        setConfirmDialog({
+                          open: true,
+                          title: 'Send Password Email',
+                          description: `Send password creation email to ${profile.email || profile.username}?`,
+                          onConfirm: () => {
+                            forceResetMutation.mutate(profile.username)
+                            setConfirmDialog({ open: false })
+                          }
+                        })
                       }}
                       disabled={forceResetMutation.isPending}
                     >
@@ -358,9 +366,15 @@ export function ProfileManagement() {
                   <Button 
                     variant="outline"
                     onClick={() => {
-                      if (confirm(`Force password reset for ${profile.username}? This will send a password creation email.`)) {
-                        forceResetMutation.mutate(profile.username)
-                      }
+                      setConfirmDialog({
+                        open: true,
+                        title: 'Force Password Reset',
+                        description: `Force password reset for ${profile.username}? This will send a password creation email.`,
+                        onConfirm: () => {
+                          forceResetMutation.mutate(profile.username)
+                          setConfirmDialog({ open: false })
+                        }
+                      })
                     }}
                     disabled={forceResetMutation.isPending}
                   >
@@ -393,6 +407,14 @@ export function ProfileManagement() {
           )}
         </div>
       </div>
+      <ConfirmDialog
+        open={confirmDialog.open}
+        onClose={() => setConfirmDialog({ open: false })}
+        onConfirm={confirmDialog.onConfirm}
+        title={confirmDialog.title}
+        description={confirmDialog.description}
+        loading={forceResetMutation.isPending}
+      />
     </div>
   )
 }

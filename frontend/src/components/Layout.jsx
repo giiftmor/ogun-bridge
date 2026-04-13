@@ -15,7 +15,8 @@ import {
   KeyRound,
   Mail,
   Server,
-  LogOut
+  LogOut,
+  History
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/store/useAppStore'
@@ -55,7 +56,9 @@ const navigation = [
   {
     category: 'System',
     items: [
+      { name: 'Operations', href: '/operations', icon: Activity },
       { name: 'Schema Mapper', href: '/schema', icon: Settings },
+      { name: 'Version History', href: '/versions', icon: History },
     ]
   },
 ]

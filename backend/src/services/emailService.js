@@ -1,46 +1,50 @@
 import nodemailer from 'nodemailer'
 import { logger } from '../utils/logger.js'
+import { getMailConfig } from '../routes/mail.js'
 
-let transporter = null
-
-export function getMailTransporter() {
-  if (transporter) return transporter
-
-  const smtpConfig = {
-    host: process.env.SMTP_HOST,
-    port: parseInt(process.env.SMTP_PORT || '587'),
-    secure: false,
-    requireTLS: true,
-    tls: {
-      rejectUnauthorized: false,
-    },
-    connectionTimeout: 10000,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASSWORD,
-    },
-  }
-
-  if (!smtpConfig.host || !smtpConfig.auth.user) {
-    logger.warn('SMTP not configured - emails will not be sent')
+export function createTransporterFromConfig(config) {
+  if (!config.host || !config.user) {
+    logger.warn('SMTP not configured - missing host or user')
     return null
   }
-
-  transporter = nodemailer.createTransport(smtpConfig)
-  logger.info('SMTP transporter initialized')
-  return transporter
+  
+  logger.info('Creating SMTP transporter', { 
+    host: config.host, 
+    port: config.port, 
+    secure: config.secure,
+    user: config.user,
+    fromAddress: config.fromAddress 
+  })
+  
+  return nodemailer.createTransport({
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    requireTLS: !config.secure,
+    tls: {
+      rejectUnauthorized: false,
+      checkServerIdentity: () => undefined,
+    },
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    auth: {
+      user: config.user,
+      pass: config.password,
+    },
+  })
 }
 
 export async function sendPasswordCreationEmail(to, username, name, altEmail = null) {
-  const transporter = getMailTransporter()
+  const config = await getMailConfig()
+  const transporter = createTransporterFromConfig(config)
   
   if (!transporter) {
     logger.warn('SMTP not configured - skipping email send')
     return { success: false, error: 'SMTP not configured' }
   }
 
-  const fromName = process.env.SMTP_FROM_NAME || 'ALSM'
-  const fromAddress = process.env.SMTP_FROM_ADDRESS || 'noreply@spectres.co.za'
+  const fromName = config.fromName || 'ALSM'
+  const fromAddress = config.fromAddress || 'noreply@spectres.co.za'
   const appUrl = process.env.APP_URL || 'https://alsm.spectres.co.za'
 
   const htmlContent = `
@@ -120,8 +124,14 @@ If you didn't request this email, please contact your system administrator.
 `
 
   try {
-    // Send to altEmail if set, otherwise fallback to primary email
     const recipientAddress = altEmail || to
+    
+    logger.info('Preparing password creation email', { 
+      to: recipientAddress, 
+      username,
+      name: name || username,
+      altEmailUsed: !!altEmail 
+    })
     
     const info = await transporter.sendMail({
       from: `"${fromName}" <${fromAddress}>`,
@@ -131,16 +141,28 @@ If you didn't request this email, please contact your system administrator.
       html: htmlContent,
     })
 
-    logger.info('Password creation email sent', { to: recipientAddress, messageId: info.messageId, altEmailUsed: !!altEmail })
+    logger.info('Password creation email sent', { 
+      to: recipientAddress, 
+      messageId: info.messageId, 
+      altEmailUsed: !!altEmail 
+    })
     return { success: true, messageId: info.messageId }
   } catch (error) {
-    logger.error('Failed to send password creation email', { error: error.message, to })
+    logger.error('Failed to send password creation email', { 
+      error: error.message, 
+      to,
+      username 
+    })
     return { success: false, error: error.message }
   }
 }
 
 export async function sendBulkPasswordEmails(users) {
+  logger.info('Starting bulk password email batch', { userCount: users.length })
+  
   const results = []
+  let successCount = 0
+  let failCount = 0
   
   for (const user of users) {
     const result = await sendPasswordCreationEmail(
@@ -149,11 +171,110 @@ export async function sendBulkPasswordEmails(users) {
       user.name,
       user.altEmail
     )
+    if (result.success) successCount++
+    else failCount++
+    
     results.push({
       username: user.username,
       ...result
     })
   }
   
+  logger.info('Bulk password email batch complete', { 
+    total: users.length, 
+    success: successCount, 
+    failed: failCount 
+  })
+  
   return results
+}
+
+export async function sendPasswordResetEmail(to, username, resetToken) {
+  const config = await getMailConfig()
+  const transporter = createTransporterFromConfig(config)
+  
+  if (!transporter) {
+    logger.warn('SMTP not configured - skipping password reset email')
+    return { success: false, error: 'SMTP not configured' }
+  }
+
+  const fromName = config.fromName || 'ALSM'
+  const fromAddress = config.fromAddress || 'noreply@spectres.co.za'
+  const appUrl = process.env.APP_URL || 'https://alsm.spectres.co.za'
+  const resetUrl = `${appUrl}/reset-password/${resetToken}`
+
+  const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px 10px 0 0;">
+    <h1 style="color: white; margin: 0; font-size: 24px;">Password Reset Request</h1>
+  </div>
+  <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px;">
+    <p>Hello ${username},</p>
+    <p>We received a request to reset your password. Click the button below to create a new password:</p>
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${resetUrl}" style="display: inline-block; background: #667eea; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600;">Reset Password</a>
+    </div>
+    <p style="font-size: 14px; color: #666;">
+      This link will expire in 1 hour.<br>
+      If you didn't request a password reset, please ignore this email.
+    </p>
+    <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+    <p style="font-size: 12px; color: #999;">
+      If the button doesn't work, copy and paste this link into your browser:<br>
+      <a href="${resetUrl}" style="color: #667eea;">${resetUrl}</a>
+    </p>
+  </div>
+</body>
+</html>
+`
+
+  const textContent = `
+Password Reset Request
+
+Hello ${username},
+
+We received a request to reset your password. Copy and paste this link into your browser:
+
+${resetUrl}
+
+This link will expire in 1 hour.
+
+If you didn't request a password reset, please ignore this email.
+`
+
+  try {
+    logger.info('Preparing password reset email', { 
+      to, 
+      username,
+      resetTokenPrefix: resetToken?.substring(0, 8) + '...'
+    })
+    
+    const info = await transporter.sendMail({
+      from: `"${fromName}" <${fromAddress}>`,
+      to: to,
+      subject: 'Reset Your ALSM Password',
+      text: textContent,
+      html: htmlContent,
+    })
+
+    logger.info('Password reset email sent', { 
+      to, 
+      messageId: info.messageId,
+      username 
+    })
+    return { success: true, messageId: info.messageId }
+  } catch (error) {
+    logger.error('Failed to send password reset email', { 
+      error: error.message, 
+      to,
+      username 
+    })
+    return { success: false, error: error.message }
+  }
 }

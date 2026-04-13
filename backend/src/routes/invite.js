@@ -1,13 +1,17 @@
 import express from 'express'
+import crypto from 'crypto'
+import pool from '../lib/db.js'
 import { ldapClient } from '../services/ldapClient.js'
 import { authentikClient } from '../services/authentikClient.js'
 import { logger } from '../utils/logger.js'
-import { sendPasswordCreationEmail, sendBulkPasswordEmails } from '../services/emailService.js'
+import { sendPasswordCreationEmail, sendPasswordResetEmail, sendBulkPasswordEmails } from '../services/emailService.js'
 import { triggerWebhook, getWebhooks, createWebhook, deleteWebhook, testWebhook } from '../services/webhookService.js'
 import { ensureUserProfile, updateUserProfile } from '../services/userProfileService.js'
-import { addLogToCache } from '../services/logCache.js'
+import { loggingService } from '../services/loggingService.js'
 import { createAuditLog } from '../services/auditService.js'
 import { authenticate } from '../middleware/auth.js'
+import { validatePassword } from './password.js'
+import { sqlNowSAST } from '../utils/timezone.js'
 
 export const inviteRouter = express.Router()
 
@@ -43,12 +47,7 @@ inviteRouter.post('/send/:username', async (req, res) => {
         email_invite_sent_at: new Date(),
       })
       
-      addLogToCache({
-        timestamp: new Date().toISOString(),
-        level: 'info',
-        message: `Password invite sent to ${username}`,
-        context: { username, email: aUser.email }
-      })
+      loggingService.info('PASSWORD', `Password invite sent to ${username}`, { username, email: aUser.email })
       
       await createAuditLog({
         action: 'password_invite_sent',
@@ -206,7 +205,7 @@ export async function triggerPasswordCreatedWebhook(username, email, services) {
   })
 }
 
-// Force password reset - invalidate password and send reset email
+// Force password reset - generate token and send reset email
 inviteRouter.post('/force-reset/:username', async (req, res) => {
   try {
     const { username } = req.params
@@ -217,60 +216,79 @@ inviteRouter.post('/force-reset/:username', async (req, res) => {
       return res.status(404).json({ error: 'User not found in Authentik' })
     }
     
-    // Get altEmail from Authentik attributes (primary source)
+    // Get email from Authentik - prefer altEmail, fallback to primary
     const altEmail = aUser.attributes?.alt_email || null
+    const primaryEmail = aUser.email
+    const sendToEmail = altEmail || primaryEmail
     
-    // Invalidate password in Authentik by forcing password change
-    try {
-      // This is a workaround - we can't truly invalidate without additional setup
-      // Instead we'll just send the password creation email
-      logger.info('Force password reset requested for user', { username })
-    } catch (akError) {
-      logger.error('Error invalidating Authentik password:', akError.message)
+    if (!sendToEmail) {
+      return res.status(400).json({ error: 'User has no email address' })
     }
     
-    // Send password creation email (same as invite but labeled as reset)
-    const result = await sendPasswordCreationEmail(
-      aUser.email,
-      username,
-      aUser.name,
-      altEmail
+    // Generate secure reset token
+    const resetToken = crypto.randomBytes(32).toString('hex')
+    
+    // Ensure user exists in local auth_users (create if not exists)
+    let userResult = await pool.query(
+      'SELECT id, username FROM auth_users WHERE username = $1',
+      [username]
     )
     
-    if (result.success) {
-      // Update user profile
-      await ensureUserProfile(username, altEmail)
-      await updateUserProfile(username, {
-        password_method: 'reset',
-        email_invite_sent: true,
-        email_invite_sent_at: new Date(),
-      })
-      
-      addLogToCache({
-        timestamp: new Date().toISOString(),
-        level: 'info',
-        message: `Force password reset email sent to ${username}`,
-        context: { username, email: aUser.email }
-      })
-      
-      await createAuditLog({
-        action: 'password_force_reset',
-        actor: 'api',
-        entity_type: 'user',
-        entity_id: username,
-        changes: { email: aUser.email, altEmail, method: 'force_reset' },
-        source: 'api',
-        success: true,
-      })
+    let userId = null
+    if (userResult.rows.length === 0) {
+      // Create local auth_users record with a placeholder password (user must reset)
+      const placeholderHash = '$2a$10$placeholderfordummyuseonly' // Never valid
+      await pool.query(
+        'INSERT INTO auth_users (username, password_hash, email, role, active) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (username) DO NOTHING',
+        [username, placeholderHash, sendToEmail, 'viewer', true]
+      )
+      // Fetch the newly created user
+      userResult = await pool.query(
+        'SELECT id, username FROM auth_users WHERE username = $1',
+        [username]
+      )
+      logger.info('Created local auth_users record for force reset', { username })
     }
+    
+    if (userResult.rows.length > 0) {
+      userId = userResult.rows[0].id
+      
+      // Delete any existing tokens for this user
+      await pool.query('DELETE FROM password_reset_tokens WHERE user_id = $1', [userId])
+      
+      // Insert new token
+      await pool.query(
+        `INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, ${sqlNowSAST()} + INTERVAL '1 hour')`,
+        [userId, resetToken]
+      )
+    }
+    
+    // Send password reset email (with token, proper template)
+    const result = await sendPasswordResetEmail(
+      sendToEmail,
+      username,
+      resetToken
+    )
+    
+    loggingService.info('PASSWORD', `Force password reset email sent to ${username}`, { username, email: sendToEmail, hasLocalAccount: !!userId })
+    
+    await createAuditLog({
+      action: 'password_force_reset',
+      actor: 'api',
+      entity_type: 'user',
+      entity_id: username,
+      changes: { email: sendToEmail, method: 'force_reset', tokenSent: result.success },
+      source: 'api',
+      success: result.success,
+    })
     
     res.json({
       success: result.success,
       username,
-      email: aUser.email,
-      altEmail,
+      email: sendToEmail,
       messageId: result.messageId,
       error: result.error,
+      message: `Password reset email sent to ${sendToEmail}`
     })
   } catch (error) {
     logger.error('Error force password reset:', error)
