@@ -4,7 +4,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: alsm-backend
+    container_name: ogun-bridge-backend
     restart: unless-stopped
     ports:
       - "3333:3333"
@@ -13,7 +13,7 @@ services:
       PORT: 3333
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: ${DB_PORT:-5432}
-      DB_NAME: ${DB_NAME:-alsm_ui}
+      DB_NAME: ${DB_NAME:-ogun_bridge}
       DB_USER: ${DB_USER:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-postgres}
       AUTHENTIK_URL: ${AUTHENTIK_URL}
@@ -23,20 +23,18 @@ services:
       LDAP_BIND_DN: ${LDAP_BIND_DN}
       LDAP_BIND_PASSWORD: ${LDAP_BIND_PASSWORD}
       LDAP_BASE_DN: ${LDAP_BASE_DN}
-      CORS_ORIGIN: ${CORS_ORIGIN:-https://alsm.spectres.co.za}
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://ogun.spectres.co.za}
       SMTP_HOST: ${SMTP_HOST:-localhost}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_SECURE: ${SMTP_SECURE:-false}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-ALSM}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Ogun Bridge}
       SMTP_FROM_ADDRESS: ${SMTP_FROM_ADDRESS:-}
       MAILSERVER_ENABLED: ${MAILSERVER_ENABLED:-true}
       MAILSERVER_DOMAIN: ${MAILSERVER_DOMAIN:-spectres.co.za}
-    volumes:
-      - ./backend:/app
     networks:
-      - alsm-network
+      - ogun-network
 
   # Frontend UI
   frontend:
@@ -46,15 +44,10 @@ services:
       args:
         VITE_API_URL: /api
         VITE_WS_URL: /socket.io
-    container_name: alsm-frontend
+    container_name: ogun-bridge-frontend
     restart: unless-stopped
-    ports:
-      - "3331:3331"
-    depends_on:
-      - backend
-    networks:
-      - alsm-network
+    network_mode: host
 
 networks:
-  alsm-network:
+  ogun-network:
     driver: bridge
