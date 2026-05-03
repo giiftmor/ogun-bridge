@@ -14,7 +14,8 @@ import {
   AlertCircle,
   RefreshCw,
   Play,
-  Cloud
+  Cloud,
+  Terminal
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -23,6 +24,7 @@ import { Badge } from '@/components/ui/badge'
 import { SkeletonCard } from '@/components/ui/skeleton'
 import toast from 'react-hot-toast'
 import { apiClient } from '@/services/api'
+import { translateError } from '@/utils/errorTranslator'
 
 export function ProfileManagement() {
   const [username, setUsername] = useState('')
@@ -49,7 +51,38 @@ export function ProfileManagement() {
       }
     },
     onError: (error) => {
-      toast.error(`Error: ${error.message}`)
+      const translated = translateError(error)
+      toast.error(translated.message)
+    },
+  })
+
+  const inviteUserMutation = useMutation({
+    mutationFn: (username) => apiClient.inviteUser(username),
+    onSuccess: (data) => {
+      if (data.success) {
+        toast.success(`Invitation sent to ${data.email || profile.email}`)
+      } else {
+        toast.error(data.error || 'Failed to send invitation')
+      }
+    },
+    onError: (error) => {
+      const translated = translateError(error)
+      toast.error(translated.message)
+    },
+  })
+
+  const generateTempPasswordMutation = useMutation({
+    mutationFn: (username) => apiClient.generateTempPassword(username),
+    onSuccess: (data) => {
+      if (data.success || data.email_sent) {
+        toast.success(`Temporary password sent to ${data.email}`)
+      } else {
+        toast.error(data.message || 'Failed to generate password')
+      }
+    },
+    onError: (error) => {
+      const translated = translateError(error)
+      toast.error(translated.message)
     },
   })
 
@@ -330,46 +363,35 @@ export function ProfileManagement() {
                     <RefreshCw className="h-4 w-4 mr-2" />
                     Refresh Profile
                   </Button>
-                  {profile.password?.hasPassword && (
-                    <Button 
-                      variant="outline"
-                      onClick={() => window.location.href = '/password'}
-                    >
-                      <Key className="h-4 w-4 mr-2" />
-                      Change Password
-                    </Button>
-                  )}
-                  {!profile.password?.hasPassword && (
-                    <Button 
-                      variant="default"
-                      onClick={() => {
-                        setConfirmDialog({
-                          open: true,
-                          title: 'Send Password Email',
-                          description: `Send password creation email to ${profile.email || profile.username}?`,
-                          onConfirm: () => {
-                            forceResetMutation.mutate(profile.username)
-                            setConfirmDialog({ open: false })
-                          }
-                        })
-                      }}
-                      disabled={forceResetMutation.isPending}
-                    >
-                      {forceResetMutation.isPending ? (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <Mail className="h-4 w-4 mr-2" />
-                      )}
-                      Send Password Email
-                    </Button>
-                  )}
+                  <Button 
+                    variant="default"
+                    onClick={() => {
+                      setConfirmDialog({
+                        open: true,
+                        title: 'Invite User',
+                        description: `Send password creation invitation to ${profile.altEmail || profile.email || profile.username}?`,
+                        onConfirm: () => {
+                          inviteUserMutation.mutate(profile.username)
+                          setConfirmDialog({ open: false })
+                        }
+                      })
+                    }}
+                    disabled={inviteUserMutation.isPending}
+                  >
+                    {inviteUserMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Mail className="h-4 w-4 mr-2" />
+                    )}
+                    Invite User
+                  </Button>
                   <Button 
                     variant="outline"
                     onClick={() => {
                       setConfirmDialog({
                         open: true,
                         title: 'Force Password Reset',
-                        description: `Force password reset for ${profile.username}? This will send a password creation email.`,
+                        description: `Force password reset for ${profile.username}? This sends a reset link they can use to create a new password.`,
                         onConfirm: () => {
                           forceResetMutation.mutate(profile.username)
                           setConfirmDialog({ open: false })
@@ -384,6 +406,28 @@ export function ProfileManagement() {
                       <Key className="h-4 w-4 mr-2" />
                     )}
                     Force Password Reset
+                  </Button>
+                  <Button 
+                    variant="default"
+                    onClick={() => {
+                      setConfirmDialog({
+                        open: true,
+                        title: 'Generate Temporary Password',
+                        description: `Generate a new temporary password for ${profile.username} and email it to them? They will be prompted to change it on first login.`,
+                        onConfirm: () => {
+                          generateTempPasswordMutation.mutate(profile.username)
+                          setConfirmDialog({ open: false })
+                        }
+                      })
+                    }}
+                    disabled={generateTempPasswordMutation.isPending}
+                  >
+                    {generateTempPasswordMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Terminal className="h-4 w-4 mr-2" />
+                    )}
+                    Generate Temp Password
                   </Button>
                   <Button 
                     variant="outline"

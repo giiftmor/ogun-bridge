@@ -1,465 +1,710 @@
-import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery, useMutation } from '@tanstack/react-query'
-import { 
-  User, 
-  Mail, 
-  Lock, 
-  Clock, 
-  Shield, 
-  CheckCircle, 
-  XCircle,
-  AlertTriangle,
-  ArrowLeft,
+import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import {
+  User,
+  Key,
   Users,
-  Activity,
+  Shield,
+  Clock,
+  CheckCircle,
+  XCircle,
+  Loader2,
+  Mail,
   RefreshCw,
-  Save,
-  X
+  Copy,
+  ExternalLink,
+  Terminal,
+  Play,
+  Cloud,
+  ArrowRightLeft,
+  Settings,
+  Trash2,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
+import { SkeletonCard } from '@/components/ui/skeleton'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
-import { apiClient } from '@/services/api'
 import toast from 'react-hot-toast'
+import { apiClient } from '@/services/api'
+import { translateError } from '@/utils/errorTranslator'
 
-export function UserDetail() {
-  const { username } = useParams()
-  const navigate = useNavigate()
-  const [refreshing, setRefreshing] = useState(false)
-  const [altEmail, setAltEmail] = useState('')
-  const [isEditingAltEmail, setIsEditingAltEmail] = useState(false)
+const SERVICE_ICONS = {
+  mail: Mail,
+  vpn: Shield,
+  media: Play,
+  cloud: Cloud,
+  key: Key,
+}
 
-  const { data: userDetail, isLoading, error, refetch } = useQuery({
-    queryKey: ['user-detail', username],
-    queryFn: () => apiClient.getUserDetail(username),
-    enabled: !!username,
+export function UserDetail({ username: initialUsername, isOwnProfile = false }) {
+  const [username, setUsername] = useState(initialUsername || '')
+  const [activeTab, setActiveTab] = useState('profile')
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', description: '', onConfirm: null })
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false)
+  const [oldPassword, setOldPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const queryClient = useQueryClient()
+
+  const { data: users = [], isLoading: loadingUsers } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => apiClient.getUsers(),
+    enabled: !isOwnProfile,
   })
 
-  const { data: userProfile } = useQuery({
+  const { data: profile, isLoading, refetch } = useQuery({
     queryKey: ['user-profile', username],
     queryFn: () => apiClient.getUserProfile(username),
+    enabled: isOwnProfile || username.length > 0,
+  })
+
+  const { data: userGroups = [], isLoading: loadingGroups } = useQuery({
+    queryKey: ['user-groups', username],
+    queryFn: () => apiClient.getGroups({ member: username }),
     enabled: !!username,
   })
 
-  // Initialize altEmail when profile loads
-  useEffect(() => {
-    if (userProfile?.altEmail !== undefined && !altEmail) {
-      setAltEmail(userProfile.altEmail || '')
-    }
-  }, [userProfile])
+  const { data: auditLogs = [], isLoading: loadingLogs } = useQuery({
+    queryKey: ['user-audit', username],
+    queryFn: () => apiClient.getAuditLogs({ username, limit: 50 }),
+    enabled: !!username,
+  })
 
-  const setAltEmailMutation = useMutation({
-    mutationFn: ({ username, altEmail }) => apiClient.setUserAltEmail(username, altEmail),
+  const forceResetMutation = useMutation({
+    mutationFn: (username) => apiClient.forcePasswordReset(username),
     onSuccess: (data) => {
-      toast.success(`Alt-email updated for ${username}`)
-      setIsEditingAltEmail(false)
-      refetch()
+      if (data.success) {
+        toast.success(`Password reset email sent to ${data.email}`)
+      } else {
+        toast.error(data.error || 'Failed to send email')
+      }
     },
     onError: (error) => {
-      toast.error(`Failed to update alt-email: ${error.message}`)
+      const translated = translateError(error)
+      toast.error(translated.message)
     },
   })
 
-  const handleRefresh = async () => {
-    setRefreshing(true)
-    await refetch()
-    setRefreshing(false)
+  const inviteUserMutation = useMutation({
+    mutationFn: (username) => apiClient.inviteUser(username),
+    onSuccess: (data) => {
+      if (data.success) {
+        toast.success(`Invitation sent to ${data.email || profile?.email}`)
+      } else {
+        toast.error(data.error || 'Failed to send invitation')
+      }
+    },
+    onError: (error) => {
+      const translated = translateError(error)
+      toast.error(translated.message)
+    },
+  })
+
+  const generateTempPasswordMutation = useMutation({
+    mutationFn: (username) => apiClient.generateTempPassword(username),
+    onSuccess: (data) => {
+      if (data.success || data.email_sent) {
+        toast.success(`Temporary password sent to ${data.email}`)
+      } else {
+        toast.error(data.message || 'Failed to generate password')
+      }
+    },
+    onError: (error) => {
+      const translated = translateError(error)
+      toast.error(translated.message)
+    },
+  })
+
+  const changePasswordMutation = useMutation({
+    mutationFn: () => apiClient.request('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ oldPassword, newPassword }),
+    }),
+    onSuccess: () => {
+      toast.success('Password changed successfully')
+      setShowPasswordDialog(false)
+      resetPasswordFields()
+    },
+    onError: (error) => {
+      const translated = translateError(error)
+      toast.error(translated.message)
+    },
+  })
+
+  const handleChangePassword = () => {
+    if (newPassword !== confirmPassword) {
+      toast.error('New passwords do not match')
+      return
+    }
+    if (newPassword.length < 8) {
+      toast.error('Password must be at least 8 characters')
+      return
+    }
+    changePasswordMutation.mutate()
   }
 
-  const handleSaveAltEmail = () => {
-    setAltEmailMutation.mutate({ username, altEmail: altEmail || null })
+  const resetPasswordFields = () => {
+    setOldPassword('')
+    setNewPassword('')
+    setConfirmPassword('')
   }
 
-  const handleCancelAltEmail = () => {
-    setIsEditingAltEmail(false)
-    setAltEmail(userProfile?.altEmail || '')
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text)
+    toast.success('Copied to clipboard')
   }
 
-  // Initialize altEmail when profile loads
-  if (userProfile?.altEmail && !altEmail && !isEditingAltEmail) {
-    setAltEmail(userProfile.altEmail)
-  }
-
-  if (isLoading) {
+  if (!isOwnProfile && !username) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">User Detail</h1>
+          <p className="text-muted-foreground mt-2">
+            Select a user to view their details, manage password, and groups
+          </p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <Card className="md:col-span-1">
+            <CardHeader>
+              <CardTitle className="text-lg">Users</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {loadingUsers ? (
+                <div className="p-4 space-y-2">
+                  <SkeletonCard />
+                </div>
+              ) : (
+                <div className="max-h-[500px] overflow-y-auto">
+                  {users.map((user) => (
+                    <button
+                      key={user.id}
+                      onClick={() => setUsername(user.username)}
+                      className={`w-full text-left px-4 py-3 border-b last:border-b-0 hover:bg-muted/50 transition-colors ${
+                        username === user.username ? 'bg-muted' : ''
+                      }`}
+                    >
+                      <p className="font-medium text-sm">{user.name || user.username}</p>
+                      <p className="text-xs text-muted-foreground">{user.username}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+          <div className="md:col-span-3">
+            <Card>
+              <CardContent className="py-12 text-center text-muted-foreground">
+                <User className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>Select a user from the list to view their details</p>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
       </div>
     )
   }
 
-  if (error) {
-    return (
-      <div className="space-y-4">
-        <Button variant="ghost" onClick={() => navigate('/users')}>
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Users
-        </Button>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-red-500">
-              <XCircle className="h-5 w-5" />
-              <span>Error loading user: {error.message}</span>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    )
+  if (isLoading && username) {
+    return <SkeletonCard />
   }
-
-  if (!userDetail) {
-    return (
-      <div className="space-y-4">
-        <Button variant="ghost" onClick={() => navigate('/users')}>
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Users
-        </Button>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <XCircle className="h-5 w-5" />
-              <span>User not found</span>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
-  const { authentik, ldap, password, syncStatus, recentChanges } = userDetail
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" onClick={() => navigate('/users')}>
-            <ArrowLeft className="h-4 w-4 mr-2" />
-          </Button>
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">{username}</h1>
-            <p className="text-muted-foreground">User Profile & Details</p>
-          </div>
-        </div>
-        <Button variant="outline" onClick={handleRefresh} disabled={refreshing}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">
+          {isOwnProfile ? 'My Profile' : 'User Detail'}
+        </h1>
+        <p className="text-muted-foreground mt-2">
+          {isOwnProfile
+            ? 'View your profile, services, and change your password'
+            : `Manage ${profile?.name || username}'s profile, password, and groups`}
+        </p>
       </div>
 
-      {/* Sync Status Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900">
-                  <Shield className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="profile">
+            <User className="h-4 w-4 mr-2" />
+            Profile
+          </TabsTrigger>
+          <TabsTrigger value="password">
+            <Key className="h-4 w-4 mr-2" />
+            Password
+          </TabsTrigger>
+          <TabsTrigger value="groups">
+            <Users className="h-4 w-4 mr-2" />
+            Groups
+          </TabsTrigger>
+          <TabsTrigger value="activity">
+            <Clock className="h-4 w-4 mr-2" />
+            Activity
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Profile Tab */}
+        <TabsContent value="profile" className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <User className="h-5 w-5" />
+                  User Information
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Username</p>
+                  <p className="font-medium">{profile?.username}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Authentik</p>
-                  <p className="font-medium">{syncStatus.inAuthentik ? 'Exists' : 'Not Found'}</p>
-                </div>
-              </div>
-              {syncStatus.inAuthentik ? (
-                <CheckCircle className="h-5 w-5 text-green-500" />
-              ) : (
-                <XCircle className="h-5 w-5 text-red-500" />
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900">
-                  <Users className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                  <p className="text-sm text-muted-foreground">Name</p>
+                  <p className="font-medium">{profile?.name}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">LDAP</p>
-                  <p className="font-medium">{syncStatus.inLDAP ? 'Exists' : 'Not Found'}</p>
-                </div>
-              </div>
-              {syncStatus.inLDAP ? (
-                <CheckCircle className="h-5 w-5 text-green-500" />
-              ) : (
-                <XCircle className="h-5 w-5 text-red-500" />
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900">
-                  <Activity className="h-5 w-5 text-green-600 dark:text-green-400" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Sync Status</p>
-                  <p className="font-medium">{syncStatus.synced ? 'Synced' : 'Not Synced'}</p>
-                </div>
-              </div>
-              <Badge variant={syncStatus.synced ? 'success' : 'destructive'}>
-                {syncStatus.synced ? 'Synced' : 'Not Synced'}
-              </Badge>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Authentik Info */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Shield className="h-5 w-5" />
-              Authentik
-            </CardTitle>
-            <CardDescription>User information from Authentik</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {authentik ? (
-              <>
-                <DetailRow label="User ID" value={authentik.pk} />
-                <DetailRow label="Username" value={username} />
-                <DetailRow label="Email" value={authentik.email} />
-                <DetailRow label="Display Name" value={authentik.name || '-'} />
-                <DetailRow 
-                  label="Status" 
-                  value={authentik.is_active ? 'Active' : 'Inactive'}
-                  badge={authentik.is_active ? 'success' : 'destructive'}
-                />
-                <DetailRow 
-                  label="Last Login" 
-                  value={authentik.last_login ? new Date(authentik.last_login).toLocaleString() : 'Never'}
-                />
-                <DetailRow 
-                  label="Password Changed" 
-                  value={authentik.password_change_date 
-                    ? new Date(authentik.password_change_date).toLocaleDateString()
-                    : 'Never'
-                  }
-                />
-              </>
-            ) : (
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <XCircle className="h-4 w-4" />
-                <span>User not found in Authentik</span>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* LDAP Info */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              LDAP
-            </CardTitle>
-            <CardDescription>User information from LDAP</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {ldap ? (
-              <>
-                <DetailRow label="UID" value={ldap.uid} />
-                <DetailRow label="DN" value={ldap.dn} />
-                <DetailRow label="Email" value={ldap.mail} />
-                
-                {/* Alt Email - Editable */}
-                <div>
-                  <p className="text-sm text-muted-foreground mb-2">Alternate Email (for password invites)</p>
-                  {isEditingAltEmail ? (
-                    <div className="flex gap-2">
-                      <Input
-                        type="email"
-                        value={altEmail}
-                        onChange={(e) => setAltEmail(e.target.value)}
-                        placeholder="user@example.com"
-                        className="flex-1"
-                      />
-                      <Button
-                        size="sm"
-                        onClick={handleSaveAltEmail}
-                        disabled={setAltEmailMutation.isPending}
-                      >
-                        {setAltEmailMutation.isPending ? (
-                          <RefreshCw className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Save className="h-4 w-4" />
-                        )}
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={handleCancelAltEmail}>
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className={userProfile?.altEmail ? 'font-medium' : 'text-muted-foreground'}>
-                          {userProfile?.altEmail || 'Not set'}
-                        </span>
-                        {userProfile?.altEmail && (
-                          <Badge variant="success" className="text-xs">Active</Badge>
-                        )}
-                      </div>
-                      <Button size="sm" variant="outline" onClick={() => setIsEditingAltEmail(true)}>
-                        Edit
-                      </Button>
-                    </div>
-                  )}
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Password invitation emails will be sent here
+                  <p className="text-sm text-muted-foreground">Email</p>
+                  <p className="font-medium flex items-center gap-2">
+                    {profile?.email || 'Not set'}
+                    {profile?.email && <CheckCircle className="h-4 w-4 text-green-500" />}
                   </p>
                 </div>
-                
-                <DetailRow label="Common Name" value={ldap.cn} />
-                <DetailRow label="Surname" value={ldap.sn} />
-                
                 <div>
-                  <p className="text-sm text-muted-foreground mb-2">Groups</p>
-                  <div className="flex flex-wrap gap-2">
-                    {ldap.memberOf?.length > 0 ? (
-                      ldap.memberOf.map((group) => (
-                        <Badge key={group} variant="outline">
-                          {group}
-                        </Badge>
+                  <p className="text-sm text-muted-foreground">Alternate Email</p>
+                  <p className="font-medium flex items-center gap-2">
+                    {profile?.altEmail || 'Not set'}
+                    {profile?.altEmail && <CheckCircle className="h-4 w-4 text-green-500" />}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Groups</p>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {profile?.groups?.length > 0 ? (
+                      profile.groups.map(group => (
+                        <Badge key={group} variant="outline">{group}</Badge>
                       ))
                     ) : (
                       <span className="text-muted-foreground">No groups</span>
                     )}
                   </div>
                 </div>
-              </>
-            ) : (
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <XCircle className="h-4 w-4" />
-                <span>User not found in LDAP</span>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
 
-        {/* Password Info */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Lock className="h-5 w-5" />
-              Password Status
-            </CardTitle>
-            <CardDescription>Password information and history</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <DetailRow 
-              label="Expiration" 
-              value={password.expiration 
-                ? new Date(password.expiration).toLocaleDateString()
-                : 'No expiration'
-              }
-              badge={password.expiration ? (
-                new Date(password.expiration) > new Date() ? 'success' : 'destructive'
-              ) : null
-              }
-            />
-            
-            {password.expiration && new Date(password.expiration) > new Date() && (
-              <DetailRow 
-                label="Days Remaining" 
-                value={`${Math.ceil((new Date(password.expiration) - new Date()) / (1000 * 60 * 60 * 24))} days`}
-              />
-            )}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Key className="h-5 w-5" />
+                  Account Status
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Has Password</span>
+                  {profile?.password?.hasPassword ? (
+                    <Badge variant="outline" className="border-green-500 text-green-600">
+                      <CheckCircle className="h-3 w-3 mr-1" />
+                      Active
+                    </Badge>
+                  ) : (
+                    <Badge variant="destructive">
+                      <XCircle className="h-3 w-3 mr-1" />
+                      None
+                    </Badge>
+                  )}
+                </div>
+                {profile?.password?.lastChanged && (
+                  <div>
+                    <p className="text-sm text-muted-foreground">Last Changed</p>
+                    <p className="font-medium flex items-center gap-2">
+                      <Clock className="h-4 w-4" />
+                      {new Date(profile.password.lastChanged).toLocaleDateString()}
+                    </p>
+                  </div>
+                )}
+                {profile?.created && (
+                  <div>
+                    <p className="text-sm text-muted-foreground">Account Created</p>
+                    <p className="font-medium">
+                      {new Date(profile.created).toLocaleDateString()}
+                    </p>
+                  </div>
+                )}
+                {profile?.lastLogin && (
+                  <div>
+                    <p className="text-sm text-muted-foreground">Last Login</p>
+                    <p className="font-medium">
+                      {new Date(profile.lastLogin).toLocaleDateString()}
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
 
-            <div>
-              <p className="text-sm text-muted-foreground mb-2">Recent Password Changes</p>
-              <div className="space-y-2">
-                {password.history?.length > 0 ? (
-                  password.history.map((item, idx) => (
-                    <div key={idx} className="flex items-center justify-between text-sm p-2 border rounded">
-                      <div className="flex items-center gap-2">
-                        {item.success ? (
-                          <CheckCircle className="h-4 w-4 text-green-500" />
-                        ) : (
-                          <XCircle className="h-4 w-4 text-red-500" />
+          {profile?.services && profile.services.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Shield className="h-5 w-5" />
+                  Services
+                </CardTitle>
+                <CardDescription>
+                  Services accessible based on group membership
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {profile.services.map(service => {
+                    const IconComponent = SERVICE_ICONS[service.icon] || Shield
+                    return (
+                      <div
+                        key={service.id}
+                        className={`border rounded-lg p-4 ${
+                          service.hasAccess
+                            ? 'border-green-200 bg-green-50 dark:bg-green-950/20'
+                            : 'border-muted opacity-60'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className={`p-2 rounded-lg ${
+                              service.hasAccess
+                                ? 'bg-green-100 dark:bg-green-900'
+                                : 'bg-muted'
+                            }`}>
+                              <IconComponent className={`h-5 w-5 ${
+                                service.hasAccess
+                                  ? 'text-green-600 dark:text-green-400'
+                                  : 'text-muted-foreground'
+                              }`} />
+                            </div>
+                            <div>
+                              <p className="font-medium">{service.name}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {service.description}
+                              </p>
+                            </div>
+                          </div>
+                          {service.hasAccess ? (
+                            <CheckCircle className="h-5 w-5 text-green-500" />
+                          ) : (
+                            <XCircle className="h-5 w-5 text-muted-foreground" />
+                          )}
+                        </div>
+                        {service.hasAccess && service.url && (
+                          <div className="mt-4 pt-4 border-t flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex-1"
+                              onClick={() => window.open(service.url, '_blank')}
+                            >
+                              <ExternalLink className="h-3 w-3 mr-1" />
+                              Open
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => copyToClipboard(service.url)}
+                            >
+                              <Copy className="h-3 w-3" />
+                            </Button>
+                          </div>
                         )}
-                        <span className="text-muted-foreground">
-                          {new Date(item.timestamp).toLocaleString()}
-                        </span>
                       </div>
-                      <div className="flex gap-2">
-                        {item.ldap === 'success' && (
-                          <Badge variant="outline" className="text-xs">LDAP</Badge>
-                        )}
-                        {item.authentik === 'success' && (
-                          <Badge variant="outline" className="text-xs">Authentik</Badge>
-                        )}
-                      </div>
-                    </div>
-                  ))
+                    )
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        {/* Password Tab */}
+        <TabsContent value="password" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Password Management</CardTitle>
+              <CardDescription>
+                Change password, force reset, or send temporary password
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between p-4 border rounded-lg">
+                <div>
+                  <p className="font-medium">Password Status</p>
+                  <p className="text-sm text-muted-foreground">
+                    {profile?.password?.hasPassword ? 'Active' : 'Not set'}
+                  </p>
+                </div>
+                {profile?.password?.hasPassword ? (
+                  <Badge variant="outline" className="border-green-500 text-green-600">
+                    <CheckCircle className="h-3 w-3 mr-1" />
+                    Active
+                  </Badge>
                 ) : (
-                  <p className="text-muted-foreground text-sm">No password history</p>
+                  <Badge variant="destructive">
+                    <XCircle className="h-3 w-3 mr-1" />
+                    None
+                  </Badge>
                 )}
               </div>
-            </div>
-          </CardContent>
-        </Card>
 
-        {/* Recent Activity */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Activity className="h-5 w-5" />
-              Recent Activity
-            </CardTitle>
-            <CardDescription>Recent changes and events</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {recentChanges?.length > 0 ? (
-              <div className="space-y-2">
-                {recentChanges.map((change, idx) => (
-                  <div key={idx} className="flex items-center justify-between text-sm p-2 border rounded">
-                    <div>
-                      <p className="font-medium">{change.action}</p>
-                      <p className="text-xs text-muted-foreground">
-                        by {change.actor} • {change.source}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {change.success ? (
-                        <CheckCircle className="h-4 w-4 text-green-500" />
+              <div className="flex flex-wrap gap-2">
+                {isOwnProfile ? (
+                  <Button onClick={() => setShowPasswordDialog(true)}>
+                    <Key className="h-4 w-4 mr-2" />
+                    Change Password
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setConfirmDialog({
+                          open: true,
+                          title: 'Force Password Reset',
+                          description: `Force password reset for ${username}? This sends a reset link they can use to create a new password.`,
+                          onConfirm: () => {
+                            forceResetMutation.mutate(username)
+                            setConfirmDialog({ open: false })
+                          }
+                        })
+                      }}
+                      disabled={forceResetMutation.isPending}
+                    >
+                      {forceResetMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                       ) : (
-                        <XCircle className="h-4 w-4 text-red-500" />
+                        <RefreshCw className="h-4 w-4 mr-2" />
                       )}
-                      <span className="text-xs text-muted-foreground">
-                        {new Date(change.timestamp).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                      Force Reset
+                    </Button>
+                    <Button
+                      variant="default"
+                      onClick={() => {
+                        setConfirmDialog({
+                          open: true,
+                          title: 'Invite User',
+                          description: `Send password creation invitation to ${profile?.altEmail || profile?.email || username}?`,
+                          onConfirm: () => {
+                            inviteUserMutation.mutate(username)
+                            setConfirmDialog({ open: false })
+                          }
+                        })
+                      }}
+                      disabled={inviteUserMutation.isPending}
+                    >
+                      {inviteUserMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Mail className="h-4 w-4 mr-2" />
+                      )}
+                      Invite User
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setConfirmDialog({
+                          open: true,
+                          title: 'Generate Temporary Password',
+                          description: `Generate a new temporary password for ${username} and email it to them? They will be prompted to change it on first login.`,
+                          onConfirm: () => {
+                            generateTempPasswordMutation.mutate(username)
+                            setConfirmDialog({ open: false })
+                          }
+                        })
+                      }}
+                      disabled={generateTempPasswordMutation.isPending}
+                    >
+                      {generateTempPasswordMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Terminal className="h-4 w-4 mr-2" />
+                      )}
+                      Generate Temp Password
+                    </Button>
+                  </>
+                )}
               </div>
-            ) : (
-              <p className="text-muted-foreground">No recent activity</p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  )
-}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-function DetailRow({ label, value, badge }) {
-  return (
-    <div className="flex items-center justify-between">
-      <p className="text-sm text-muted-foreground">{label}</p>
-      <div className="flex items-center gap-2">
-        <p className="font-medium">{value}</p>
-        {badge && <Badge variant={badge}>{value}</Badge>}
-      </div>
+        {/* Groups Tab */}
+        <TabsContent value="groups" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                User's Groups
+              </CardTitle>
+              <CardDescription>
+                Groups this user belongs to and their sync configuration
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loadingGroups ? (
+                <SkeletonCard />
+              ) : (
+                <div className="space-y-4">
+                  {userGroups.map(group => (
+                    <div key={group.id} className="border rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <p className="font-medium">{group.name}</p>
+                          <p className="text-sm text-muted-foreground">{group.description}</p>
+                        </div>
+                        <Badge variant="outline">{group.memberCount || 0} members</Badge>
+                      </div>
+                      {group.sync_direction && (
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <ArrowRightLeft className="h-3 w-3" />
+                          Sync: {group.sync_direction}
+                        </div>
+                      )}
+                      {group.services && group.services.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {group.services.map(service => (
+                            <Badge key={service.id} variant="secondary">
+                              {service.name}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {userGroups.length === 0 && (
+                    <p className="text-center py-8 text-muted-foreground">
+                      User does not belong to any groups
+                    </p>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Activity Tab */}
+        <TabsContent value="activity" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Clock className="h-5 w-5" />
+                Recent Activity
+              </CardTitle>
+              <CardDescription>
+                Audit logs for this user
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loadingLogs ? (
+                <SkeletonCard />
+              ) : (
+                <div className="space-y-4">
+                  {auditLogs.map((log, index) => (
+                    <div key={index} className="flex items-start gap-4 pb-4 border-b last:border-0 last:pb-0">
+                      <Badge variant={log.action === 'success' ? 'success' : 'error'} className="mt-0.5">
+                        {log.action}
+                      </Badge>
+                      <div className="flex-1 space-y-1">
+                        <p className="text-sm font-medium leading-none">{log.message}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {new Date(log.timestamp).toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                  {auditLogs.length === 0 && (
+                    <p className="text-center py-8 text-muted-foreground">
+                      No activity found for this user
+                    </p>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      <ConfirmDialog
+        open={confirmDialog.open}
+        onClose={() => setConfirmDialog({ open: false })}
+        onConfirm={confirmDialog.onConfirm}
+        title={confirmDialog.title}
+        description={confirmDialog.description}
+        loading={forceResetMutation.isPending || inviteUserMutation.isPending || generateTempPasswordMutation.isPending}
+      />
+
+      {isOwnProfile && (
+        <Dialog open={showPasswordDialog} onOpenChange={setShowPasswordDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Change Password</DialogTitle>
+              <DialogDescription>
+                Enter your current password and a new password to update.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="oldPassword" className="text-sm font-medium">
+                  Current Password
+                </label>
+                <Input
+                  id="oldPassword"
+                  type="password"
+                  value={oldPassword}
+                  onChange={(e) => setOldPassword(e.target.value)}
+                  placeholder="Enter current password"
+                />
+              </div>
+              <div>
+                <label htmlFor="newPassword" className="text-sm font-medium">
+                  New Password
+                </label>
+                <Input
+                  id="newPassword"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Enter new password (min 8 chars)"
+                />
+              </div>
+              <div>
+                <label htmlFor="confirmPassword" className="text-sm font-medium">
+                  Confirm New Password
+                </label>
+                <Input
+                  id="confirmPassword"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm new password"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => {
+                setShowPasswordDialog(false)
+                resetPasswordFields()
+              }}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleChangePassword}
+                disabled={changePasswordMutation.isPending}
+              >
+                {changePasswordMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : null}
+                Change Password
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   )
 }

@@ -16,10 +16,12 @@ import { UserDetail } from './pages/UserDetail'
 import { MailSettings } from './pages/MailSettings'
 import { MailAdmin } from './pages/MailAdmin'
 import { ProfileManagement } from './pages/ProfileManagement'
+import { GroupManager } from './pages/GroupManager'
 import { VersionHistory } from './pages/VersionHistory'
 import { Login } from './pages/Login'
 import { ForgotPassword } from './pages/ForgotPassword'
 import { ResetPassword } from './pages/ResetPassword'
+import { CreatePassword } from './pages/CreatePassword'
 import { OperationsCenter } from './pages/OperationsCenter'
 import { apiClient } from './services/api'
 
@@ -107,6 +109,8 @@ export function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password/:token" element={<ResetPassword />} />
+          <Route path="/create-password" element={<CreatePassword />} />
+          <Route path="/create-password/:token" element={<CreatePassword />} />
           <Route path="/self-service-password" element={<SelfServicePasswordChange />} />
 
           {/* Protected routes */}
@@ -119,12 +123,13 @@ export function App() {
             <Route path="users" element={<UserBrowser />} />
             <Route path="users/:username" element={<UserDetail />} />
             <Route path="groups" element={<GroupBrowser />} />
+            <Route path="groups-manager" element={<GroupManager />} />
             <Route path="logs" element={<LogViewer />} />
             <Route path="changes" element={<ChangesBrowser />} />
             <Route path="audit" element={<AuditViewer />} />
             <Route path="password" element={<PasswordManagement />} />
-            <Route path="profile" element={<ProfileManagement />} />
-            <Route path="versions" element={<VersionHistory />} />
+            <Route path="profile" element={<UserDetail />} />
+            <Route path="my-profile" element={<UserDetail isOwnProfile={true} />} />
             <Route path="mail" element={<MailSettings />} />
             <Route path="mail-admin" element={<MailAdmin />} />
             <Route path="operations" element={<OperationsCenter />} />

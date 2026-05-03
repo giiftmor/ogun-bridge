@@ -16,7 +16,8 @@ import {
   Mail,
   Server,
   LogOut,
-  History
+  History,
+  Network
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/store/useAppStore'
@@ -24,31 +25,20 @@ import { cn } from '@/utils/cn'
 
 const navigation = [
   {
-    category: 'Sync',
+    category: 'User Administration',
     items: [
-      { name: 'Dashboard', href: '/', icon: LayoutDashboard },
       { name: 'Users', href: '/users', icon: Users },
       { name: 'Groups', href: '/groups', icon: UserCog },
-      { name: 'Changes', href: '/changes', icon: ClipboardList },
-    ]
-  },
-  {
-    category: 'Passwords',
-    items: [
+      { name: 'Group Manager', href: '/groups-manager', icon: Network },
       { name: 'Passwords', href: '/password', icon: KeyRound },
-      { name: 'Profile', href: '/profile', icon: User },
     ]
   },
   {
-    category: 'Mailing',
+    category: 'Monitoring',
     items: [
-      { name: 'Mail Settings', href: '/mail', icon: Mail },
-      { name: 'Mailboxes', href: '/mail-admin', icon: Server },
-    ]
-  },
-  {
-    category: 'Logs',
-    items: [
+      { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+      { name: 'Monitoring', href: '/operations', icon: Activity },
+      { name: 'Changes', href: '/changes', icon: ClipboardList },
       { name: 'Audit', href: '/audit', icon: Shield },
       { name: 'Logs', href: '/logs', icon: FileText },
     ]
@@ -56,7 +46,7 @@ const navigation = [
   {
     category: 'System',
     items: [
-      { name: 'Operations', href: '/operations', icon: Activity },
+      { name: 'Mail Settings', href: '/mail', icon: Mail },
       { name: 'Schema Mapper', href: '/schema', icon: Settings },
       { name: 'Version History', href: '/versions', icon: History },
     ]
@@ -79,9 +69,14 @@ export function Layout() {
         <div className="flex flex-col h-full">
           {/* Logo/Title */}
           <div className="flex items-center justify-between h-16 px-6 border-b">
-            <div>
-              <h1 className="text-xl font-bold">ALSM UI</h1>
-              <p className="text-xs text-muted-foreground">Sync Manager</p>
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-amber-500 flex items-center justify-center">
+                <Network className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold">Ogun Bridge</h1>
+                <p className="text-xs text-muted-foreground">Identity Manager</p>
+              </div>
             </div>
             <Button
               variant="ghost"
@@ -178,11 +173,21 @@ export function Layout() {
             )}
           </Button>
 
-          {/* User & Logout */}
+          {/* User Menu */}
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground hidden sm:inline">
               {JSON.parse(localStorage.getItem('user') || '{}').username || 'User'}
             </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              asChild
+            >
+              <Link to="/my-profile">
+                <User className="h-4 w-4 mr-2" />
+                My Profile
+              </Link>
+            </Button>
             <Button
               variant="ghost"
               size="icon"
