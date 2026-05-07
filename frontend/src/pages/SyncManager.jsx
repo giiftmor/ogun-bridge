@@ -258,7 +258,7 @@ export function SyncManager() {
                         </div>
                         <div className="flex gap-2">
                           <Select
-                            defaultValue={group.sync_config?.sync_direction || 'authentik-to-ldap'}
+                            value={group.sync_config?.sync_direction || 'authentik-to-ldap'}
                             onValueChange={(direction) => {
                               apiClient.updateGroupSyncDirection(group.id, direction)
                                 .then(() => {
@@ -479,9 +479,9 @@ export function SyncManager() {
                             )}
                           </td>
                           <td className="p-3">
-                            <Select
-                              defaultValue={item.syncDirection}
-                              onValueChange={(direction) => {
+                          <Select
+                            value={item.syncDirection}
+                            onValueChange={(direction) => {
                                 if (item.authId) {
                                   apiClient.updateGroupSyncDirection(item.authId, direction)
                                     .then(() => {
@@ -544,7 +544,6 @@ export function SyncManager() {
             </CardContent>
           </Card>
         </TabsContent>
-      </Tabs>
 
         {/* User Sync Tab */}
         <TabsContent value="user-sync" className="space-y-6">
@@ -636,6 +635,7 @@ export function SyncManager() {
             </CardContent>
           </Card>
         </TabsContent>
+      </Tabs>
 
         {/* Preview Results */}
       {previewData && (

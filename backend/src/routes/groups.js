@@ -247,6 +247,37 @@ groupsRouter.post('/sync-now', async (req, res) => {
   }
 })
 
+// Update sync direction for a group
+groupsRouter.patch('/:id/sync-direction', async (req, res) => {
+  try {
+    const { id } = req.params
+    const { sync_direction } = req.body
+
+    const validDirections = ['authentik-to-ldap', 'ldap-to-authentik', 'bidirectional']
+    if (!validDirections.includes(sync_direction)) {
+      return res.status(400).json({ error: 'Invalid sync direction' })
+    }
+
+    const aGroup = await authentikClient.getGroup(id)
+    const client = await pool.connect()
+
+    await client.query(
+      `INSERT INTO group_sync_config (group_name, sync_direction, updated_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (group_name)
+       DO UPDATE SET sync_direction = $2, updated_at = NOW()`,
+      [aGroup.name, sync_direction]
+    )
+
+    client.release()
+
+    res.json({ success: true, group_name: aGroup.name, sync_direction })
+  } catch (error) {
+    logger.error('Error updating sync direction:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
 // Get group members from both systems
 groupsRouter.get('/:id/members', async (req, res) => {
   try {
