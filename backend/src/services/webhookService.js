@@ -1,5 +1,5 @@
 import { logger } from '../utils/logger.js'
-import pool from '../lib/db.js'
+import { pool } from '../lib/db.js'
 
 export async function triggerWebhook(event, payload) {
   try {

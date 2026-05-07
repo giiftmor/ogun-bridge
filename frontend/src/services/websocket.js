@@ -1,6 +1,8 @@
 import { io } from 'socket.io-client'
 
-const WS_URL = import.meta.env.VITE_WS_URL || '/socket.io'
+// Connect to the same host as the frontend (nginx will proxy to backend)
+// Don't use /socket.io as namespace - that's the path, not namespace
+const WS_URL = import.meta.env.VITE_WS_URL || window.location.origin
 
 class WebSocketService {
   constructor() {
@@ -9,28 +11,39 @@ class WebSocketService {
   }
 
   connect() {
-    if (this.socket?.connected) return
+    if (this.socket?.connected) return;
 
     this.socket = io(WS_URL, {
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: 5,
-    })
+      // Don't try to connect to non-existent namespaces
+      autoConnect: false,
+    });
 
     this.socket.on('connect', () => {
-      console.log('WebSocket connected')
-      this.connected = true
-    })
+      console.log('WebSocket connected');
+      this.connected = true;
+    });
 
     this.socket.on('disconnect', () => {
-      console.log('WebSocket disconnected')
-      this.connected = false
-    })
+      console.log('WebSocket disconnected');
+      this.connected = false;
+    });
 
     this.socket.on('connect_error', (error) => {
-      console.error('WebSocket connection error:', error)
-    })
+      // Handle "Invalid namespace" gracefully
+      if (error.message?.includes('Invalid namespace')) {
+        console.warn('WebSocket namespace not found, disconnecting...');
+        this.disconnect();
+        return;
+      }
+      console.error('WebSocket connection error:', error);
+    });
+
+    // Only connect explicitly when needed
+    this.socket.connect();
   }
 
   disconnect() {

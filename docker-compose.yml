@@ -35,6 +35,7 @@ services:
       MAILSERVER_DOMAIN: ${MAILSERVER_DOMAIN:-spectres.co.za}
     networks:
       - ogun-network
+      - thoth-network
 
   # Frontend UI
   frontend:
@@ -51,3 +52,6 @@ services:
 networks:
   ogun-network:
     driver: bridge
+  thoth-network:
+    external: true
+    name: thoth-esu-gateway_default

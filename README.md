@@ -1,4 +1,4 @@
-# ALSM - Authentik LDAP Sync Management
+# Ogun Bridge - Authentik LDAP Sync Management
 
 A unified management interface for synchronizing users between Authentik (SSO/IdP) and LDAP directory server.
 

@@ -1,4 +1,4 @@
-import pool from '../lib/db.js'
+import { pool } from '../lib/db.js'
 import { logger } from '../utils/logger.js'
 
 export async function getUserProfile(username) {

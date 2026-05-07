@@ -1,5 +1,5 @@
 import express from 'express'
-import pool from '../lib/db.js'
+import { pool } from '../lib/db.js'
 import { getSyncState } from '../services/syncService.js'
 import { authentikClient } from '../services/authentikClient.js'
 import { ldapClient } from '../services/ldapClient.js'
@@ -251,4 +251,53 @@ healthRouter.post('/test-service/:service', async (req, res) => {
       error: error.message,
     })
   }
+})
+
+healthRouter.get('/external', async (req, res) => {
+  const results = {}
+  const endpoints = [
+    { name: 'authentik', url: process.env.AUTHENTIK_URL },
+    { name: 'ldap', url: `ldap://${process.env.LDAP_HOST}:${process.env.LDAP_PORT}` },
+    { name: 'database', url: `postgresql://${process.env.DB_HOST}:${process.env.DB_PORT}` },
+    { name: 'mail', url: 'http://mailserver:8080' },
+  ]
+
+  for (const endpoint of endpoints) {
+    if (!endpoint.url) {
+      results[endpoint.name] = { status: 'not_configured' }
+      continue
+    }
+
+    const start = Date.now()
+    try {
+      if (endpoint.url.startsWith('http')) {
+        const response = await fetch(endpoint.url, {
+          method: 'HEAD',
+          signal: AbortSignal.timeout(5000),
+        })
+        results[endpoint.name] = {
+          status: response.ok ? 'up' : 'degraded',
+          latency: Date.now() - start,
+          statusCode: response.status,
+        }
+      } else {
+        results[endpoint.name] = {
+          status: 'configured',
+          url: endpoint.url,
+          latency: Date.now() - start,
+        }
+      }
+    } catch (error) {
+      results[endpoint.name] = {
+        status: 'down',
+        latency: Date.now() - start,
+        error: error.message,
+      }
+    }
+  }
+
+  res.json({
+    services: results,
+    timestamp: new Date().toISOString(),
+  })
 })

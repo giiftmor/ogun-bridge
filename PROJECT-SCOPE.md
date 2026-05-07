@@ -4,7 +4,7 @@
 - **Version**: 2.1.0
 - **Date**: March 11, 2026
 - **Author**: System Documentation
-- **Project Name**: Authentik LDAP Sync Management UI (ALSM-UI)
+- **Project Name**: Ogun Bridge (Authentik LDAP Sync Management)
 - **Status**: Production - Phase 2 Complete
 
 ---

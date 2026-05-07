@@ -8,7 +8,7 @@ import {
   getAllEntitiesWithVersions,
   getVersionCount
 } from '../services/versionService.js'
-import pool from '../lib/db.js'
+import { pool } from '../lib/db.js'
 import { logger } from '../utils/logger.js'
 
 export const versionRouter = express.Router()

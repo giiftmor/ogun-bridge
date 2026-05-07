@@ -1,40 +1,64 @@
 import { Client, Attribute, Change } from 'ldapts'
 import crypto from 'crypto'
 import { logger } from '../utils/logger.js'
+import { getServiceConfig, SERVICE_LDAP } from '../services/config.js'
 
-function hashPasswordSSHA512(password) {
-  const salt = crypto.randomBytes(16)
-  const hash = crypto.createHash('sha512')
-  hash.update(password)
-  hash.update(salt)
-  const digest = hash.digest()
-  const combined = Buffer.concat([digest, salt])
-  return `{SSHA512}${combined.toString('base64')}`
+function hashPasswordLDAP(password) {
+  return password
 }
 
 export class LDAPClient {
   constructor() {
-    this.host = process.env.LDAP_HOST || '172.17.0.1'
-    this.port = parseInt(process.env.LDAP_PORT || '389')
-    this.bindDN = process.env.LDAP_BIND_DN || 'cn=Directory Manager,dc=spectres,dc=co,dc=za'
-    this.bindPassword = process.env.LDAP_BIND_PASSWORD
-    this.baseDN = process.env.LDAP_BASE_DN || 'dc=spectres,dc=co,dc=za'
     this.client = null
     this.isConnected = false
   }
+  
+  async getConfig() {
+    const config = await getServiceConfig(SERVICE_LDAP)
+    return {
+      host: config.host || '172.17.0.1',
+      port: parseInt(config.port) || 389,
+      bindDN: config.bindDN || 'cn=Directory Manager,dc=spectres,dc=co,dc=za',
+      bindPassword: config.bindPassword,
+      baseDN: config.baseDN || 'dc=spectres,dc=co,dc=za',
+      userBaseDN: config.userBaseDN || 'ou=people,' + (config.baseDN || 'dc=spectres,dc=co,dc=za'),
+      groupBaseDN: config.groupBaseDN || 'ou=groups,' + (config.baseDN || 'dc=spectres,dc=co,dc=za'),
+    }
+  }
 
   async connect() {
-    if (this.isConnected) return
+    if (this.isConnected) return;
 
+    const config = await this.getConfig()
+    
     this.client = new Client({
-      url: `ldap://${this.host}:${this.port}`,
+      url: 'ldap://' + config.host + ':' + config.port,
       timeout: 5000,
       connectTimeout: 10000,
     })
 
-    await this.client.bind(this.bindDN, this.bindPassword)
+    await this.client.bind(config.bindDN, config.bindPassword)
     this.isConnected = true
+    this._config = config
     logger.info('Connected to LDAP server')
+  }
+  
+  async getBaseDN() {
+    if (this._config) return this._config.baseDN
+    const config = await this.getConfig()
+    return config.baseDN
+  }
+  
+  async getUserBaseDN() {
+    if (this._config) return this._config.userBaseDN
+    const config = await this.getConfig()
+    return config.userBaseDN
+  }
+  
+  async getGroupBaseDN() {
+    if (this._config) return this._config.groupBaseDN
+    const config = await this.getConfig()
+    return config.groupBaseDN
   }
 
   async disconnect() {
@@ -42,6 +66,7 @@ export class LDAPClient {
       await this.client.unbind()
       this.client = null
       this.isConnected = false
+      this._config = null
       logger.info('Disconnected from LDAP server')
     }
   }
@@ -50,8 +75,9 @@ export class LDAPClient {
     await this.connect()
     
     try {
-      const userDN = `uid=${username},ou=people,${this.baseDN}`
-      const hashedPassword = hashPasswordSSHA512(newPassword)
+      const baseDN = await this.getBaseDN()
+      const userDN = 'uid=' + username + ',ou=people,' + baseDN
+      const hashedPassword = hashPasswordLDAP(newPassword)
       
       await this.client.modify(userDN, [
         new Change({
@@ -63,10 +89,10 @@ export class LDAPClient {
         }),
       ])
       
-      logger.info(`Password set for LDAP user: ${username} (SSHA512)`)
+      logger.info('Password set for LDAP user: ' + username + ' (SSHA)')
       return true
     } catch (error) {
-      logger.error(`Failed to set LDAP password for ${username}:`, error.message)
+      logger.error('Failed to set LDAP password for ' + username + ':', error.message)
       return false
     }
   }
@@ -75,23 +101,31 @@ export class LDAPClient {
     let tempClient = null
     
     try {
+      const config = await this.getConfig()
+      
       tempClient = new Client({
-        url: `ldap://${this.host}:${this.port}`,
+        url: 'ldap://' + config.host + ':' + config.port,
         timeout: 5000,
         connectTimeout: 10000,
       })
       
-      const userDN = `uid=${username},ou=people,${this.baseDN}`
+      const baseDN = await this.getBaseDN()
+      const userDN = 'uid=' + username + ',ou=people,' + baseDN
+      
       await tempClient.bind(userDN, password)
       await tempClient.unbind()
       
-      logger.info(`Password verified for LDAP user: ${username}`)
+      logger.info('Password verified for LDAP user: ' + username)
       return true
     } catch (error) {
       if (tempClient) {
         try { await tempClient.unbind() } catch (e) {}
       }
-      logger.info(`Password verification failed for ${username}: ${error.message}`)
+      if (error.message && error.message.includes('Invalid credentials')) {
+        logger.info('Password verification failed for ' + username + ': Invalid credentials')
+      } else {
+        logger.info('Password verification failed for ' + username + ': ' + error.message)
+      }
       return false
     }
   }
@@ -100,7 +134,8 @@ export class LDAPClient {
     await this.connect()
     
     try {
-      const userDN = `uid=${username},ou=people,${this.baseDN}`
+      const baseDN = await this.getBaseDN()
+      const userDN = 'uid=' + username + ',ou=people,' + baseDN
       
       const expireTimestamp = expirationDate 
         ? Math.floor(new Date(expirationDate).getTime() / 1000)
@@ -111,15 +146,15 @@ export class LDAPClient {
           operation: 'replace',
           modification: new Attribute({
             type: 'shadowExpire',
-            values: [expireTimestamp.toString()],
+            values: [expireTimestamp ? expireTimestamp.toString() : ''],
           }),
         }),
       ])
       
-      logger.info(`Password expiration set for ${username}: ${expirationDate}`)
+      logger.info('Password expiration set for ' + username + ': ' + expirationDate)
       return true
     } catch (error) {
-      logger.error(`Failed to set password expiration for ${username}:`, error.message)
+      logger.error('Failed to set password expiration for ' + username + ':', error.message)
       return false
     }
   }
@@ -128,18 +163,19 @@ export class LDAPClient {
     await this.connect()
     
     try {
-      const userDN = `uid=${username},ou=people,${this.baseDN}`
+      const baseDN = await this.getBaseDN()
+      const userDN = 'uid=' + username + ',ou=people,' + baseDN
       const { searchEntries } = await this.client.search(userDN, {
         attributes: ['shadowExpire'],
       })
       
-      if (searchEntries[0]?.shadowExpire) {
+      if (searchEntries[0] && searchEntries[0].shadowExpire) {
         const expireTimestamp = parseInt(searchEntries[0].shadowExpire)
         return new Date(expireTimestamp * 1000).toISOString()
       }
       return null
     } catch (error) {
-      logger.error(`Failed to get password expiration for ${username}:`, error.message)
+      logger.error('Failed to get password expiration for ' + username + ':', error.message)
       return null
     }
   }
@@ -158,7 +194,8 @@ export class LDAPClient {
 
   async getUsers() {
     try {
-      return await this.search(`ou=people,${this.baseDN}`, {
+      const baseDN = await this.getBaseDN()
+      return await this.search('ou=people,' + baseDN, {
         filter: '(objectClass=inetOrgPerson)',
         attributes: ['uid', 'cn', 'sn', 'mail', 'altEmail', 'memberOf'],
       })
@@ -170,19 +207,21 @@ export class LDAPClient {
 
   async getUser(uid) {
     try {
-      const entries = await this.search(`ou=people,${this.baseDN}`, {
-        filter: `(uid=${uid})`,
+      const baseDN = await this.getBaseDN()
+      const entries = await this.search('ou=people,' + baseDN, {
+        filter: '(uid=' + uid + ')',
       })
       return entries[0] || null
     } catch (error) {
-      logger.error(`Failed to get LDAP user ${uid}:`, error)
+      logger.error('Failed to get LDAP user ' + uid + ':', error)
       throw error
     }
   }
 
   async getGroups() {
     try {
-      return await this.search(`ou=groups,${this.baseDN}`, {
+      const baseDN = await this.getBaseDN()
+      return await this.search('ou=groups,' + baseDN, {
         filter: '(objectClass=groupOfNames)',
         attributes: ['cn', 'description', 'member'],
       })
@@ -194,12 +233,13 @@ export class LDAPClient {
 
   async getGroup(cn) {
     try {
-      const entries = await this.search(`ou=groups,${this.baseDN}`, {
-        filter: `(cn=${cn})`,
+      const baseDN = await this.getBaseDN()
+      const entries = await this.search('ou=groups,' + baseDN, {
+        filter: '(cn=' + cn + ')',
       })
       return entries[0] || null
     } catch (error) {
-      logger.error(`Failed to get LDAP group ${cn}:`, error)
+      logger.error('Failed to get LDAP group ' + cn + ':', error)
       throw error
     }
   }
@@ -207,7 +247,8 @@ export class LDAPClient {
   async updateUser(uid, attributes) {
     await this.connect()
     
-    const dn = `uid=${uid},ou=people,${this.baseDN}`
+    const baseDN = await this.getBaseDN()
+    const dn = 'uid=' + uid + ',ou=people,' + baseDN
     
     try {
       await this.client.modify(dn, [
@@ -219,9 +260,9 @@ export class LDAPClient {
           }),
         }),
       ])
-      logger.info(`Updated LDAP user ${uid}`, { attributes })
+      logger.info('Updated LDAP user ' + uid, { attributes })
     } catch (error) {
-      logger.error(`Failed to update LDAP user ${uid}:`, error)
+      logger.error('Failed to update LDAP user ' + uid + ':', error)
       throw error
     }
   }
@@ -229,13 +270,14 @@ export class LDAPClient {
   async deleteUser(uid) {
     await this.connect()
     
-    const dn = `uid=${uid},ou=people,${this.baseDN}`
+    const baseDN = await this.getBaseDN()
+    const dn = 'uid=' + uid + ',ou=people,' + baseDN
     
     try {
       await this.client.del(dn)
-      logger.info(`Deleted LDAP user ${uid}`)
+      logger.info('Deleted LDAP user ' + uid)
     } catch (error) {
-      logger.error(`Failed to delete LDAP user ${uid}:`, error)
+      logger.error('Failed to delete LDAP user ' + uid + ':', error)
       throw error
     }
   }

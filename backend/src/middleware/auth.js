@@ -1,5 +1,5 @@
 import crypto from 'crypto'
-import pool from '../lib/db.js'
+import { pool } from '../lib/db.js'
 import { logger } from '../utils/logger.js'
 
 const TOKEN_LENGTH = 64
@@ -139,4 +139,58 @@ export async function cleanupExpiredSessions() {
   } catch (error) {
     logger.error('Session cleanup error', { error: error.message })
   }
+}
+
+// LDAP group membership check for RBAC
+import { LDAPClient } from '../services/ldapClient.js'
+
+const ldapClient = new LDAPClient()
+const SYSTEM_ADMINS_GROUP = process.env.LDAP_SYSTEM_ADMINS_GROUP || 'cn=system_admins,ou=groups,dc=spectres,dc=co,dc=za'
+
+// Wrapper for async middleware to handle errors properly
+function asyncMiddleware(fn) {
+  return (req, res, next) => {
+    Promise.resolve(fn(req, res, next)).catch(next)
+  }
+}
+
+export function requireLDAPGroup(groupDN = SYSTEM_ADMINS_GROUP) {
+  return asyncMiddleware(async (req, res, next) => {
+    if (!req.user?.username) {
+      return res.status(401).json({ error: 'Authentication required' })
+    }
+
+    try {
+      const username = req.user.username
+      const userDN = `uid=${username},ou=people,dc=spectres,dc=co,dc=za`
+
+      // Connect to LDAP and check group membership
+      await ldapClient.connect()
+
+      const { searchEntries } = await ldapClient.client.search(groupDN, {
+        scope: 'base',
+        attributes: ['member'],
+      })
+
+      const members = searchEntries[0]?.member || []
+      const memberArray = Array.isArray(members) ? members : [members]
+
+      if (!memberArray.includes(userDN)) {
+        logger.warn('LDAP group access denied', {
+          user: username,
+          group: groupDN,
+          path: req.path
+        })
+        await ldapClient.disconnect()
+        return res.status(403).json({ error: 'Insufficient LDAP group membership' })
+      }
+
+      await ldapClient.disconnect()
+      next()
+    } catch (error) {
+      logger.error('LDAP group check error', { error: error.message, user: req.user.username })
+      // Fail secure - deny access on error
+      return res.status(500).json({ error: 'Authorization check failed' })
+    }
+  })
 }

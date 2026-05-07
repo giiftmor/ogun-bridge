@@ -76,3 +76,26 @@ testRouter.post('/set-password/:username', async (req, res) => {
     res.status(500).json({ error: error.message })
   }
 })
+
+// Verify LDAP password for a user
+testRouter.post('/verify-ldap-password/:username', async (req, res) => {
+  try {
+    const { username } = req.params
+    const { password } = req.body
+    
+    if (!password) {
+      return res.status(400).json({ error: 'Password is required' })
+    }
+    
+    const isValid = await ldapClient.verifyPassword(username, password)
+    
+    res.json({
+      username,
+      valid: isValid,
+      message: isValid ? 'Password is valid' : 'Password is invalid'
+    })
+  } catch (error) {
+    logger.error('Error verifying LDAP password:', error)
+    res.status(500).json({ error: error.message })
+  }
+})

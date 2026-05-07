@@ -1,4 +1,5 @@
 import express from 'express'
+import { pool } from '../lib/db.js'
 import { authentikClient } from '../services/authentikClient.js'
 import { ldapClient } from '../services/ldapClient.js'
 import { Change, Attribute } from 'ldapts'
@@ -7,8 +8,50 @@ import { getAuditLogs, getLastAuditLogByAction, getLastPasswordAction } from '..
 import { addLogToCache } from '../services/logCache.js'
 import { authenticate } from '../middleware/auth.js'
 
+function getServiceAccessMethod(serviceType) {
+  const methods = {
+    web: 'Login with your Ogun Bridge credentials',
+    vpn: 'WireGuard config from administrator',
+    api: 'API credentials from administrator',
+    database: 'Database credentials from administrator',
+  }
+  return methods[serviceType] || 'Contact administrator for access'
+}
+
 export const usersRouter = express.Router()
 
+// Public endpoint for user dropdown - MUST be before authenticate middleware
+// This route does NOT require authentication
+usersRouter.get('/public-list', async (req, res) => {
+  try {
+    logger.info('Fetching public user list...')
+    const authentikUsers = await authentikClient.getUsers()
+    logger.info(`Found ${authentikUsers.length} users from Authentik`)
+    
+    const users = authentikUsers
+      .filter(u => !isServiceAccount(u))
+      .map(u => ({
+        id: u.pk,
+        username: u.username,
+        email: u.email,
+      }))
+      .sort((a, b) => a.username.localeCompare(b.username))
+    
+    logger.info(`Returning ${users.length} users after filtering`)
+    
+    // Set CORS headers
+    res.setHeader('Access-Control-Allow-Origin', '*')
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+    
+    res.json(users)
+  } catch (error) {
+    logger.error('Error fetching public user list:', error)
+    res.status(500).json({ error: 'Failed to fetch users' })
+  }
+})
+
+// All routes below this require authentication
 usersRouter.use(authenticate)
 
 // Helper to check if user is a service account
@@ -97,51 +140,6 @@ usersRouter.get('/', async (req, res) => {
   } catch (error) {
     logger.error('Error fetching users:', error)
     res.status(500).json({ error: 'Failed to fetch users' })
-  }
-})
-
-usersRouter.get('/:id/compare', async (req, res) => {
-  try {
-    const aUser = await authentikClient.getUser(req.params.id)
-    const lUser = await ldapClient.getUser(aUser.username)
-    
-    const differences = {}
-    
-    if (lUser) {
-      // Compare fields
-      if (aUser.email !== lUser.mail) {
-        differences.mail = {
-          authentik: aUser.email,
-          ldap: lUser.mail,
-        }
-      }
-      
-      if ((aUser.name || aUser.username) !== lUser.cn) {
-        differences.cn = {
-          authentik: aUser.name || aUser.username,
-          ldap: lUser.cn,
-        }
-      }
-    }
-    
-    res.json({
-      authentik: {
-        username: aUser.username,
-        email: aUser.email,
-        name: aUser.name,
-        is_active: aUser.is_active,
-      },
-      ldap: lUser ? {
-        uid: lUser.uid,
-        mail: lUser.mail,
-        cn: lUser.cn,
-        sn: lUser.sn,
-      } : null,
-      differences,
-    })
-  } catch (error) {
-    logger.error('Error comparing user:', error)
-    res.status(500).json({ error: error.message })
   }
 })
 
@@ -245,11 +243,6 @@ usersRouter.get('/:username/detail', async (req, res) => {
           authentik: h.changes?.authentik,
         })),
       },
-      syncStatus: {
-        inAuthentik: !!aUser,
-        inLDAP: !!lUser,
-        synced: !!(aUser && lUser),
-      },
       recentChanges: userChanges.map(h => ({
         timestamp: h.timestamp,
         action: h.action,
@@ -321,74 +314,43 @@ usersRouter.get('/:username/profile', async (req, res) => {
       return res.status(404).json({ error: 'User not found' })
     }
     
-    // Get user's groups for service access
+    // Get user's groups from Authentik (original approach - more reliable)
     const groups = await authentikClient.getGroups()
     const userPk = aUser?.pk || lUser?.uid?.[0]
-    const userGroups = groups.filter(g => 
+    const authGroups = groups.filter(g => 
       g.users && userPk && g.users.includes(userPk)
     )
+    const userGroupNames = authGroups.map(g => g.name)
     
-    // Define available services
-    const services = [
-      {
-        id: 'mail',
-        name: 'Email',
-        description: 'Access your email inbox',
-        url: 'https://webmail.spectres.co.za',
-        accessMethod: 'IMAP/SMTP or Webmail',
-        credentials: 'Use your username and password',
-        requiredGroup: null, // All users have email
-        icon: 'mail',
-      },
-      {
-        id: 'vpn',
-        name: 'VPN',
-        description: 'Secure remote access',
-        url: null,
-        accessMethod: 'WireGuard config from admin',
-        credentials: 'WireGuard key from administrator',
-        requiredGroup: 'vpn',
-        icon: 'shield',
-      },
-      {
-        id: 'media',
-        name: 'Media Server',
-        description: 'Jellyfin media streaming',
-        url: 'https://jellyfin.spectres.co.za',
-        accessMethod: 'OAuth login',
-        credentials: 'Use your ALSM credentials',
-        requiredGroup: 'jellyfin',
-        icon: 'play',
-      },
-      {
-        id: 'cloud',
-        name: 'Cloud Storage',
-        description: 'Nextcloud file storage',
-        url: 'https://nextcloud.spectres.co.za',
-        accessMethod: 'OAuth login',
-        credentials: 'Use your ALSM credentials',
-        requiredGroup: 'nextcloud',
-        icon: 'cloud',
-      },
-      {
-        id: 'authentik',
-        name: 'Authentik',
-        description: 'Identity provider - manage your account',
-        url: 'https://auth.spectres.co.za',
-        accessMethod: 'OAuth login',
-        credentials: 'Use your ALSM credentials',
-        requiredGroup: null, // All users
-        icon: 'key',
-      },
-    ]
-    
-    // Determine which services the user has access to
-    const userGroupNames = userGroups.map(g => g.name.toLowerCase())
-    const accessibleServices = services.map(service => ({
-      ...service,
-      hasAccess: service.requiredGroup === null || userGroupNames.includes(service.requiredGroup),
-      groups: userGroups.filter(g => g.name.toLowerCase() === service.requiredGroup).map(g => g.name),
-    }))
+    // Also query local database for services (more up-to-date than hardcoded)
+    let accessibleServices = []
+    if (userGroupNames.length > 0) {
+      try {
+        const servicesResult = await pool.query(
+          `SELECT gs.service_name, gs.service_url, gs.service_type, gs.description, gs.icon,
+                  array_agg(gs.group_name) as groups
+           FROM group_services gs
+           WHERE gs.group_name = ANY($1) AND gs.is_active = true
+           GROUP BY gs.service_name, gs.service_url, gs.service_type, gs.description, gs.icon
+           ORDER BY gs.service_name`,
+          [userGroupNames]
+        )
+        
+        accessibleServices = servicesResult.rows.map(row => ({
+          id: row.service_name.toLowerCase().replace(/\s+/g, '-'),
+          name: row.service_name,
+          description: row.description,
+          url: row.service_url,
+          type: row.service_type,
+          icon: row.icon || 'default',
+          accessMethod: getServiceAccessMethod(row.service_type),
+          hasAccess: true,
+          groups: row.groups,
+        }))
+      } catch (err) {
+        logger.warn('No services in database yet:', err.message)
+      }
+    }
     
     // Get password status
     const passwordExpiration = lUser ? await ldapClient.getPasswordExpiration(username) : null
@@ -404,8 +366,8 @@ usersRouter.get('/:username/profile', async (req, res) => {
         ? { timestamp: lastPasswordInvite.timestamp, type: 'invite' }
         : null
     
-    // Determine user role based on groups
-    const isAdmin = userGroups.some(g => g.name.toLowerCase() === 'systems_admins')
+    // Determine user role based on groups (check if systems_admins)
+    const isAdmin = userGroupNames.some(g => g.toLowerCase() === 'systems_admins')
     
     // Get altEmail - prefer Authentik, then LDAP
     const altEmail = aUser?.attributes?.alt_email || 
@@ -416,7 +378,7 @@ usersRouter.get('/:username/profile', async (req, res) => {
       name: aUser?.name || lUser?.cn?.[0] || username,
       email: aUser?.email || lUser?.mail?.[0],
       altEmail: altEmail,
-      groups: userGroups.map(g => g.name),
+      groups: userGroupNames,
       role: isAdmin ? 'admin' : 'user',
       isAdmin: isAdmin,
       services: accessibleServices,

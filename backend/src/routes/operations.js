@@ -1,6 +1,9 @@
 import express from 'express'
 import { loggingService, LOG_CATEGORIES } from '../services/loggingService.js'
 import { authenticate, requireRole } from '../middleware/auth.js'
+import { authentikClient } from '../services/authentikClient.js'
+import { ldapClient } from '../services/ldapClient.js'
+import { pool } from '../lib/db.js'
 
 export const operationsRouter = express.Router()
 
@@ -50,6 +53,94 @@ operationsRouter.delete('/logs', requireRole('admin'), async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
+})
+
+operationsRouter.get('/status', async (req, res) => {
+  const startTime = Date.now()
+  const results = {}
+
+  try {
+    const akStart = Date.now()
+    await authentikClient.getUsers()
+    results.authentik = {
+      status: 'up',
+      latency: Date.now() - akStart,
+      url: process.env.AUTHENTIK_URL,
+    }
+  } catch (error) {
+    results.authentik = {
+      status: 'down',
+      error: error.message,
+      url: process.env.AUTHENTIK_URL,
+    }
+  }
+
+  try {
+    const ldapStart = Date.now()
+    await ldapClient.getUsers()
+    results.ldap = {
+      status: 'up',
+      latency: Date.now() - ldapStart,
+      url: `ldap://${process.env.LDAP_HOST}:${process.env.LDAP_PORT}`,
+    }
+  } catch (error) {
+    results.ldap = {
+      status: 'down',
+      error: error.message,
+      url: `ldap://${process.env.LDAP_HOST}:${process.env.LDAP_PORT}`,
+    }
+  }
+
+  try {
+    const dbStart = Date.now()
+    await pool.query('SELECT 1')
+    results.postgresql = {
+      status: 'up',
+      latency: Date.now() - dbStart,
+      url: `postgresql://${process.env.DB_HOST}:${process.env.DB_PORT}/${process.env.DB_NAME}`,
+    }
+  } catch (error) {
+    results.postgresql = {
+      status: 'down',
+      error: error.message,
+      url: `postgresql://${process.env.DB_HOST}:${process.env.DB_PORT}`,
+    }
+  }
+
+  try {
+    const mailStart = Date.now()
+    const mailUrl = process.env.MAILSERVER_ENABLED !== 'false' 
+      ? `http://${process.env.MAILSERVER_CONTAINER || 'mailserver'}:8080/health`
+      : null
+    
+    if (mailUrl) {
+      const response = await fetch(mailUrl, { signal: AbortSignal.timeout(5000) })
+      results.mailserver = {
+        status: response.ok ? 'up' : 'degraded',
+        latency: Date.now() - mailStart,
+        url: mailUrl,
+      }
+    } else {
+      results.mailserver = {
+        status: 'not_configured',
+        url: null,
+      }
+    }
+  } catch (error) {
+    results.mailserver = {
+      status: 'down',
+      error: error.message,
+      url: 'http://mailserver:8080/health',
+    }
+  }
+
+  results.totalLatency = Date.now() - startTime
+  results.timestamp = new Date().toISOString()
+
+  const allUp = Object.values(results).every(r => r.status === 'up' || r.status === 'not_configured')
+  results.overallStatus = allUp ? 'healthy' : 'degraded'
+
+  res.json(results)
 })
 
 export default operationsRouter

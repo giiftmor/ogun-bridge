@@ -15,6 +15,10 @@ export function Login() {
     setError('')
     setLoading(true)
 
+    // Clear any stale tokens before attempting login
+    localStorage.removeItem('auth_token')
+    localStorage.removeItem('user')
+
     try {
       const data = await apiClient.login(username, password)
       localStorage.setItem('auth_token', data.token)
@@ -34,7 +38,7 @@ export function Login() {
       <div className="max-w-md w-full p-8 bg-white dark:bg-gray-800 rounded-lg shadow-lg">
         <div className="text-center mb-8">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            ALSM Login
+            Ogun Bridge Login
           </h1>
           <p className="text-gray-500 dark:text-gray-400 mt-2">
             Authentik LDAP Sync Management

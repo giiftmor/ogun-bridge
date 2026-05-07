@@ -1,4 +1,4 @@
-import pool from '../lib/db.js'
+import { pool } from '../lib/db.js'
 import { logger } from '../utils/logger.js'
 import { ldapClient } from './ldapClient.js'
 import { authentikClient } from './authentikClient.js'
@@ -124,6 +124,133 @@ async function detectFieldMismatches(authentikUsers, ldapUsers) {
   return mismatches
 }
 
+// ─── Detect Orphaned Groups (in LDAP but not Authentik) ──────────────────────
+
+async function detectOrphanedGroups(authentikGroups, ldapGroups) {
+  const authentikGroupNames = new Set(authentikGroups.map(g => g.name))
+  const orphans = []
+
+  for (const ldapGroup of ldapGroups) {
+    if (!authentikGroupNames.has(ldapGroup.cn)) {
+      orphans.push({
+        entity_type: 'group',
+        entity_id: ldapGroup.cn,
+        change_type: 'orphan',
+        field_name: null,
+        authentik_value: null,
+        ldap_value: JSON.stringify(ldapGroup),
+        metadata: {
+          ldap_dn: ldapGroup.dn,
+          ldap_description: ldapGroup.description,
+          ldap_members: ldapGroup.member || [],
+        }
+      })
+    }
+  }
+
+  return orphans
+}
+
+// ─── Detect Missing Groups (in Authentik but not LDAP) ────────────────────────
+
+async function detectMissingGroups(authentikGroups, ldapGroups) {
+  const ldapGroupNames = new Set(ldapGroups.map(g => g.cn))
+  const missing = []
+
+  for (const authGroup of authentikGroups) {
+    if (!ldapGroupNames.has(authGroup.name)) {
+      missing.push({
+        entity_type: 'group',
+        entity_id: authGroup.name,
+        change_type: 'missing',
+        field_name: null,
+        authentik_value: JSON.stringify(authGroup),
+        ldap_value: null,
+        metadata: {
+          authentik_pk: authGroup.pk,
+          authentik_parents: authGroup.parents || [],
+        }
+      })
+    }
+  }
+
+  return missing
+}
+
+// ─── Detect Group Member Mismatches ────────────────────────────────────────────
+
+async function detectGroupMemberMismatches(authentikGroups, ldapGroups, fetchGroupMembers) {
+  const mismatches = []
+  const ldapGroupMap = new Map(ldapGroups.map(g => [g.cn, g]))
+
+  for (const authGroup of authentikGroups) {
+    const ldapGroup = ldapGroupMap.get(authGroup.name)
+    if (!ldapGroup) continue // Skip if group doesn't exist in LDAP yet
+
+    // Get members from both systems
+    let authentikMembers = []
+    let ldapMembers = []
+
+    try {
+      if (fetchGroupMembers) {
+        const authMembers = await fetchGroupMembers(authGroup.pk)
+        authentikMembers = authMembers.map(m => m.username)
+      }
+      ldapMembers = ldapGroup.member?.map(m => {
+        // Extract uid from DN: uid=john,ou=people,dc=...
+        const match = m.match(/^uid=([^,]+)/)
+        return match ? match[1] : m
+      }) || []
+    } catch (err) {
+      logger.warn(`Failed to get members for group ${authGroup.name}:`, err.message)
+      continue
+    }
+
+    const authMemberSet = new Set(authentikMembers)
+    const ldapMemberSet = new Set(ldapMembers)
+
+    // Check for members only in Authentik
+    for (const member of authentikMembers) {
+      if (!ldapMemberSet.has(member)) {
+        mismatches.push({
+          entity_type: 'group',
+          entity_id: authGroup.name,
+          change_type: 'member_mismatch',
+          field_name: 'member',
+          authentik_value: member,
+          ldap_value: null,
+          metadata: {
+            direction: 'authentik-only',
+            all_authentik_members: authentikMembers,
+            all_ldap_members: ldapMembers,
+          }
+        })
+      }
+    }
+
+    // Check for members only in LDAP
+    for (const member of ldapMembers) {
+      if (!authMemberSet.has(member)) {
+        mismatches.push({
+          entity_type: 'group',
+          entity_id: authGroup.name,
+          change_type: 'member_mismatch',
+          field_name: 'member',
+          authentik_value: null,
+          ldap_value: member,
+          metadata: {
+            direction: 'ldap-only',
+            all_authentik_members: authentikMembers,
+            all_ldap_members: ldapMembers,
+          }
+        })
+      }
+    }
+  }
+
+  return mismatches
+}
+
 // ─── Store Changes in Database ────────────────────────────────────────────────
 
 async function storeChanges(changes) {
@@ -241,6 +368,58 @@ export async function detectChanges(authentikUsers, ldapUsers) {
 
   } catch (error) {
     logger.error('Change detection failed', { error: error.message })
+    throw error
+  }
+}
+
+// ─── Fetch Authentik Group Members ─────────────────────────────────────────────
+
+async function fetchAuthentikGroupMembers(groupPk) {
+  try {
+    const group = await authentikClient.getGroup(groupPk)
+    return group.users_obj || []
+  } catch (error) {
+    logger.error(`Failed to fetch members for group ${groupPk}:`, error.message)
+    return []
+  }
+}
+
+// ─── Main Group Detection Function ──────────────────────────────────────────────
+
+export async function detectGroupChanges(authentikGroups, ldapGroups) {
+  try {
+    logger.info('Starting group change detection...')
+
+    const [orphans, missing, memberMismatches] = await Promise.all([
+      detectOrphanedGroups(authentikGroups, ldapGroups),
+      detectMissingGroups(authentikGroups, ldapGroups),
+      detectGroupMemberMismatches(authentikGroups, ldapGroups, fetchAuthentikGroupMembers),
+    ])
+
+    const allChanges = [...orphans, ...missing, ...memberMismatches]
+
+    logger.info('Group change detection complete', {
+      orphaned: orphans.length,
+      missing: missing.length,
+      member_mismatches: memberMismatches.length,
+      total: allChanges.length
+    })
+
+    // Store in database
+    await storeChanges(allChanges)
+
+    return {
+      orphaned: orphans.length,
+      missing: missing.length,
+      memberMismatches: memberMismatches.length,
+      total: allChanges.length,
+      orphans,
+      missing,
+      memberMismatches
+    }
+
+  } catch (error) {
+    logger.error('Group change detection failed', { error: error.message })
     throw error
   }
 }

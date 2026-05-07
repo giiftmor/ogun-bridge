@@ -1,38 +1,48 @@
 import fetch from 'node-fetch'
 import { logger } from '../utils/logger.js'
-import dotenv from 'dotenv'
-dotenv.config()
+import { getServiceConfig, SERVICE_AUTHENTIK } from '../services/config.js'
 
 export class AuthentikClient {
   constructor() {
-    this.baseUrl = process.env.AUTHENTIK_URL || 'http://localhost:9000'
-    this.apiToken = process.env.AUTHENTIK_TOKEN
-
-    if (!this.apiToken) {
-      throw new Error('AUTHENTIK_TOKEN environment variable is required')
+    this._config = null
+  }
+  
+  // Lazy-load config from DB
+  async getConfig() {
+    if (this._config) return this._config
+    const config = await getServiceConfig(SERVICE_AUTHENTIK)
+    this._config = {
+      baseUrl: config.baseUrl || 'http://localhost:9000',
+      apiToken: config.apiToken,
     }
+    return this._config
   }
 
   async request(endpoint, options = {}) {
-    const url = `${this.baseUrl}${endpoint}`
+    const config = await this.getConfig()
+    const url = config.baseUrl + endpoint
+    
+    if (!config.apiToken) {
+      throw new Error('Authentik API token not configured. Please run /god-mode setup.')
+    }
 
-    const config = {
+    const cfg = {
       ...options,
       headers: {
-        'Authorization': `Bearer ${this.apiToken}`,
+        'Authorization': 'Bearer ' + config.apiToken,
         'Content-Type': 'application/json',
-        ...options.headers,
+        ...(options.headers || {}),
       },
     }
 
     try {
-      const response = await fetch(url, config)
+      const response = await fetch(url, cfg)
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({
           message: response.statusText
         }))
-        throw new Error(error.message || `Authentik API error: ${response.status}`)
+        throw new Error(error.message || 'Authentik API error: ' + response.status)
       }
 
       if (response.status === 204) {
@@ -52,14 +62,13 @@ export class AuthentikClient {
     if (params.is_active !== undefined) searchParams.set('is_active', params.is_active)
 
     const query = searchParams.toString()
-    const endpoint = `/api/v3/core/users/${query ? `?${query}` : ''}`
-
+    const endpoint = '/api/v3/core/users/' + (query ? '?' + query : '')
     const data = await this.request(endpoint)
     return data.results || []
   }
 
   async getUser(userId) {
-    return this.request(`/api/v3/core/users/${userId}/`)
+    return this.request('/api/v3/core/users/' + userId + '/')
   }
 
   async createUser(userData) {
@@ -70,14 +79,14 @@ export class AuthentikClient {
   }
 
   async updateUser(userId, updates) {
-    return this.request(`/api/v3/core/users/${userId}/`, {
+    return this.request('/api/v3/core/users/' + userId + '/', {
       method: 'PATCH',
       body: JSON.stringify(updates),
     })
   }
 
   async setPassword(userId, password) {
-    return this.request(`/api/v3/core/users/${userId}/set_password/`, {
+    return this.request('/api/v3/core/users/' + userId + '/set_password/', {
       method: 'POST',
       body: JSON.stringify({ password }),
     })
@@ -89,7 +98,7 @@ export class AuthentikClient {
   }
 
   async deleteUser(userId) {
-    return this.request(`/api/v3/core/users/${userId}/`, {
+    return this.request('/api/v3/core/users/' + userId + '/', {
       method: 'DELETE',
     })
   }
@@ -99,14 +108,69 @@ export class AuthentikClient {
     if (params.search) searchParams.set('search', params.search)
 
     const query = searchParams.toString()
-    const endpoint = `/api/v3/core/groups/${query ? `?${query}` : ''}`
-
+    const endpoint = '/api/v3/core/groups/' + (query ? '?' + query : '')
     const data = await this.request(endpoint)
     return data.results || []
   }
 
   async getGroup(groupId) {
-    return this.request(`/api/v3/core/groups/${groupId}/`)
+    return this.request('/api/v3/core/groups/' + groupId + '/')
+  }
+
+  async createGroup(groupData) {
+    return this.request('/api/v3/core/groups/', {
+      method: 'POST',
+      body: JSON.stringify(groupData),
+    })
+  }
+
+  async updateGroup(groupId, updates) {
+    return this.request('/api/v3/core/groups/' + groupId + '/', {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    })
+  }
+
+  async updateGroupAttributes(groupId, attributes) {
+    const currentGroup = await this.getGroup(groupId)
+    const mergedAttributes = {
+      ...currentGroup.attributes,
+      ...attributes,
+    }
+    return this.request('/api/v3/core/groups/' + groupId + '/', {
+      method: 'PATCH',
+      body: JSON.stringify({ attributes: mergedAttributes }),
+    })
+  }
+
+  async deleteGroup(groupId) {
+    return this.request('/api/v3/core/groups/' + groupId + '/', {
+      method: 'DELETE',
+    })
+  }
+
+  async getGroupUsers(groupId) {
+    const group = await this.getGroup(groupId)
+    return group.users_obj || []
+  }
+
+  async addUserToGroup(groupId, username) {
+    const group = await this.getGroup(groupId)
+    const currentUsers = group.users_obj || []
+    if (!currentUsers.some(u => u.username === username)) {
+      const updatedUsers = [...currentUsers.map(u => u.username), username]
+      return this.updateGroup(groupId, { users: updatedUsers })
+    }
+    return { success: true, message: 'User already in group' }
+  }
+
+  async removeUserFromGroup(groupId, username) {
+    const group = await this.getGroup(groupId)
+    const currentUsers = group.users_obj || []
+    const updatedUsers = currentUsers
+      .filter(u => typeof u === 'string' ? u !== username : u.username !== username)
+      .map(u => typeof u === 'string' ? u : u.username)
+    return this.updateGroup(groupId, { users: updatedUsers })
   }
 }
 

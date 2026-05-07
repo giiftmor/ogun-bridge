@@ -6,17 +6,7 @@ import {
   Users,
   Shield,
   Clock,
-  CheckCircle,
-  XCircle,
-  Loader2,
   Mail,
-  RefreshCw,
-  Copy,
-  ExternalLink,
-  Terminal,
-  Play,
-  Cloud,
-  ArrowRightLeft,
   Settings,
   Trash2,
 } from 'lucide-react'
@@ -542,7 +532,7 @@ export function UserDetail({ username: initialUsername, isOwnProfile = false }) 
                 User's Groups
               </CardTitle>
               <CardDescription>
-                Groups this user belongs to and their sync configuration
+                Groups this user belongs to
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -559,12 +549,6 @@ export function UserDetail({ username: initialUsername, isOwnProfile = false }) 
                         </div>
                         <Badge variant="outline">{group.memberCount || 0} members</Badge>
                       </div>
-                      {group.sync_direction && (
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <ArrowRightLeft className="h-3 w-3" />
-                          Sync: {group.sync_direction}
-                        </div>
-                      )}
                       {group.services && group.services.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1">
                           {group.services.map(service => (

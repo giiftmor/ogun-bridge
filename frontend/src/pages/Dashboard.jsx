@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Activity, Users, AlertCircle, CheckCircle2, Clock, RefreshCw, Zap, Server, Shield, KeyRound, Timer } from 'lucide-react'
+import { Activity, Users, AlertCircle, CheckCircle2, Clock, RefreshCw, Zap, Timer } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -206,7 +206,6 @@ export function Dashboard() {
           </div>
       </CardContent>
         </Card>
-      )}
 
       {/* Progress Bar - Show when sync is running */}
       {syncStatus?.status === 'running' && (
@@ -279,30 +278,16 @@ export function Dashboard() {
           variant={stats?.failedSyncs > 0 ? 'error' : 'default'}
         />
         <StatsCard
-          title="Active Sessions"
-          value={health?.metrics?.activeSessions || 0}
-          icon={<Activity className="h-4 w-4 text-muted-foreground" />}
-          description="Current active sessions"
+          title="Authentik Groups"
+          value={stats?.authentikGroups || 0}
+          icon={<Users className="h-4 w-4 text-muted-foreground" />}
+          description="Groups in Authentik"
         />
         <StatsCard
-          title="Failed Logins (24h)"
-          value={health?.metrics?.failedLogins24h || 0}
-          icon={<Shield className="h-4 w-4 text-muted-foreground" />}
-          description="Failed login attempts"
-          variant={(health?.metrics?.failedLogins24h || 0) > 0 ? 'error' : 'default'}
-        />
-        <StatsCard
-          title="Response Time"
-          value={health?.responseTime ? `${health.responseTime}ms` : '-'}
-          icon={<Timer className="h-4 w-4 text-muted-foreground" />}
-          description="API response time"
-          variant={health?.responseTime > 1000 ? 'warning' : 'default'}
-        />
-        <StatsCard
-          title="Last Sync Duration"
-          value={stats?.lastSyncDuration ? `${stats.lastSyncDuration}ms` : '-'}
-          icon={<Clock className="h-4 w-4 text-muted-foreground" />}
-          description="Time for last sync"
+          title="LDAP Groups"
+          value={stats?.ldapGroups || 0}
+          icon={<Users className="h-4 w-4 text-muted-foreground" />}
+          description="Groups in LDAP"
         />
       </div>
 

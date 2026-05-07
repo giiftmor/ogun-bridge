@@ -15,16 +15,20 @@ let lastActivityCache = null
 dashboardRouter.get('/stats', async (req, res) => {
   try {
     const syncState = getSyncState()
-
-    const [authentikUsers, ldapUsers, pendingChanges] = await Promise.all([
+    
+    const [authentikUsers, ldapUsers, pendingChanges, authentikGroups, ldapGroups] = await Promise.all([
       authentikClient.getUsers(),
       ldapClient.getUsers(),
       getChanges({ status: 'pending', limit: 1000 }),
+      authentikClient.getGroups(),
+      ldapClient.getGroups(),
     ])
-
+    
     res.json({
       authentikUsers: authentikUsers.length,
       ldapUsers: ldapUsers.length,
+      authentikGroups: authentikGroups.length,
+      ldapGroups: ldapGroups.length,
       pendingChanges: pendingChanges.length,
       failedSyncs: syncState.recentErrors.length,
       lastSyncTime: syncState.lastSyncTime,

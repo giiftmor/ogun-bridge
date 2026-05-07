@@ -19,11 +19,20 @@ class ApiClient {
     try {
       const response = await fetch(url, config)
 
-      if (response.status === 401) {
-        localStorage.removeItem('auth_token')
-        window.location.href = '/login'
-        throw new Error('Session expired')
+    if (response.status === 401) {
+      // Only redirect to login if it's a session/auth failure (not network error)
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}))
+        
+        // Only clear token and redirect for actual auth failures
+        if (error.error?.includes('expired') || error.error?.includes('Invalid') || error.error?.includes('Not authenticated')) {
+          localStorage.removeItem('auth_token')
+          window.location.href = '/login'
+        }
+        // For other 401s, just throw without redirect
+        throw new Error(error.message || 'Authentication required')
       }
+    }
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({ message: response.statusText }))
@@ -121,6 +130,77 @@ class ApiClient {
     })
   }
 
+  // Setup endpoints
+  async getSetupStatus() {
+    const response = await fetch(`${API_BASE_URL}/setup/status`)
+    if (!response.ok) {
+      throw new Error('Failed to get setup status')
+    }
+    return response.json()
+  }
+
+  async createSetupAdmin(username, password, email) {
+    const response = await fetch(`${API_BASE_URL}/setup/admin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password, email }),
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Failed to create admin' }))
+      throw new Error(error.message || 'Failed to create admin')
+    }
+    return response.json()
+  }
+
+  async getSetupConfig(service) {
+    const response = await fetch(`${API_BASE_URL}/setup/config/${service}`)
+    if (!response.ok) {
+      throw new Error(`Failed to get ${service} config`)
+    }
+    return response.json()
+  }
+
+  async saveSetupConfig(service, config) {
+    const response = await fetch(`${API_BASE_URL}/setup/config/${service}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: `Failed to save ${service} config` }))
+      throw new Error(error.message || `Failed to save ${service} config`)
+    }
+    return response.json()
+  }
+
+  async testSetupService(service, config = {}) {
+    const response = await fetch(`${API_BASE_URL}/setup/test/${service}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: `${service} test failed` }))
+      throw new Error(error.message || `${service} test failed`)
+    }
+    return response.json()
+  }
+
+  async completeSetup() {
+    const response = await fetch(`${API_BASE_URL}/setup/complete`, {
+      method: 'POST',
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Failed to complete setup' }))
+      throw new Error(error.message || 'Failed to complete setup')
+    }
+    return response.json()
+  }
+
   // Dashboard endpoints
   async getDashboardStats() {
     return this.request('/dashboard/stats')
@@ -132,6 +212,25 @@ class ApiClient {
 
   async getSystemHealth() {
     return this.request('/health')
+  }
+
+  async previewSync({ direction, group_name }) {
+    return this.request('/sync/preview', {
+      method: 'POST',
+      body: JSON.stringify({ direction, group_name }),
+    })
+  }
+
+  async runSync({ direction, group_name, force = false }) {
+    const query = force ? '?force=true' : ''
+    return this.request(`/sync/run${query}`, {
+      method: 'POST',
+      body: JSON.stringify({ direction, group_name, force }),
+    })
+  }
+
+  async getExternalHealth() {
+    return this.request('/health/external')
   }
 
   async testService(service) {
@@ -155,6 +254,21 @@ class ApiClient {
     )
     const query = new URLSearchParams(cleanParams).toString()
     return this.request(`/users${query ? `?${query}` : ''}`)
+  }
+
+  async getUsersList() {
+    // Use fetch directly to avoid auth redirect for public endpoint
+    const url = `${API_BASE_URL}/users/public-list`
+    try {
+      const response = await fetch(url)
+      if (!response.ok) {
+        throw new Error('Failed to fetch users')
+      }
+      return await response.json()
+    } catch (error) {
+      console.error('Error fetching users list:', error)
+      return []
+    }
   }
 
   async getUser(userId) {
@@ -188,6 +302,17 @@ class ApiClient {
     return this.request(`/invite/force-reset/${username}`, { method: 'POST' })
   }
 
+  async inviteUser(username) {
+    return this.request(`/invite/send/${username}`, { method: 'POST' })
+  }
+
+  async generateTempPassword(username) {
+    return this.request('/auth/generate-temp-password', {
+      method: 'POST',
+      body: JSON.stringify({ username }),
+    })
+  }
+
   // Group endpoints
   async getGroups(params = {}) {
     const cleanParams = Object.fromEntries(
@@ -199,6 +324,56 @@ class ApiClient {
 
   async getGroupComparison(groupId) {
     return this.request(`/groups/${groupId}/compare`)
+  }
+
+  async getGroup(groupId) {
+    return this.request(`/groups/${groupId}`)
+  }
+
+  async updateGroupSyncDirection(groupId, sync_direction) {
+    return this.request(`/groups/${groupId}/sync-direction`, {
+      method: 'PATCH',
+      body: JSON.stringify({ sync_direction }),
+    })
+  }
+
+  async getGroupServices(groupId) {
+    return this.request(`/groups/${groupId}/services`)
+  }
+
+  async addGroupService(groupId, service) {
+    return this.request(`/groups/${groupId}/services`, {
+      method: 'POST',
+      body: JSON.stringify(service),
+    })
+  }
+
+  async removeGroupService(groupId, serviceId) {
+    return this.request(`/groups/${groupId}/services/${serviceId}`, {
+      method: 'DELETE',
+    })
+  }
+
+  async triggerGroupSync(options = {}) {
+    return this.request('/groups/sync', {
+      method: 'POST',
+      body: JSON.stringify(options),
+    })
+  }
+
+  async getGroupSyncConfigs() {
+    return this.request('/groups/config')
+  }
+
+  async syncGroupNow(options = {}) {
+    return this.request('/groups/sync-now', {
+      method: 'POST',
+      body: JSON.stringify(options),
+    })
+  }
+
+  async getGroupMembers(groupId) {
+    return this.request(`/groups/${groupId}/members`)
   }
 
   // Schema endpoints
@@ -281,6 +456,13 @@ class ApiClient {
     return this.request(`/password/sync/${username}`, {
       method: 'POST',
       body: JSON.stringify({ password, expirationDays }),
+    })
+  }
+
+  async verifyLdapPassword(username, password) {
+    return this.request(`/test/verify-ldap-password/${username}`, {
+      method: 'POST',
+      body: JSON.stringify({ password }),
     })
   }
 

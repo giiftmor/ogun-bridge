@@ -14,6 +14,7 @@ export function MailSettings() {
     host: '',
     port: '',
     secure: false,
+    requireTLS: true,
     user: '',
     password: '',
     fromName: '',
@@ -31,6 +32,7 @@ export function MailSettings() {
         host: mailConfig.host || '',
         port: mailConfig.port?.toString() || '',
         secure: mailConfig.secure || false,
+        requireTLS: mailConfig.requireTLS !== false,
         user: mailConfig.user || '',
         password: '',
         fromName: mailConfig.fromName || '',
@@ -126,16 +128,42 @@ export function MailSettings() {
               </div>
             </div>
 
-            <div>
-              <Label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={settings.secure}
-                  onChange={(e) => handleInputChange('secure', e.target.checked)}
-                  className="rounded border-input"
-                />
-                Use TLS/SSL (secure connection)
-              </Label>
+            <div className="space-y-3">
+              <Label>Connection Security</Label>
+              <div className="space-y-2 pl-2">
+                <Label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.secure}
+                    onChange={(e) => {
+                      handleInputChange('secure', e.target.checked)
+                      if (e.target.checked) {
+                        handleInputChange('requireTLS', false)
+                        handleInputChange('port', '465')
+                      }
+                    }}
+                    className="rounded border-input"
+                  />
+                  Use implicit TLS (port 465)
+                  <span className="text-xs text-muted-foreground">(connect encrypted immediately)</span>
+                </Label>
+                <Label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.requireTLS && !settings.secure}
+                    onChange={(e) => {
+                      handleInputChange('requireTLS', e.target.checked)
+                      if (e.target.checked) {
+                        handleInputChange('secure', false)
+                        handleInputChange('port', '587')
+                      }
+                    }}
+                    className="rounded border-input"
+                  />
+                  Use STARTTLS (port 587)
+                  <span className="text-xs text-muted-foreground">(upgrade to TLS after connecting)</span>
+                </Label>
+              </div>
             </div>
 
             <div>
@@ -181,7 +209,7 @@ export function MailSettings() {
                 id="fromName"
                 value={settings.fromName}
                 onChange={(e) => handleInputChange('fromName', e.target.value)}
-                placeholder="ALSM System"
+                placeholder="Ogun Bridge System"
                 className="mt-1"
               />
             </div>

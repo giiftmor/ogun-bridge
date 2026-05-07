@@ -1,6 +1,6 @@
 import express from 'express'
 import crypto from 'crypto'
-import pool from '../lib/db.js'
+import { pool } from '../lib/db.js'
 import { ldapClient } from '../services/ldapClient.js'
 import { authentikClient } from '../services/authentikClient.js'
 import { logger } from '../utils/logger.js'
@@ -9,13 +9,66 @@ import { triggerWebhook, getWebhooks, createWebhook, deleteWebhook, testWebhook 
 import { ensureUserProfile, updateUserProfile } from '../services/userProfileService.js'
 import { loggingService } from '../services/loggingService.js'
 import { createAuditLog } from '../services/auditService.js'
-import { authenticate } from '../middleware/auth.js'
+import { authenticate, requireLDAPGroup } from '../middleware/auth.js'
 import { validatePassword } from './password.js'
-import { sqlNowSAST } from '../utils/timezone.js'
 
 export const inviteRouter = express.Router()
 
 inviteRouter.use(authenticate)
+
+// Helper to get user's services from Authentik groups
+async function getUserServicesFromAuthentik(username) {
+  try {
+    // Get user's groups from Authentik
+    const aUser = await authentikClient.getUserByUsername(username)
+    if (!aUser) {
+      logger.info('User not found in Authentik', { username })
+      return []
+    }
+    
+    const allGroups = await authentikClient.getGroups()
+    const userGroups = allGroups.filter(g => 
+      g.users && aUser.pk && g.users.includes(aUser.pk)
+    ).map(g => g.name)
+    
+    if (userGroups.length === 0) {
+      logger.info('No groups found for user in Authentik', { username })
+      return []
+    }
+    
+    // Get services for those groups (only active, publicly accessible ones)
+    const servicesResult = await pool.query(
+      `SELECT service_name, service_url, service_type, description, icon
+       FROM group_services
+       WHERE group_name = ANY($1) AND is_active = true AND is_public = true
+       ORDER BY service_name`,
+      [userGroups]
+    )
+    
+    return servicesResult.rows.map(row => ({
+      id: row.service_name.toLowerCase().replace(/\s+/g, '-'),
+      name: row.service_name,
+      url: row.service_url,
+      type: row.service_type,
+      description: row.description,
+      icon: row.icon || 'default',
+      accessMethod: getAccessMethod(row.service_type),
+    }))
+  } catch (error) {
+    logger.error('Error fetching user services from Authentik:', { error: error.message, username })
+    return []
+  }
+}
+
+function getAccessMethod(serviceType) {
+  const methods = {
+    web: 'Login with your Ogun Bridge credentials',
+    vpn: 'WireGuard config from administrator',
+    api: 'API credentials from administrator',
+    database: 'Database credentials from administrator',
+  }
+  return methods[serviceType] || 'Contact administrator for access'
+}
 
 // Send password invite to a single user
 inviteRouter.post('/send/:username', async (req, res) => {
@@ -31,15 +84,57 @@ inviteRouter.post('/send/:username', async (req, res) => {
     // Get altEmail from Authentik attributes (primary source)
     const altEmail = aUser.attributes?.alt_email || null
     
-    // Send email
+    // Generate reset token first
+    const resetToken = crypto.randomBytes(32).toString('hex')
+    let userId = null
+    
+    // Ensure user exists in local auth_users
+    let userResult = await pool.query(
+      'SELECT id FROM auth_users WHERE username = $1',
+      [username]
+    )
+    
+    if (userResult.rows.length === 0) {
+      const placeholderHash = '$2a$10$placeholderfordummyuseonly'
+      await pool.query(
+        'INSERT INTO auth_users (username, password_hash, email, role, active) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (username) DO NOTHING',
+        [username, placeholderHash, aUser.email || altEmail, 'viewer', true]
+      )
+      userResult = await pool.query(
+        'SELECT id FROM auth_users WHERE username = $1',
+        [username]
+      )
+    }
+    
+    if (userResult.rows.length > 0) {
+      userId = userResult.rows[0].id
+      
+      // Delete any existing tokens
+      await pool.query('DELETE FROM password_reset_tokens WHERE user_id = $1', [userId])
+      
+      // Insert new token with 7 day expiry
+      await pool.query(
+        `INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, NOW() + INTERVAL '7 days')`,
+        [userId, resetToken]
+      )
+    }
+    
+    // Get user's services from Authentik groups
+    const services = await getUserServicesFromAuthentik(username)
+    
+    // Send email WITH TOKEN and services - use altEmail if available, otherwise use primary
+    const sendTo = altEmail || aUser.email
     const result = await sendPasswordCreationEmail(
-      aUser.email,
+      sendTo,
       username,
       aUser.name,
-      altEmail
+      resetToken,
+      altEmail,
+      services
     )
     
     if (result.success) {
+
       // Update user profile
       await ensureUserProfile(username, altEmail)
       await updateUserProfile(username, {
@@ -47,14 +142,16 @@ inviteRouter.post('/send/:username', async (req, res) => {
         email_invite_sent_at: new Date(),
       })
       
-      loggingService.info('PASSWORD', `Password invite sent to ${username}`, { username, email: aUser.email })
+      const createPasswordUrl = `${process.env.APP_URL || 'https://ogun.spectres.co.za'}/create-password/${resetToken}`
+      // Don't log the full URL - token is sensitive
+      loggingService.info('PASSWORD', `Password invite sent to ${username}`, { username, email: sendTo })
       
       await createAuditLog({
         action: 'password_invite_sent',
         actor: 'api',
         entity_type: 'user',
         entity_id: username,
-        changes: { email: aUser.email, altEmail },
+        changes: { email: sendTo, altEmail },
         source: 'api',
         success: true,
       })
@@ -63,8 +160,9 @@ inviteRouter.post('/send/:username', async (req, res) => {
     res.json({
       success: result.success,
       username,
-      email: aUser.email,
+      email: sendTo,
       altEmail,
+      services: services, // Include services in response for confirmation
       messageId: result.messageId,
       error: result.error,
     })
@@ -75,7 +173,8 @@ inviteRouter.post('/send/:username', async (req, res) => {
 })
 
 // Send bulk password invites
-inviteRouter.post('/send-bulk', async (req, res) => {
+// Requires LDAP system_admins group membership
+inviteRouter.post('/send-bulk', requireLDAPGroup(), async (req, res) => {
   try {
     const { usernames } = req.body
     
@@ -95,11 +194,15 @@ inviteRouter.post('/send-bulk', async (req, res) => {
         
         const altEmail = aUser.attributes?.alt_email || null
         
+        // Get user's services from Authentik groups
+        const services = await getUserServicesFromAuthentik(username)
+        
         const result = await sendPasswordCreationEmail(
           aUser.email,
           username,
           aUser.name,
-          altEmail
+          altEmail,
+          services
         )
         
         if (result.success) {
@@ -258,7 +361,7 @@ inviteRouter.post('/force-reset/:username', async (req, res) => {
       
       // Insert new token
       await pool.query(
-        `INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, ${sqlNowSAST()} + INTERVAL '1 hour')`,
+        `INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, NOW() + INTERVAL '24 hours')`,
         [userId, resetToken]
       )
     }

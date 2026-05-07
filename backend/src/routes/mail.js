@@ -1,6 +1,6 @@
 import express from 'express'
 import nodemailer from 'nodemailer'
-import pool from '../lib/db.js'
+import { pool } from '../lib/db.js'
 import { logger } from '../utils/logger.js'
 import { addLogToCache } from '../services/logCache.js'
 import { createAuditLog } from '../services/auditService.js'
@@ -23,7 +23,8 @@ async function getMailConfig() {
       return {
         host: row.host,
         port: row.port,
-        secure: row.secure,
+        secure: row.secure || false,
+        requireTLS: row.require_tls !== false,
         user: row.username || '',
         password: row.password || '',
         fromName: row.from_name,
@@ -38,9 +39,10 @@ async function getMailConfig() {
     host: process.env.SMTP_HOST || 'smtp.example.com',
     port: parseInt(process.env.SMTP_PORT || '587'),
     secure: process.env.SMTP_SECURE === 'true',
+    requireTLS: process.env.SMTP_REQUIRE_TLS !== 'false',
     user: process.env.SMTP_USER || '',
     password: process.env.SMTP_PASSWORD || '',
-    fromName: process.env.SMTP_FROM_NAME || 'ALSM',
+    fromName: process.env.SMTP_FROM_NAME || 'Ogun Bridge',
     fromAddress: process.env.SMTP_FROM_ADDRESS || 'alsm@example.com',
   }
 }
@@ -54,20 +56,15 @@ async function getTransporter() {
   }
 
   const isSecure = config.port === 465 || config.secure
+  const shouldRequireTLS = config.requireTLS && !isSecure
   
-  logger.debug('Creating SMTP transporter for mail router', {
-    host: config.host,
-    port: config.port,
-    secure: isSecure,
-    user: config.user,
-    fromAddress: config.fromAddress
-  })
-
+  logger.info(`[DEBUG] Creating transporter: host=${config.host} port=${config.port} secure=${isSecure} requireTLS=${shouldRequireTLS}`)
+  
   return nodemailer.createTransport({
     host: config.host,
     port: config.port,
     secure: isSecure,
-    requireTLS: !isSecure,
+    requireTLS: shouldRequireTLS,
     tls: {
       rejectUnauthorized: false,
     },
@@ -89,6 +86,7 @@ mailRouter.get('/config', async (req, res) => {
     host: config.host,
     port: config.port,
     secure: config.secure,
+    requireTLS: config.requireTLS,
     user: config.user,
     fromName: config.fromName,
     fromAddress: config.fromAddress,
@@ -97,20 +95,21 @@ mailRouter.get('/config', async (req, res) => {
 
 mailRouter.post('/config', async (req, res) => {
   try {
-    const { host, port, secure, user, password, fromName, fromAddress } = req.body
+    const { host, port, secure, requireTLS, user, password, fromName, fromAddress } = req.body
     
     await pool.query(
       `UPDATE mail_settings SET 
         host = COALESCE($1, host),
         port = COALESCE($2, port),
         secure = COALESCE($3, secure),
-        username = $4,
-        password = COALESCE($5, password),
-        from_name = COALESCE($6, from_name),
-        from_address = COALESCE($7, from_address),
+        require_tls = COALESCE($4, require_tls),
+        username = $5,
+        password = COALESCE($6, password),
+        from_name = COALESCE($7, from_name),
+        from_address = COALESCE($8, from_address),
         updated_at = NOW()
        WHERE id = 1`,
-      [host, port, secure, user || null, password || null, fromName || null, fromAddress || null]
+      [host, port, secure, requireTLS, user || null, password || null, fromName || null, fromAddress || null]
     )
     
     // Reload config
@@ -127,7 +126,7 @@ mailRouter.post('/config', async (req, res) => {
       actor: req.user?.username || 'system',
       entity_type: 'config',
       entity_id: 'mail',
-      changes: { host, port, secure, user, fromName, fromAddress },
+      changes: { host, port, secure, requireTLS, user, fromName, fromAddress },
       source: 'ui',
       ip_address: req.ip,
     })
@@ -143,6 +142,8 @@ mailRouter.post('/test', async (req, res) => {
   try {
     const transporter = await getTransporter()
     const config = await getMailConfig()
+    
+    logger.info(`[DEBUG] Test email config: host=${config.host} port=${config.port} secure=${config.port === 465 || config.secure} requireTLS=${config.requireTLS} user=${config.user} hasPassword=${!!config.password}`)
     
     if (!transporter || config.host === 'smtp.example.com') {
       return res.json({ 
@@ -160,7 +161,7 @@ mailRouter.post('/test', async (req, res) => {
     const info = await transporter.sendMail({
       from: `"${config.fromName}" <${config.fromAddress}>`,
       to: config.user ? config.user : undefined,
-      subject: 'ALSM Test Email',
+      subject: 'Ogun Bridge Test Email',
       text: 'This is a test email from ALSM. If you received this, your mail settings are working!',
       html: `
         <h2>ALSM Test Email</h2>

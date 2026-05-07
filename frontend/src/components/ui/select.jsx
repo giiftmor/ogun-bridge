@@ -4,10 +4,10 @@ import { cn } from "@/lib/utils"
 
 const Select = React.forwardRef(({ className, children, value, onValueChange, ...props }, ref) => {
   return (
-    <div className="relative">
+    <div className="relative w-full">
       <select
         className={cn(
-          "flex h-10 w-full items-center rounded-md border border-input bg-background px-3 py-2 pr-8 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+          "flex h-10 w-full items-center rounded-md border border-input bg-background px-3 py-2 pr-8 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none",
           className
         )}
         ref={ref}
@@ -23,42 +23,35 @@ const Select = React.forwardRef(({ className, children, value, onValueChange, ..
 })
 Select.displayName = "Select"
 
-const SelectTrigger = ({ className, children, ...props }) => (
-  <div
-    className={cn("flex h-10 w-full items-center", className)}
-    {...props}
-  >
+const SelectTrigger = ({ className, children, value, onValueChange, ...props }) => (
+  <Select value={value} onValueChange={onValueChange} className={className} {...props}>
     {children}
-  </div>
+  </Select>
 )
-SelectTrigger.displayName = "SelectTrigger"
 
 const SelectContent = ({ className, children, ...props }) => (
-  <div
-    className={cn("hidden", className)}
-    {...props}
-  >
+  <div className={cn(className)} {...props}>
     {children}
   </div>
 )
-SelectContent.displayName = "SelectContent"
 
-const SelectItem = ({ className, children, value, ...props }) => (
+const SelectItem = React.forwardRef(({ className, children, value, ...props }, ref) => (
   <option
+    ref={ref}
     value={value}
     className={cn(
-      "relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      "py-1.5 px-2 text-sm cursor-pointer hover:bg-accent",
       className
     )}
     {...props}
   >
     {children}
   </option>
-)
+))
 SelectItem.displayName = "SelectItem"
 
 const SelectValue = ({ placeholder }) => (
-  <span className="text-muted-foreground">{placeholder}</span>
+  <span className="text-muted-foreground">{placeholder || "Select..."}</span>
 )
 
 export {

@@ -91,7 +91,8 @@ passwordRouter.get('/history/:username', async (req, res) => {
 })
 
 // Main sync endpoint - set password in LDAP + Authentik
-passwordRouter.post('/sync/:username', async (req, res) => {
+// Requires admin role (local database role, not LDAP group)
+passwordRouter.post('/sync/:username', requireRole('admin'), async (req, res) => {
   try {
     const { username } = req.params
     const { password, expirationDays } = req.body
@@ -135,6 +136,13 @@ passwordRouter.post('/sync/:username', async (req, res) => {
       message: `[PASSWORD-SYNC] Password set in LDAP for: ${username}`,
       context: { username, target: 'ldap' }
     })
+    
+    // Verify the new password works in LDAP using bind
+    const isValid = await ldapClient.verifyPassword(username, password)
+    if (!isValid) {
+      // Log warning but don't fail - password may still work with Authentik
+      logger.warn(`[PASSWORD-SYNC] LDAP verification failed for ${username}, but password was set`)
+    }
     
     // 2. Set password expiration if provided
     if (expirationDays !== undefined) {

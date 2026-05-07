@@ -8,6 +8,9 @@ RUN npm ci --only=production
 
 COPY src ./src
 
+# Create logs directory with proper permissions
+RUN mkdir -p /app/logs && chown -R node:node /app
+
 EXPOSE 3333
 
 ENV NODE_ENV=production

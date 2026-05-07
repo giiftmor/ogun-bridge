@@ -1,7 +1,7 @@
 import express from 'express'
 import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
-import pool from '../lib/db.js'
+import { pool } from '../lib/db.js'
 import { ldapClient } from '../services/ldapClient.js'
 import { authentikClient } from '../services/authentikClient.js'
 import { 
@@ -15,6 +15,7 @@ import { logger } from '../utils/logger.js'
 import { loggingService } from '../services/loggingService.js'
 import { sqlNowSAST } from '../utils/timezone.js'
 import { sendPasswordResetEmail } from '../services/emailService.js'
+import { createAuditLog } from '../services/auditService.js'
 import { validatePassword, PASSWORD_POLICY } from './password.js'
 
 export const authRouter = express.Router()
@@ -92,12 +93,53 @@ authRouter.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Username and password required' })
     }
 
-    const result = await pool.query(
+    // Try local auth first
+    let result = await pool.query(
       'SELECT id, username, password_hash, email, role, active FROM auth_users WHERE username = $1',
       [username]
     )
 
-    const user = result.rows[0]
+    let user = result.rows[0]
+
+    // If user not found locally, try LDAP authentication
+    if (!user) {
+      try {
+        const ldapClient = new LDAPClient()
+        const ldapValid = await ldapClient.verifyPassword(username, password)
+
+        if (ldapValid) {
+          logger.info('LDAP auth successful, creating local user entry', { username })
+
+          // Get user info from Authentik if available
+          let email = null
+          let role = 'viewer' // Default role for LDAP users
+
+          try {
+            const akUser = await authentikClient.getUserByUsername(username)
+            if (akUser) {
+              email = akUser.email || null
+              // Check if user is in system admins group
+              const isAdmin = await checkLDAPSystemAdmin(username)
+              if (isAdmin) role = 'admin'
+            }
+          } catch (akError) {
+            logger.warn('Could not fetch user from Authentik', { username, error: akError.message })
+          }
+
+          // Create user entry in auth_users (no password hash - they auth via LDAP)
+          const newUser = await pool.query(
+            `INSERT INTO auth_users (username, email, role, active, last_login)
+             VALUES ($1, $2, $3, true, NOW())
+             RETURNING id, username, email, role`,
+            [username, email, role]
+          )
+
+          user = newUser.rows[0]
+        }
+      } catch (ldapError) {
+        logger.warn('LDAP auth failed', { username, error: ldapError.message })
+      }
+    }
 
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' })
@@ -107,11 +149,26 @@ authRouter.post('/login', async (req, res) => {
       return res.status(403).json({ error: 'Account is disabled' })
     }
 
-    const validPassword = await verifyPassword(password, user.password_hash)
-
-    if (!validPassword) {
-      logger.warn('Failed login attempt', { username, ip: getClientIp(req) })
-      return res.status(401).json({ error: 'Invalid credentials' })
+    // Verify password (local users) or LDAP (if user has password_hash)
+    if (user.password_hash) {
+      const validPassword = await verifyPassword(password, user.password_hash)
+      if (!validPassword) {
+        logger.warn('Failed login attempt', { username, ip: getClientIp(req) })
+        return res.status(401).json({ error: 'Invalid credentials' })
+      }
+    } else {
+      // LDAP user - verify against LDAP
+      try {
+        const ldapClient = new LDAPClient()
+        const ldapValid = await ldapClient.verifyPassword(username, password)
+        if (!ldapValid) {
+          logger.warn('LDAP password verification failed', { username, ip: getClientIp(req) })
+          return res.status(401).json({ error: 'Invalid credentials' })
+        }
+      } catch (ldapError) {
+        logger.error('LDAP verification error', { username, error: ldapError.message })
+        return res.status(401).json({ error: 'Invalid credentials' })
+      }
     }
 
     const token = await createSession(user.id, getClientIp(req), getUserAgent(req))
@@ -137,6 +194,32 @@ authRouter.post('/login', async (req, res) => {
     res.status(500).json({ error: 'Login failed' })
   }
 })
+
+// Helper function to check if user is in LDAP system admins group
+async function checkLDAPSystemAdmin(username) {
+  try {
+    const ldapClient = new LDAPClient()
+    await ldapClient.connect()
+
+    const SYSTEM_ADMINS_GROUP = process.env.LDAP_SYSTEM_ADMINS_GROUP || 'cn=system_admins,ou=groups,dc=spectres,dc=co,dc=za'
+    
+    const { searchEntries } = await ldapClient.client.search(SYSTEM_ADMINS_GROUP, {
+      scope: 'base',
+      attributes: ['member'],
+    })
+
+    await ldapClient.disconnect()
+
+    const members = searchEntries[0]?.member || []
+    const memberArray = Array.isArray(members) ? members : [members]
+    const userDN = `uid=${username},ou=people,dc=spectres,dc=co,dc=za`
+
+    return memberArray.includes(userDN)
+  } catch (error) {
+    logger.warn('Failed to check LDAP system admin group', { username, error: error.message })
+    return false
+  }
+}
 
 authRouter.post('/logout', async (req, res) => {
   try {
@@ -381,6 +464,136 @@ authRouter.post('/change-password', async (req, res) => {
   }
 })
 
+function generateTemporaryPassword() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%&*'
+  let password = ''
+  for (let i = 0; i < 12; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return password
+}
+
+function validateTemporaryPassword(password) {
+  const errors = []
+  if (!password || password.length < 10) {
+    errors.push('Password must be at least 10 characters')
+  }
+  if (!/[A-Z]/.test(password)) {
+    errors.push('Password must contain at least one uppercase letter')
+  }
+  if (!/[a-z]/.test(password)) {
+    errors.push('Password must contain at least one lowercase letter')
+  }
+  if (!/[0-9]/.test(password)) {
+    errors.push('Password must contain at least one number')
+  }
+  if (!/[!@#$%&*]/.test(password)) {
+    errors.push('Password must contain at least one special character (!@#$%&*)')
+  }
+  return { valid: errors.length === 0, errors }
+}
+
+// POST /api/auth/generate-temp-password - Generate and send temporary password (admin)
+authRouter.post('/generate-temp-password', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '')
+    const session = await validateSession(token)
+
+    if (!session || session.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' })
+    }
+
+    const { username } = req.body
+
+    if (!username) {
+      return res.status(400).json({ error: 'Username is required' })
+    }
+
+    const aUser = await authentikClient.getUserByUsername(username)
+
+    if (!aUser) {
+      return res.status(404).json({ error: 'User not found in Authentik' })
+    }
+
+    const tempPassword = generateTemporaryPassword()
+    const validation = validateTemporaryPassword(tempPassword)
+
+    if (!validation.valid) {
+      logger.error('Failed to generate valid temporary password')
+      return res.status(500).json({ error: 'Failed to generate valid password' })
+    }
+
+    const sendToEmail = aUser.attributes?.alt_email || aUser.email
+
+    if (!sendToEmail) {
+      return res.status(400).json({ error: 'User has no email address' })
+    }
+
+    let ldapResult = 'failed'
+    try {
+      const setLdap = await ldapClient.setUserPassword(username, tempPassword)
+      ldapResult = setLdap ? 'success' : 'failed'
+      logger.info('Temp password set in LDAP', { username, result: ldapResult })
+    } catch (ldapError) {
+      ldapResult = `failed: ${ldapError.message}`
+      logger.error('Failed to set temp password in LDAP', { username, error: ldapError.message })
+    }
+
+    let authentikResult = 'failed'
+    try {
+      await authentikClient.setPassword(aUser.pk, tempPassword)
+      await authentikClient.updateUser(aUser.pk, { force_password: true })
+      authentikResult = 'success'
+      logger.info('Temp password set in Authentik with force_password', { username })
+    } catch (akError) {
+      authentikResult = `failed: ${akError.message}`
+      logger.error('Failed to set temp password in Authentik', { username, error: akError.message })
+    }
+
+    let emailResult = { success: false, error: null }
+    try {
+      const result = await sendPasswordResetEmail(sendToEmail, username, null, {
+        temporaryPassword: tempPassword,
+        isInvitation: true,
+      })
+      emailResult = result
+    } catch (emailError) {
+      emailResult = { success: false, error: emailError.message }
+      logger.error('Failed to send temp password email', { username, error: emailError.message })
+    }
+
+    await createAuditLog({
+      action: 'temp_password_generated',
+      actor: session.username,
+      entity_type: 'user',
+      entity_id: username,
+      changes: {
+        ldap: ldapResult,
+        authentik: authentikResult,
+        email_sent: emailResult.success,
+        force_password: true,
+      },
+      source: 'api',
+      success: ldapResult === 'success' && authentikResult === 'success',
+    })
+
+    loggingService.info('PASSWORD', `Temporary password generated for ${username}`, { username, by: session.username })
+
+    res.json({
+      success: emailResult.success,
+      username,
+      email: sendToEmail,
+      ldap: ldapResult,
+      authentik: authentikResult,
+      email_sent: emailResult.success,
+      message: 'Temporary password generated and sent to user email. User will be prompted to change password on first login.',
+    })
+  } catch (error) {
+    logger.error('Generate temp password error', { error: error.message })
+    res.status(500).json({ error: 'Failed to generate temporary password' })
+  }
+})
+
 // POST /api/auth/forgot-password - Request password reset
 authRouter.post('/forgot-password', async (req, res) => {
   try {
@@ -425,7 +638,7 @@ authRouter.post('/forgot-password', async (req, res) => {
 
     // Insert new token - use SAST timezone
     await pool.query(
-      `INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, ${sqlNowSAST()} + INTERVAL '1 hour')`,
+      `INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, NOW() + INTERVAL '24 hours')`,
       [user.id, resetToken]
     )
 
@@ -496,7 +709,7 @@ authRouter.post('/resend-reset-token', async (req, res) => {
       
       // Insert new token - use SAST timezone
       await pool.query(
-        `INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, ${sqlNowSAST()} + INTERVAL '1 hour')`,
+`INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, NOW() + INTERVAL '24 hours')`,
         [userId, resetToken]
       )
     }
@@ -542,7 +755,7 @@ authRouter.post('/reset-password', async (req, res) => {
     // Find valid token
     const tokenResult = await pool.query(
       `SELECT id, user_id FROM password_reset_tokens 
-       WHERE token = $1 AND used_at IS NULL AND expires_at > ${sqlNowSAST()}`,
+       WHERE token = $1 AND used_at IS NULL AND expires_at > NOW()`,
       [token]
     )
 
@@ -649,7 +862,7 @@ authRouter.get('/verify-reset-token/:token', async (req, res) => {
       `SELECT prt.id, prt.expires_at, au.username 
        FROM password_reset_tokens prt
        JOIN auth_users au ON au.id = prt.user_id
-       WHERE prt.token = $1 AND prt.used_at IS NULL AND prt.expires_at > ${sqlNowSAST()}`,
+       WHERE prt.token = $1 AND prt.used_at IS NULL AND prt.expires_at > NOW()`,
       [token]
     )
 

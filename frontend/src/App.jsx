@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { Toaster } from 'react-hot-toast'
@@ -23,6 +23,7 @@ import { ForgotPassword } from './pages/ForgotPassword'
 import { ResetPassword } from './pages/ResetPassword'
 import { CreatePassword } from './pages/CreatePassword'
 import { OperationsCenter } from './pages/OperationsCenter'
+import { SyncManager } from './pages/SyncManager'
 import { apiClient } from './services/api'
 
 const queryClient = new QueryClient({
@@ -38,10 +39,19 @@ const queryClient = new QueryClient({
 function ProtectedRoute({ children }) {
   const [loading, setLoading] = useState(true)
   const [authenticated, setAuthenticated] = useState(false)
+  const location = useLocation()
 
   useEffect(() => {
     const checkAuth = async () => {
       const token = localStorage.getItem('auth_token')
+      
+      // If on login page, don't try to validate old tokens
+      if (location.pathname === '/login') {
+        setAuthenticated(false)
+        setLoading(false)
+        return
+      }
+      
       if (!token) {
         setAuthenticated(false)
         setLoading(false)
@@ -61,7 +71,7 @@ function ProtectedRoute({ children }) {
     }
 
     checkAuth()
-  }, [])
+  }, [location.pathname])
 
   if (loading) {
     return (
@@ -134,6 +144,7 @@ export function App() {
             <Route path="mail-admin" element={<MailAdmin />} />
             <Route path="operations" element={<OperationsCenter />} />
             <Route path="schema" element={<SchemaMapper />} />
+            <Route path="sync-manager" element={<SyncManager />} />
           </Route>
 
           {/* Catch all - redirect to login */}
