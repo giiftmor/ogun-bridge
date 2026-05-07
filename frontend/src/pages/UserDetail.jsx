@@ -9,6 +9,8 @@ import {
   Mail,
   Settings,
   Trash2,
+  Play,
+  Cloud,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
