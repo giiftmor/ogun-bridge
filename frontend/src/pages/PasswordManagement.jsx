@@ -204,7 +204,7 @@ export function PasswordManagement() {
             )}
             {selectedUser && (
               <div className="mt-4 sm:mt-6">
-                <Badge variant="outline" className="text-sm px-3 py-1">
+                <Badge variant="ghost" className="text-sm px-3 py-1">
                   Managing password for: <span className="font-semibold">{selectedUser}</span>
                 </Badge>
               </div>
@@ -438,7 +438,7 @@ export function PasswordManagement() {
 
                     <Button
                       type="submit"
-                      variant="outline"
+                      variant="ghost"
                       className="w-full"
                       disabled={!verifyPassword || verifyMutation.isPending}
                     >

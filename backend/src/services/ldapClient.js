@@ -197,7 +197,7 @@ export class LDAPClient {
       const baseDN = await this.getBaseDN()
       return await this.search('ou=people,' + baseDN, {
         filter: '(objectClass=inetOrgPerson)',
-        attributes: ['uid', 'cn', 'sn', 'mail', 'altEmail', 'memberOf'],
+        attributes: ['uid', 'cn', 'sn', 'mail', 'altEmail', 'memberOf', 'employeeNumber'],
       })
     } catch (error) {
       logger.error('Failed to get LDAP users:', error)
@@ -210,6 +210,7 @@ export class LDAPClient {
       const baseDN = await this.getBaseDN()
       const entries = await this.search('ou=people,' + baseDN, {
         filter: '(uid=' + uid + ')',
+        attributes: ['uid', 'cn', 'sn', 'mail', 'altEmail', 'memberOf', 'employeeNumber'],
       })
       return entries[0] || null
     } catch (error) {

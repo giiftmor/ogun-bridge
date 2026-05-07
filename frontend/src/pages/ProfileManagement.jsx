@@ -183,7 +183,7 @@ export function ProfileManagement() {
                       <div className="flex flex-wrap gap-1 mt-1">
                         {profile.groups?.length > 0 ? (
                           profile.groups.map(group => (
-                            <Badge key={group} variant="outline">{group}</Badge>
+                            <Badge key={group} variant="ghost">{group}</Badge>
                           ))
                         ) : (
                           <span className="text-muted-foreground">No groups</span>
@@ -209,7 +209,7 @@ export function ProfileManagement() {
                           Active
                         </Badge>
                       ) : (
-                        <Badge variant="destructive">
+                        <Badge variant="danger">
                           <XCircle className="h-3 w-3 mr-1" />
                           None
                         </Badge>
@@ -230,7 +230,7 @@ export function ProfileManagement() {
                         <p className="font-medium flex items-center gap-2">
                           <RefreshCw className="h-4 w-4" />
                           {new Date(profile.password.lastReset.timestamp).toLocaleDateString()}
-                          <Badge variant="outline" className="ml-2">
+                          <Badge variant="ghost" className="ml-2">
                             {profile.password.lastReset.type}
                           </Badge>
                         </p>
@@ -324,7 +324,7 @@ export function ProfileManagement() {
                               {service.url && (
                                 <div className="flex gap-2">
                                   <Button 
-                                    variant="outline" 
+                                    variant="ghost" 
                                     size="sm" 
                                     className="flex-1"
                                     onClick={() => window.open(service.url, '_blank')}
@@ -333,7 +333,7 @@ export function ProfileManagement() {
                                     Open
                                   </Button>
                                   <Button 
-                                    variant="outline" 
+                                    variant="ghost" 
                                     size="sm"
                                     onClick={() => copyToClipboard(service.url)}
                                   >
@@ -357,14 +357,14 @@ export function ProfileManagement() {
                 </CardHeader>
                 <CardContent className="flex flex-wrap gap-2">
                   <Button 
-                    variant="outline"
+                    variant="ghost"
                     onClick={() => refetch()}
                   >
                     <RefreshCw className="h-4 w-4 mr-2" />
                     Refresh Profile
                   </Button>
                   <Button 
-                    variant="default"
+                    
                     onClick={() => {
                       setConfirmDialog({
                         open: true,
@@ -386,7 +386,7 @@ export function ProfileManagement() {
                     Invite User
                   </Button>
                   <Button 
-                    variant="outline"
+                    variant="ghost"
                     onClick={() => {
                       setConfirmDialog({
                         open: true,
@@ -408,7 +408,7 @@ export function ProfileManagement() {
                     Force Password Reset
                   </Button>
                   <Button 
-                    variant="default"
+                    
                     onClick={() => {
                       setConfirmDialog({
                         open: true,
@@ -430,7 +430,7 @@ export function ProfileManagement() {
                     Generate Temp Password
                   </Button>
                   <Button 
-                    variant="outline"
+                    variant="ghost"
                     onClick={() => window.open('https://auth.spectres.co.za', '_blank')}
                   >
                     <User className="h-4 w-4 mr-2" />

@@ -16,7 +16,7 @@ import { UserDetail } from './pages/UserDetail'
 import { MailSettings } from './pages/MailSettings'
 import { MailAdmin } from './pages/MailAdmin'
 import { ProfileManagement } from './pages/ProfileManagement'
-import { GroupManager } from './pages/GroupManager'
+import { ServiceManager } from './pages/ServiceManager'
 import { VersionHistory } from './pages/VersionHistory'
 import { Login } from './pages/Login'
 import { ForgotPassword } from './pages/ForgotPassword'
@@ -25,6 +25,7 @@ import { CreatePassword } from './pages/CreatePassword'
 import { OperationsCenter } from './pages/OperationsCenter'
 import { SyncManager } from './pages/SyncManager'
 import { apiClient } from './services/api'
+import { useAppStore } from './store/useAppStore'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -44,14 +45,13 @@ function ProtectedRoute({ children }) {
   useEffect(() => {
     const checkAuth = async () => {
       const token = localStorage.getItem('auth_token')
-      
-      // If on login page, don't try to validate old tokens
+
       if (location.pathname === '/login') {
         setAuthenticated(false)
         setLoading(false)
         return
       }
-      
+
       if (!token) {
         setAuthenticated(false)
         setLoading(false)
@@ -75,8 +75,8 @@ function ProtectedRoute({ children }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900">
-        <div className="text-gray-500 dark:text-gray-400">Loading...</div>
+      <div className="min-h-screen flex items-center justify-center bg-page">
+        <div className="text-tertiary text-[13px]">Loading...</div>
       </div>
     )
   }
@@ -90,12 +90,11 @@ function ProtectedRoute({ children }) {
 
 export function App() {
   useEffect(() => {
-    const theme = localStorage.getItem('theme') || 
+    const theme = localStorage.getItem('theme') ||
       (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
     document.documentElement.classList.toggle('dark', theme === 'dark')
   }, [])
 
-  // Fetch timezone from server
   useEffect(() => {
     const fetchTimezone = async () => {
       try {
@@ -112,10 +111,17 @@ export function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <Toaster position="top-right" />
+      <Toaster position="top-right" toastOptions={{
+        style: {
+          background: 'hsl(var(--bg-surface))',
+          color: 'hsl(var(--text-primary))',
+          border: '0.5px solid hsl(var(--border))',
+          borderRadius: '12px',
+          fontSize: '13px',
+        },
+      }} />
       <BrowserRouter>
         <Routes>
-          {/* Public routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password/:token" element={<ResetPassword />} />
@@ -123,7 +129,6 @@ export function App() {
           <Route path="/create-password/:token" element={<CreatePassword />} />
           <Route path="/self-service-password" element={<SelfServicePasswordChange />} />
 
-          {/* Protected routes */}
           <Route path="/" element={
             <ProtectedRoute>
               <Layout />
@@ -133,7 +138,7 @@ export function App() {
             <Route path="users" element={<UserBrowser />} />
             <Route path="users/:username" element={<UserDetail />} />
             <Route path="groups" element={<GroupBrowser />} />
-            <Route path="groups-manager" element={<GroupManager />} />
+            <Route path="services" element={<ServiceManager />} />
             <Route path="logs" element={<LogViewer />} />
             <Route path="changes" element={<ChangesBrowser />} />
             <Route path="audit" element={<AuditViewer />} />
@@ -145,9 +150,9 @@ export function App() {
             <Route path="operations" element={<OperationsCenter />} />
             <Route path="schema" element={<SchemaMapper />} />
             <Route path="sync-manager" element={<SyncManager />} />
+            <Route path="groups-manager" element={<Navigate to="/services" replace />} />
           </Route>
 
-          {/* Catch all - redirect to login */}
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </BrowserRouter>

@@ -12,19 +12,8 @@ import { toast } from 'react-hot-toast'
 import { ProgressBar } from '@/components/ProgressBar'
 import { translateError } from '@/utils/errorTranslator'
 import {
-  LineChart,
-  Line,
-  AreaChart,
-  Area,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
+  LineChart, Line, AreaChart, Area, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
 
 export function Dashboard() {
@@ -63,34 +52,30 @@ export function Dashboard() {
     }
   })
 
-  // Fetch dashboard stats
   const { data: stats, isLoading } = useQuery({
     queryKey: ['dashboard-stats'],
     queryFn: apiClient.getDashboardStats.bind(apiClient),
     refetchInterval: false,
   })
 
-  // Fetch system health
   const { data: health, isLoading: healthLoading, refetch: refetchHealth } = useQuery({
     queryKey: ['system-health'],
     queryFn: apiClient.getSystemHealth.bind(apiClient),
     refetchInterval: 30000,
   })
 
-  // Fetch recent activity
   const { data: activity } = useQuery({
     queryKey: ['recent-activity'],
     queryFn: apiClient.getRecentActivity.bind(apiClient),
     refetchInterval: false,
   })
 
-  // Fetch sync history for charts
   const { data: syncHistory = [] } = useQuery({
     queryKey: ['sync-history'],
     queryFn: () => fetch('/api/sync/history', {
       headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` }
     }).then(r => r.json()),
-    refetchInterval: 60000, // Refresh every minute
+    refetchInterval: 60000,
   })
 
   useEffect(() => {
@@ -99,12 +84,10 @@ export function Dashboard() {
     }
   }, [stats, setDashboardStats])
 
-  // Subscribe to real-time sync status
   useEffect(() => {
     wsService.subscribeSyncStatus((status) => {
       setSyncStatus(status)
     })
-
     return () => {
       wsService.unsubscribe('sync-status')
     }
@@ -113,89 +96,69 @@ export function Dashboard() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-muted-foreground">Loading dashboard...</div>
+        <div className="text-secondary text-[13px]">Loading dashboard...</div>
       </div>
     )
   }
 
   const getStatusVariant = (status) => {
     switch (status) {
-      case 'success':
-        return 'success'
-      case 'warning':
-        return 'warning'
-      case 'error':
-        return 'error'
-      default:
-        return 'secondary'
+      case 'success': return 'success'
+      case 'warning': return 'default'
+      case 'error': return 'danger'
+      default: return 'neutral'
     }
   }
 
   const getStatusIcon = (status) => {
     switch (status) {
-      case 'success':
-        return <CheckCircle2 className="h-5 w-5" />
-      case 'warning':
-        return <AlertCircle className="h-5 w-5" />
-      case 'error':
-        return <AlertCircle className="h-5 w-5" />
-      default:
-        return <Clock className="h-5 w-5" />
+      case 'success': return <CheckCircle2 className="h-4 w-4" />
+      case 'warning': return <AlertCircle className="h-4 w-4" />
+      case 'error': return <AlertCircle className="h-4 w-4" />
+      default: return <Clock className="h-4 w-4" />
     }
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground mt-2">
-          Monitor your Authentik LDAP sync service
-        </p>
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-[20px] font-medium text-primary">Dashboard</h1>
+          <p className="text-[13px] text-secondary mt-0.5">Monitor your Authentik LDAP sync service</p>
+        </div>
       </div>
 
-      {/* Status Banner */}
       <Card>
-        <CardContent className="pt-6">
+        <CardContent className="pt-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              {getStatusIcon(stats?.syncStatus)}
+            <div className="flex items-center gap-3">
+              <div className="flex items-center justify-center w-8 h-8 rounded-sm bg-accent-tint">
+                {getStatusIcon(stats?.syncStatus)}
+              </div>
               <div>
-                <div className="font-semibold">System Status</div>
-                <div className="text-sm text-muted-foreground">
+                <div className="text-[13px] font-medium text-primary">System Status</div>
+                <div className="text-[12px] text-secondary">
                   Last sync: {stats?.lastSyncTime
                     ? new Date(stats.lastSyncTime).toLocaleString()
                     : 'Never'}
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               {syncStatus?.status === 'running' && (
-                <Badge variant="warning">Sync Running...</Badge>
+                <Badge variant="default">Sync Running...</Badge>
               )}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => refetchHealth()}
-              >
+              <Button variant="ghost" size="sm" onClick={() => refetchHealth()}>
                 <Activity className={`h-4 w-4 mr-2 ${healthLoading ? 'animate-spin' : ''}`} />
                 Health Check
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => syncMutation.mutate()}
-                disabled={syncMutation.isPending || syncStatus?.status === 'running'}
-              >
+              <Button variant="ghost" size="sm" onClick={() => syncMutation.mutate()}
+                disabled={syncMutation.isPending || syncStatus?.status === 'running'}>
                 <RefreshCw className={`h-4 w-4 mr-2 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
                 Sync Now
               </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => setShowForceConfirm(true)}
-                disabled={forceSyncMutation.isPending || syncStatus?.status === 'running'}
-              >
+              <Button variant="ghost" size="sm" onClick={() => setShowForceConfirm(true)}
+                disabled={forceSyncMutation.isPending || syncStatus?.status === 'running'}>
                 <Zap className={`h-4 w-4 mr-2 ${forceSyncMutation.isPending ? 'animate-spin' : ''}`} />
                 Force Sync
               </Button>
@@ -204,35 +167,25 @@ export function Dashboard() {
               </Badge>
             </div>
           </div>
-      </CardContent>
-        </Card>
+        </CardContent>
+      </Card>
 
-      {/* Progress Bar - Show when sync is running */}
       {syncStatus?.status === 'running' && (
-        <div className="mt-6">
-          <ProgressBar />
-        </div>
+        <ProgressBar />
       )}
 
-      {/* System Health Grid */}
       {health && !healthLoading && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">System Health</CardTitle>
+            <CardTitle className="text-[16px]">System Health</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {['authentik', 'ldap', 'database', 'smtp'].map(service => {
                 const svc = health.services?.[service] || health.metrics
                 const isUp = svc?.status === 'up' || svc?.status === 'healthy'
                 return (
-                  <ServiceIndicator
-                    key={service}
-                    name={service}
-                    status={svc?.status}
-                    latency={svc?.latency}
-                    isUp={isUp}
-                  />
+                  <ServiceIndicator key={service} name={service} status={svc?.status} latency={svc?.latency} isUp={isUp} />
                 )
               })}
             </div>
@@ -240,200 +193,123 @@ export function Dashboard() {
         </Card>
       )}
 
-      {/* Stats Grid - 8 cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <StatsCard
-          title="Authentik Users"
-          value={stats?.authentikUsers || 0}
-          icon={<Users className="h-4 w-4 text-muted-foreground" />}
-          description="Total users in Authentik"
-        />
-        <StatsCard
-          title="LDAP Users"
-          value={stats?.ldapUsers || 0}
-          icon={<Users className="h-4 w-4 text-muted-foreground" />}
-          description="Total users in LDAP"
-        />
-        <StatsCard
-          title="Pending Changes"
-          value={stats?.pendingChanges || 0}
-          icon={<Clock className="h-4 w-4 text-muted-foreground" />}
-          description="Awaiting approval"
-          variant={stats?.pendingChanges > 0 ? 'warning' : 'default'}
-          action={
-            stats?.pendingChanges > 0 ? (
-              <Link to="/changes">
-                <Button size="sm" variant="outline" className="mt-2">
-                  Review
-                </Button>
-              </Link>
-            ) : null
-          }
-        />
-        <StatsCard
-          title="Failed Syncs"
-          value={stats?.failedSyncs || 0}
-          icon={<AlertCircle className="h-4 w-4 text-muted-foreground" />}
-          description="Errors in last 24h"
-          variant={stats?.failedSyncs > 0 ? 'error' : 'default'}
-        />
-        <StatsCard
-          title="Authentik Groups"
-          value={stats?.authentikGroups || 0}
-          icon={<Users className="h-4 w-4 text-muted-foreground" />}
-          description="Groups in Authentik"
-        />
-        <StatsCard
-          title="LDAP Groups"
-          value={stats?.ldapGroups || 0}
-          icon={<Users className="h-4 w-4 text-muted-foreground" />}
-          description="Groups in LDAP"
-        />
+      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+        <StatsCard title="Authentik Users" value={stats?.authentikUsers || 0} icon={<Users className="h-4 w-4" />} description="Total users in Authentik" />
+        <StatsCard title="LDAP Users" value={stats?.ldapUsers || 0} icon={<Users className="h-4 w-4" />} description="Total users in LDAP" />
+        <StatsCard title="Pending Changes" value={stats?.pendingChanges || 0} icon={<Clock className="h-4 w-4" />}
+          description="Awaiting approval" variant={stats?.pendingChanges > 0 ? 'warning' : 'default'}
+          action={stats?.pendingChanges > 0 ? <Link to="/changes"><Button size="sm" variant="ghost" className="mt-2">Review</Button></Link> : null} />
+        <StatsCard title="Failed Syncs" value={stats?.failedSyncs || 0} icon={<AlertCircle className="h-4 w-4" />}
+          description="Errors in last 24h" variant={stats?.failedSyncs > 0 ? 'error' : 'default'} />
       </div>
 
-      {/* Needs Attention Section */}
       {((stats?.pendingChanges || 0) > 0 || (stats?.failedSyncs || 0) > 0 || (health?.metrics?.failedLogins24h || 0) > 0) && (
-        <Card className="border-yellow-500">
+        <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <AlertCircle className="h-5 w-5 text-yellow-500" />
+            <CardTitle className="flex items-center gap-2 text-[16px]">
+              <AlertCircle className="h-4 w-4 text-[#b45309]" />
               Needs Attention
             </CardTitle>
-            <CardDescription>
-              Actionable items requiring your attention
-            </CardDescription>
+            <CardDescription>Actionable items requiring your attention</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-2">
             {stats?.pendingChanges > 0 && (
-              <div className="flex items-center justify-between p-3 border rounded-lg">
-                <span>📊 {stats.pendingChanges} pending changes from LDAP drift</span>
-                <Button size="sm" variant="outline" onClick={() => window.location.href = '/changes'}>Review</Button>
+              <div className="flex items-center justify-between p-3 border border-border rounded-sm">
+                <span className="text-[13px]">{stats.pendingChanges} pending changes from LDAP drift</span>
+                <Button size="sm" variant="ghost" onClick={() => window.location.href = '/changes'}>Review</Button>
               </div>
             )}
             {stats?.failedSyncs > 0 && (
-              <div className="flex items-center justify-between p-3 border rounded-lg">
-                <span>🔴 {stats.failedSyncs} failed syncs in last 24h</span>
-                <Button size="sm" variant="outline" onClick={() => window.location.href = '/logs'}>Investigate</Button>
+              <div className="flex items-center justify-between p-3 border border-border rounded-sm">
+                <span className="text-[13px]">{stats.failedSyncs} failed syncs in last 24h</span>
+                <Button size="sm" variant="ghost" onClick={() => window.location.href = '/logs'}>Investigate</Button>
               </div>
             )}
             {health?.metrics?.failedLogins24h > 0 && (
-              <div className="flex items-center justify-between p-3 border rounded-lg">
-                <span>🔐 {health.metrics.failedLogins24h} failed logins (24h)</span>
-                <Button size="sm" variant="outline" onClick={() => window.location.href = '/audit'}>View</Button>
+              <div className="flex items-center justify-between p-3 border border-border rounded-sm">
+                <span className="text-[13px]">{health.metrics.failedLogins24h} failed logins (24h)</span>
+                <Button size="sm" variant="ghost" onClick={() => window.location.href = '/audit'}>View</Button>
               </div>
             )}
           </CardContent>
         </Card>
       )}
 
-      {/* Charts Section */}
       {syncHistory.length > 0 && (
-        <div className="grid gap-6 md:grid-cols-2">
-          {/* Sync Success Rate - 7 Day Trend */}
+        <div className="grid gap-4 md:grid-cols-2">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Activity className="h-5 w-5" />
+              <CardTitle className="flex items-center gap-2 text-[16px]">
+                <Activity className="h-4 w-4" />
                 Sync Success Rate (7 Days)
               </CardTitle>
-              <CardDescription>
-                Percentage of successful syncs over the past week
-              </CardDescription>
+              <CardDescription>Percentage of successful syncs over the past week</CardDescription>
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={prepareSyncTrendData(syncHistory)}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis domain={[0, 100]} />
-                  <Tooltip />
-                  <Legend />
-                  <Line
-                    type="monotone"
-                    dataKey="successRate"
-                    stroke="#22c55e"
-                    strokeWidth={2}
-                    name="Success Rate (%)"
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="totalSyncs"
-                    stroke="#3b82f6"
-                    strokeWidth={2}
-                    name="Total Syncs"
-                  />
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="date" tick={{ fontSize: 12, fill: 'hsl(var(--text-secondary))' }} />
+                  <YAxis domain={[0, 100]} tick={{ fontSize: 12, fill: 'hsl(var(--text-secondary))' }} />
+                  <Tooltip contentStyle={{ background: 'hsl(var(--bg-elevated))', border: '0.5px solid hsl(var(--border))', borderRadius: '12px', fontSize: '13px' }} />
+                  <Legend wrapperStyle={{ fontSize: '12px' }} />
+                  <Line type="monotone" dataKey="successRate" stroke="#C3125C" strokeWidth={2} name="Success Rate (%)" />
+                  <Line type="monotone" dataKey="totalSyncs" stroke="hsl(var(--text-tertiary))" strokeWidth={2} name="Total Syncs" />
                 </LineChart>
               </ResponsiveContainer>
             </CardContent>
           </Card>
 
-          {/* Error Distribution Pie Chart */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <AlertCircle className="h-5 w-5" />
+              <CardTitle className="flex items-center gap-2 text-[16px]">
+                <AlertCircle className="h-4 w-4" />
                 Error Distribution
               </CardTitle>
-              <CardDescription>
-                Breakdown of sync errors by category
-              </CardDescription>
+              <CardDescription>Breakdown of sync errors by category</CardDescription>
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
                   <Pie
                     data={prepareErrorDistribution(syncHistory)}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
+                    cx="50%" cy="50%" labelLine={false}
                     label={renderCustomLabel}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
+                    outerRadius={80} fill="#8884d8" dataKey="value"
                   >
                     {prepareErrorDistribution(syncHistory).map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={ERROR_COLORS[index % ERROR_COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip />
-                  <Legend />
+                  <Tooltip contentStyle={{ background: 'hsl(var(--bg-elevated))', border: '0.5px solid hsl(var(--border))', borderRadius: '12px', fontSize: '13px' }} />
+                  <Legend wrapperStyle={{ fontSize: '12px' }} />
                 </PieChart>
               </ResponsiveContainer>
             </CardContent>
           </Card>
 
-          {/* Response Time Trend */}
           <Card className="md:col-span-2">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Timer className="h-5 w-5" />
+              <CardTitle className="flex items-center gap-2 text-[16px]">
+                <Timer className="h-4 w-4" />
                 Response Time Trend
               </CardTitle>
-              <CardDescription>
-                API response time over the last 7 days
-              </CardDescription>
+              <CardDescription>API response time over the last 7 days</CardDescription>
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>
                 <AreaChart data={prepareResponseTimeData(syncHistory)}>
                   <defs>
                     <linearGradient id="colorResponse" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#8884d8" stopOpacity={0.8} />
-                      <stop offset="95%" stopColor="#8884d8" stopOpacity={0} />
+                      <stop offset="5%" stopColor="#C3125C" stopOpacity={0.8} />
+                      <stop offset="95%" stopColor="#C3125C" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <Tooltip />
-                  <Area
-                    type="monotone"
-                    dataKey="responseTime"
-                    stroke="#8884d8"
-                    fillOpacity={1}
-                    fill="url(#colorResponse)"
-                    name="Response Time (ms)"
-                  />
+                  <XAxis dataKey="date" tick={{ fontSize: 12, fill: 'hsl(var(--text-secondary))' }} />
+                  <YAxis tick={{ fontSize: 12, fill: 'hsl(var(--text-secondary))' }} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <Tooltip contentStyle={{ background: 'hsl(var(--bg-elevated))', border: '0.5px solid hsl(var(--border))', borderRadius: '12px', fontSize: '13px' }} />
+                  <Area type="monotone" dataKey="responseTime" stroke="#C3125C" fillOpacity={1} fill="url(#colorResponse)" name="Response Time (ms)" />
                 </AreaChart>
               </ResponsiveContainer>
             </CardContent>
@@ -441,35 +317,26 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* Force Sync Confirmation */}
       {showForceConfirm && (
-        <Card className="border-red-500 bg-red-50 dark:bg-red-950/20">
-          <CardContent className="pt-6">
+        <Card>
+          <CardContent className="pt-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <Zap className="h-5 w-5 text-red-500" />
+                <Zap className="h-5 w-5 text-danger-text" />
                 <div>
-                  <div className="font-semibold">Force Sync Warning</div>
-                  <div className="text-sm text-muted-foreground">
+                  <div className="text-[13px] font-medium text-primary">Force Sync Warning</div>
+                  <div className="text-[12px] text-secondary">
                     This will sync ALL users from Authentik including those who have never logged in.
                     This may create LDAP accounts for inactive users.
                   </div>
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowForceConfirm(false)}
-                >
+                <Button variant="ghost" size="sm" onClick={() => setShowForceConfirm(false)}>
                   Cancel
                 </Button>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => forceSyncMutation.mutate()}
-                >
-                  Confirm Force Sync
+                <Button variant="ghost" size="sm" onClick={() => forceSyncMutation.mutate()}>
+                  <Zap className="h-4 w-4 mr-1" />Confirm
                 </Button>
               </div>
             </div>
@@ -477,23 +344,22 @@ export function Dashboard() {
         </Card>
       )}
 
-      {/* Recent Activity */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Activity className="h-5 w-5" />
+          <CardTitle className="flex items-center gap-2 text-[16px]">
+            <Activity className="h-4 w-4" />
             Recent Activity
           </CardTitle>
         </CardHeader>
         <CardContent>
           {activity && activity.length > 0 ? (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {activity.map((item, index) => (
                 <ActivityItem key={index} item={item} />
               ))}
             </div>
           ) : (
-            <div className="text-center py-8 text-muted-foreground">
+            <div className="text-center py-8 text-secondary text-[13px]">
               No recent activity
             </div>
           )}
@@ -504,21 +370,15 @@ export function Dashboard() {
 }
 
 function StatsCard({ title, value, icon, description, variant = 'default', action }) {
-  const variantStyles = {
-    default: '',
-    warning: 'border-yellow-500/50 bg-yellow-50 dark:bg-yellow-950/20',
-    error: 'border-red-500/50 bg-red-50 dark:bg-red-950/20',
-  }
-
   return (
-    <Card className={variantStyles[variant]}>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        {icon}
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between pb-0">
+        <CardTitle className="text-[12px] text-secondary">{title}</CardTitle>
+        <span className="text-tertiary">{icon}</span>
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
-        <p className="text-xs text-muted-foreground mt-1">{description}</p>
+        <div className="text-kpi text-primary">{value}</div>
+        <p className="text-[12px] text-tertiary mt-1">{description}</p>
         {action}
       </CardContent>
     </Card>
@@ -528,29 +388,20 @@ function StatsCard({ title, value, icon, description, variant = 'default', actio
 function ActivityItem({ item }) {
   const getActionColor = (action) => {
     switch (action) {
-      case 'success':
-        return 'success'
-      case 'info':
-        return 'info'
-      case 'deleted':
-        return 'error'
-      case 'failed':
-        return 'error'
-      default:
-        return 'secondary'
+      case 'success': return 'success'
+      case 'info': return 'neutral'
+      case 'deleted': return 'danger'
+      case 'failed': return 'danger'
+      default: return 'neutral'
     }
   }
 
   return (
-    <div className="flex items-start gap-4 pb-4 border-b last:border-0 last:pb-0">
-      <Badge variant={getActionColor(item.action)} className="mt-0.5">
-        {item.action}
-      </Badge>
-      <div className="flex-1 space-y-1">
-        <p className="text-sm font-medium leading-none">{item.message}</p>
-        <p className="text-sm text-muted-foreground">
-          {new Date(item.timestamp).toLocaleString()}
-        </p>
+    <div className="flex items-start gap-3 pb-3 border-b border-border last:border-0 last:pb-0">
+      <Badge variant={getActionColor(item.action)} className="mt-0.5">{item.action}</Badge>
+      <div className="flex-1 space-y-0.5">
+        <p className="text-[13px] font-medium text-primary leading-none">{item.message}</p>
+        <p className="text-[12px] text-secondary">{new Date(item.timestamp).toLocaleString()}</p>
       </div>
     </div>
   )
@@ -558,85 +409,62 @@ function ActivityItem({ item }) {
 
 function ServiceIndicator({ name, status, latency, isUp }) {
   return (
-    <div className={`p-3 border rounded-lg text-center ${isUp ? 'border-green-500/50 bg-green-50 dark:bg-green-950/20' : 'border-red-500/50 bg-red-50 dark:bg-red-950/20'}`}>
-      <div className={`text-lg ${isUp ? 'text-green-600' : 'text-red-600'}`}>
-        {isUp ? '✅' : '❌'}
+    <div className={`p-3 border border-border rounded-sm text-center ${isUp ? 'bg-success-bg' : 'bg-danger-bg'}`}>
+      <div className={`text-lg font-medium ${isUp ? 'text-success-text' : 'text-danger-text'}`}>
+        {isUp ? '\u2705' : '\u274c'}
       </div>
-      <p className="font-medium capitalize mt-1">{name}</p>
-      {latency && <p className="text-xs text-muted-foreground">{latency}ms</p>}
+      <p className="text-[13px] font-medium text-primary capitalize mt-1">{name}</p>
+      {latency && <p className="text-[12px] text-secondary">{latency}ms</p>}
     </div>
   )
 }
 
-// Chart colors for error distribution
-const ERROR_COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6']
+const ERROR_COLORS = ['hsl(var(--accent))', '#b45309', '#ca8a04', '#16a34a', '#2563eb', '#7c3aed']
 
-// Prepare 7-day sync success rate trend data
 function prepareSyncTrendData(history) {
   const last7Days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date()
-    d.setDate(d.getDate() - (6 - i))
-    return d.toISOString().split('T')[0]
+    const d = new Date(); d.setDate(d.getDate() - (6 - i)); return d.toISOString().split('T')[0]
   })
-
   return last7Days.map(date => {
     const daySyncs = history.filter(h => h.timestamp?.startsWith(date))
     const total = daySyncs.length
     const successful = daySyncs.filter(h => h.errors === 0).length
     const successRate = total > 0 ? Math.round((successful / total) * 100) : 0
-
-    return {
-      date: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      successRate,
-      totalSyncs: total,
-    }
+    return { date: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), successRate, totalSyncs: total }
   })
 }
 
-// Prepare error distribution data for pie chart
 function prepareErrorDistribution(history) {
   const errorTypes = {}
-
   history.forEach(h => {
     if (h.errors > 0) {
       const key = h.errorType || 'Unknown'
       errorTypes[key] = (errorTypes[key] || 0) + 1
     }
   })
-
   return Object.entries(errorTypes).map(([name, value]) => ({ name, value }))
 }
 
-// Prepare response time trend data
 function prepareResponseTimeData(history) {
   const last7Days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date()
-    d.setDate(d.getDate() - (6 - i))
-    return d.toISOString().split('T')[0]
+    const d = new Date(); d.setDate(d.getDate() - (6 - i)); return d.toISOString().split('T')[0]
   })
-
   return last7Days.map(date => {
     const daySyncs = history.filter(h => h.timestamp?.startsWith(date))
     const avgResponse = daySyncs.length > 0
       ? Math.round(daySyncs.reduce((acc, h) => acc + (h.duration || 0), 0) / daySyncs.length)
       : 0
-
-    return {
-      date: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      responseTime: avgResponse,
-    }
+    return { date: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), responseTime: avgResponse }
   })
 }
 
-// Custom label for pie chart
 function renderCustomLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent }) {
   const RADIAN = Math.PI / 180
   const radius = innerRadius + (outerRadius - innerRadius) * 0.5
   const x = cx + radius * Math.cos(-midAngle * RADIAN)
   const y = cy + radius * Math.sin(-midAngle * RADIAN)
-
   return (
-    <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central">
+    <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" fontSize={12}>
       {`${(percent * 100).toFixed(0)}%`}
     </text>
   )

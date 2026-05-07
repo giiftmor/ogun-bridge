@@ -181,7 +181,7 @@ export function MailAdmin() {
                 </CardDescription>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => refetch()}>
+                <Button variant="ghost" size="sm" onClick={() => refetch()}>
                   <RefreshCw className="h-4 w-4 mr-2" />
                   Refresh
                 </Button>
@@ -269,7 +269,7 @@ export function MailAdmin() {
                 <Mail className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 <p>No mailboxes found</p>
                 <Button 
-                  variant="outline" 
+                  variant="ghost" 
                   className="mt-4"
                   onClick={() => setShowCreate(true)}
                 >
@@ -290,7 +290,7 @@ export function MailAdmin() {
           </CardHeader>
           <CardContent className="space-y-3">
             <Button 
-              variant="outline" 
+              variant="ghost" 
               className="w-full justify-start"
               onClick={() => refetch()}
             >
@@ -298,7 +298,7 @@ export function MailAdmin() {
               Refresh Status
             </Button>
             <Button 
-              variant="outline" 
+              variant="ghost" 
               className="w-full justify-start"
               onClick={() => setShowCreate(true)}
             >
@@ -306,7 +306,7 @@ export function MailAdmin() {
               Create Mailbox
             </Button>
             <Button 
-              variant="outline" 
+              variant="ghost" 
               className="w-full justify-start"
               onClick={() => window.open('/mail', '_self')}
             >

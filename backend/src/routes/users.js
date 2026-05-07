@@ -373,11 +373,16 @@ usersRouter.get('/:username/profile', async (req, res) => {
     const altEmail = aUser?.attributes?.alt_email || 
       (lUser?.altEmail ? (Array.isArray(lUser.altEmail) ? lUser.altEmail[0] : lUser.altEmail) : null)
     
+    const employeeNumber = lUser?.employeeNumber
+      ? (Array.isArray(lUser.employeeNumber) ? lUser.employeeNumber[0] : lUser.employeeNumber)
+      : (aUser?.attributes?.employee_number || null)
+
     res.json({
       username,
       name: aUser?.name || lUser?.cn?.[0] || username,
       email: aUser?.email || lUser?.mail?.[0],
       altEmail: altEmail,
+      employeeNumber,
       groups: userGroupNames,
       role: isAdmin ? 'admin' : 'user',
       isAdmin: isAdmin,

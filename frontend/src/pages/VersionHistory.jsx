@@ -131,7 +131,7 @@ export function VersionHistory() {
                           <Users className="h-4 w-4" />
                         )}
                         <span className="font-medium">{entity.entity_id}</span>
-                        <Badge variant="outline">{entity.entity_type}</Badge>
+                        <Badge variant="ghost">{entity.entity_type}</Badge>
                       </div>
                       <div className="text-sm text-muted-foreground">
                         v{entity.latest_version}
@@ -150,7 +150,7 @@ export function VersionHistory() {
               <Clock className="h-5 w-5" />
               Version Timeline
               {entityId && (
-                <Badge variant="outline" className="ml-auto">
+                <Badge variant="ghost" className="ml-auto">
                   {versionHistoryData?.count || 0} versions
                 </Badge>
               )}
@@ -209,7 +209,7 @@ export function VersionHistory() {
                         </div>
                         <div className="flex justify-end gap-2">
                           <Button
-                            variant="outline"
+                            variant="ghost"
                             size="sm"
                             onClick={() => {
                               const data = JSON.stringify(version.snapshot_data, null, 2)
@@ -220,7 +220,7 @@ export function VersionHistory() {
                             Copy Data
                           </Button>
                           <Button
-                            variant="default"
+                            
                             size="sm"
                             onClick={() => {
                               setConfirmDialog({

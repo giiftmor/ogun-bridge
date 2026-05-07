@@ -144,7 +144,7 @@ export function MyProfile() {
                   <div className="flex flex-wrap gap-1 mt-1">
                     {profile.groups?.length > 0 ? (
                       profile.groups.map(group => (
-                        <Badge key={group} variant="outline">{group}</Badge>
+                        <Badge key={group} variant="ghost">{group}</Badge>
                       ))
                     ) : (
                       <span className="text-muted-foreground">No groups</span>
@@ -165,12 +165,12 @@ export function MyProfile() {
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Has Password</span>
                   {profile.password?.hasPassword ? (
-                    <Badge variant="outline" className="border-green-500 text-green-600">
+                    <Badge variant="ghost" className="border-green-500 text-green-600">
                       <CheckCircle className="h-3 w-3 mr-1" />
                       Active
                     </Badge>
                   ) : (
-                    <Badge variant="destructive">
+                    <Badge variant="danger">
                       <XCircle className="h-3 w-3 mr-1" />
                       None
                     </Badge>
@@ -186,7 +186,7 @@ export function MyProfile() {
                   </div>
                 )}
                 <Button
-                  variant="default"
+                  
                   onClick={() => setChangePasswordOpen(true)}
                   className="mt-4"
                 >
@@ -255,7 +255,7 @@ export function MyProfile() {
                           {service.url && (
                             <div className="flex gap-2">
                               <Button
-                                variant="outline"
+                                variant="ghost"
                                 size="sm"
                                 className="flex-1"
                                 onClick={() => window.open(service.url, '_blank')}
@@ -264,7 +264,7 @@ export function MyProfile() {
                                 Open
                               </Button>
                               <Button
-                                variant="outline"
+                                variant="ghost"
                                 size="sm"
                                 onClick={() => copyToClipboard(service.url)}
                               >
@@ -286,12 +286,12 @@ export function MyProfile() {
               <CardTitle>Quick Actions</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={() => refetch()}>
+              <Button variant="ghost" onClick={() => refetch()}>
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Refresh Profile
               </Button>
               <Button
-                variant="outline"
+                variant="ghost"
                 onClick={() => window.open('https://auth.spectres.co.za', '_blank')}
               >
                 <User className="h-4 w-4 mr-2" />
@@ -349,7 +349,7 @@ export function MyProfile() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setChangePasswordOpen(false)}>
+            <Button variant="ghost" onClick={() => setChangePasswordOpen(false)}>
               Cancel
             </Button>
             <Button

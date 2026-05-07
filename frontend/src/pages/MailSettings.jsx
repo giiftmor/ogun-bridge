@@ -256,7 +256,7 @@ export function MailSettings() {
               </Button>
 
               <Button 
-                variant="outline"
+                variant="ghost"
                 onClick={handleTest}
                 disabled={testMutation.isPending}
               >

@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { 
-  Lock, 
-  CheckCircle, 
+import {
+  Lock,
+  CheckCircle,
   XCircle,
   Loader2,
   KeyRound,
@@ -53,7 +53,7 @@ export function SelfServicePasswordChange() {
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    
+
     if (!username || !currentPassword || !newPassword) {
       toast.error('Please enter username, current password, and new password')
       return
@@ -75,40 +75,38 @@ export function SelfServicePasswordChange() {
   const getRequirementStatus = (requirement) => {
     if (!newPassword) return null
     if (!validation) return 'pending'
-    
     const met = !validation.errors.some(e => e.toLowerCase().includes(requirement))
     return met ? 'met' : 'failed'
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-      <div className="w-full max-w-5xl">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 mb-4">
-            <Shield className="h-8 w-8 text-primary" />
+    <div className="min-h-screen bg-page p-6">
+      <div className="max-w-2xl mx-auto">
+        <div className="text-center mb-6">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-sm bg-accent-tint mb-3">
+            <Shield className="h-6 w-6 text-accent" />
           </div>
-          <h1 className="text-2xl font-bold">Change Your Password</h1>
-          <p className="text-muted-foreground mt-2">
+          <h1 className="text-[20px] font-medium text-primary">Change Your Password</h1>
+          <p className="text-[13px] text-secondary mt-1">
             Enter your credentials to change your password
           </p>
         </div>
-        <div className="grid grid-cols-2 ">
 
-          <Card className="col-span-1 md:col-span-1 ">
+        <div className="flex flex-col gap-4">
+          <Card>
             <CardHeader>
-              <CardTitle className="flex items-center justify-center gap-2">
-                <Lock className="h-5 w-5" />
+              <CardTitle className="flex items-center gap-2">
+                <Lock className="h-4 w-4" />
                 Self Service Password Change
               </CardTitle>
-              <CardDescription className="text-center">
+              <CardDescription>
                 Your password will be updated in LDAP and Authentik
               </CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label className="text-sm font-medium">Username</label>
+                  <label className="text-[12px] font-medium text-secondary">Username</label>
                   <Input
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
@@ -119,7 +117,7 @@ export function SelfServicePasswordChange() {
                 </div>
 
                 <div>
-                  <label className="text-sm font-medium">Current Password</label>
+                  <label className="text-[12px] font-medium text-secondary">Current Password</label>
                   <Input
                     type="password"
                     value={currentPassword}
@@ -131,7 +129,7 @@ export function SelfServicePasswordChange() {
                 </div>
 
                 <div>
-                  <label className="text-sm font-medium">New Password</label>
+                  <label className="text-[12px] font-medium text-secondary">New Password</label>
                   <Input
                     type="password"
                     value={newPassword}
@@ -143,7 +141,7 @@ export function SelfServicePasswordChange() {
                 </div>
 
                 <div>
-                  <label className="text-sm font-medium">Confirm New Password</label>
+                  <label className="text-[12px] font-medium text-secondary">Confirm New Password</label>
                   <Input
                     type="password"
                     value={confirmPassword}
@@ -155,40 +153,29 @@ export function SelfServicePasswordChange() {
                 </div>
 
                 {newPassword && confirmPassword && newPassword !== confirmPassword && (
-                  <div className="text-sm text-red-500 flex items-center gap-2">
+                  <div className="text-[13px] text-danger-text flex items-center gap-2">
                     <XCircle className="h-4 w-4" />
                     Passwords do not match
                   </div>
                 )}
 
-
-                <Button 
-                  type="submit" 
-                  className="w-full"
-                  disabled={changePasswordMutation.isPending}
-                >
+                <Button type="submit" className="w-full" disabled={changePasswordMutation.isPending}>
                   {changePasswordMutation.isPending ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Changing Password...
-                    </>
+                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Changing Password...</>
                   ) : (
-                    <>
-                      <KeyRound className="h-4 w-4 mr-2" />
-                      Change Password
-                    </>
+                    <><KeyRound className="h-4 w-4 mr-2" />Change Password</>
                   )}
                 </Button>
 
                 {changePasswordMutation.isSuccess && (
-                  <div className="text-sm text-green-600 flex items-center gap-2 bg-green-50 dark:bg-green-950 p-3 rounded-lg">
+                  <div className="text-[13px] text-success-text flex items-center gap-2 bg-success-bg p-3 rounded-sm">
                     <CheckCircle className="h-4 w-4" />
                     Password changed successfully! You can now log in with your new password.
                   </div>
                 )}
 
                 {changePasswordMutation.isError && (
-                  <div className="text-sm text-red-500 flex items-center gap-2 bg-red-50 dark:bg-red-950 p-3 rounded-lg">
+                  <div className="text-[13px] text-danger-text flex items-center gap-2 bg-danger-bg p-3 rounded-sm">
                     <XCircle className="h-4 w-4" />
                     {changePasswordMutation.error.message}
                   </div>
@@ -196,45 +183,30 @@ export function SelfServicePasswordChange() {
               </form>
             </CardContent>
           </Card>
+
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center justify-center gap-2">
-                <Shield className="h-5 w-5" />
+              <CardTitle className="flex items-center gap-2">
+                <Shield className="h-4 w-4" />
                 Security
               </CardTitle>
-              <CardDescription className="text-center">
+              <CardDescription>
                 Ensure your password is secure and strong
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {/* Password Requirements */}
-                <div className="border-t pt-4 mt-4">
-                  <p className="text-sm font-medium mb-3">Password Requirements</p>
-                  <div className="space-y-2 text-sm">
-                    <Requirement 
-                      label="Minimum 8 characters"
-                      status={getRequirementStatus('8 characters')}
-                    />
-                    <Requirement 
-                      label="At least one uppercase letter"
-                      status={getRequirementStatus('uppercase')}
-                    />
-                    <Requirement 
-                      label="At least one lowercase letter"
-                      status={getRequirementStatus('lowercase')}
-                    />
-                    <Requirement 
-                      label="At least one number"
-                      status={getRequirementStatus('number')}
-                    />
-                  </div>
-                </div>
-
+              <p className="text-[13px] font-medium text-primary mb-3">Password Requirements</p>
+              <div className="space-y-2">
+                <Requirement label="Minimum 8 characters" status={getRequirementStatus('8 characters')} />
+                <Requirement label="At least one uppercase letter" status={getRequirementStatus('uppercase')} />
+                <Requirement label="At least one lowercase letter" status={getRequirementStatus('lowercase')} />
+                <Requirement label="At least one number" status={getRequirementStatus('number')} />
+              </div>
             </CardContent>
           </Card>
         </div>
 
-        <p className="text-center text-sm text-muted-foreground mt-6">
+        <p className="text-center text-[13px] text-secondary mt-6">
           Need help? Contact your system administrator.
         </p>
       </div>
@@ -245,9 +217,9 @@ export function SelfServicePasswordChange() {
 function Requirement({ label, status }) {
   if (status === null) {
     return (
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <div className="w-4 h-4 rounded-full border-2" />
-        <span>{label}</span>
+      <div className="flex items-center gap-2 text-secondary">
+        <div className="w-4 h-4 rounded-full border-2 border-border" />
+        <span className="text-[13px]">{label}</span>
       </div>
     )
   }
@@ -255,25 +227,25 @@ function Requirement({ label, status }) {
   if (status === 'pending') {
     return (
       <div className="flex items-center gap-2">
-        <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-        <span>{label}</span>
+        <Loader2 className="w-4 h-4 animate-spin text-secondary" />
+        <span className="text-[13px]">{label}</span>
       </div>
     )
   }
 
   if (status === 'met') {
     return (
-      <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
+      <div className="flex items-center gap-2 text-success-text">
         <CheckCircle className="w-4 h-4" />
-        <span>{label}</span>
+        <span className="text-[13px]">{label}</span>
       </div>
     )
   }
 
   return (
-    <div className="flex items-center gap-2 text-red-500">
+    <div className="flex items-center gap-2 text-danger-text">
       <XCircle className="w-4 h-4" />
-      <span>{label}</span>
+      <span className="text-[13px]">{label}</span>
     </div>
   )
 }

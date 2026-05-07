@@ -5,17 +5,12 @@ import { Badge } from '@/components/ui/badge'
 import { useAppStore } from '@/store/useAppStore'
 import { wsService } from '@/services/websocket'
 
-/**
- * ProgressBar component for bidirectional sync operations
- * Shows separate progress for Authentik → LDAP and LDAP → Authentik
- */
 export function ProgressBar() {
   const { syncStatus } = useAppStore()
   const [authToLdap, setAuthToLdap] = useState(null)
   const [ldapToAuth, setLdapToAuth] = useState(null)
 
   useEffect(() => {
-    // Subscribe to detailed sync progress via WebSocket
     wsService.subscribe('sync-progress', (data) => {
       if (data.direction === 'authentik-to-ldap') {
         setAuthToLdap(data)
@@ -29,39 +24,37 @@ export function ProgressBar() {
     }
   }, [])
 
-  if (!syncStatus?.status === 'running' && !authToLdap && !ldapToAuth) {
+  if (syncStatus?.status !== 'running' && !authToLdap && !ldapToAuth) {
     return null
   }
 
   return (
-    <Card className="border-primary/50 bg-primary/5">
+    <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-lg">
-          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+        <CardTitle className="flex items-center gap-2 text-[16px]">
+          <Loader2 className="h-4 w-4 animate-spin text-accent" />
           Sync in Progress
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Authentik → LDAP */}
         <SyncDirectionProgress
-          title="Authentik → LDAP"
+          title="Authentik \u2192 LDAP"
           description="Syncing users from Authentik to LDAP"
           progress={authToLdap}
-          colorClass="border-blue-500 bg-blue-50 dark:bg-blue-950/20"
-          iconColor="text-blue-600"
+          iconColor="text-accent"
+          barColor="bg-accent"
         />
 
-        {/* LDAP → Authentik */}
         <SyncDirectionProgress
-          title="LDAP → Authentik"
+          title="LDAP \u2192 Authentik"
           description="Syncing users from LDAP to Authentik"
           progress={ldapToAuth}
-          colorClass="border-green-500 bg-green-50 dark:bg-green-950/20"
-          iconColor="text-green-600"
+          iconColor="text-success-text"
+          barColor="bg-success-text"
         />
 
         {syncStatus?.currentOperation && (
-          <p className="text-sm text-muted-foreground italic">
+          <p className="text-[13px] text-secondary italic">
             Current: {syncStatus.currentOperation}
           </p>
         )}
@@ -70,18 +63,18 @@ export function ProgressBar() {
   )
 }
 
-function SyncDirectionProgress({ title, description, progress, colorClass, iconColor }) {
+function SyncDirectionProgress({ title, description, progress, iconColor, barColor }) {
   if (!progress) {
     return (
-      <div className={`border rounded-lg p-4 ${colorClass} opacity-50`}>
+      <div className="border border-border rounded-sm p-4">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <ArrowRight className={`h-4 w-4 ${iconColor}`} />
-            <span className="font-medium text-sm">{title}</span>
+            <ArrowRight className="h-4 w-4 text-secondary" />
+            <span className="font-medium text-[13px] text-primary">{title}</span>
           </div>
-          <Badge variant="outline">Waiting...</Badge>
+          <Badge variant="neutral">Waiting...</Badge>
         </div>
-        <p className="text-xs text-muted-foreground">{description}</p>
+        <p className="text-[12px] text-secondary">{description}</p>
       </div>
     )
   }
@@ -93,38 +86,35 @@ function SyncDirectionProgress({ title, description, progress, colorClass, iconC
     : 0
 
   return (
-    <div className={`border rounded-lg p-4 ${colorClass}`}>
+    <div className="border border-border rounded-sm p-4">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           {hasError ? (
-            <XCircle className="h-4 w-4 text-red-600" />
+            <XCircle className="h-4 w-4 text-danger-text" />
           ) : isComplete ? (
-            <CheckCircle2 className="h-4 w-4 text-green-600" />
+            <CheckCircle2 className="h-4 w-4 text-success-text" />
           ) : (
             <Loader2 className={`h-4 w-4 animate-spin ${iconColor}`} />
           )}
-          <span className="font-medium text-sm">{title}</span>
+          <span className="font-medium text-[13px] text-primary">{title}</span>
         </div>
         <Badge
-          variant={hasError ? 'destructive' : isComplete ? 'outline' : 'default'}
+          variant={hasError ? 'danger' : isComplete ? 'success' : 'default'}
         >
           {hasError ? 'Failed' : isComplete ? 'Done' : `${percentage}%`}
         </Badge>
       </div>
 
-      {/* Progress Bar */}
       {!isComplete && !hasError && (
-        <div className="w-full bg-muted rounded-full h-2 mb-2 overflow-hidden">
+        <div className="w-full bg-subtle rounded-full h-[6px] mb-2 overflow-hidden">
           <div
-            className={`h-full rounded-full transition-all duration-300 ${
-              iconColor.includes('blue') ? 'bg-blue-600' : 'bg-green-600'
-            }`}
+            className={`h-full rounded-full transition-all duration-300 ${barColor}`}
             style={{ width: `${percentage}%` }}
           />
         </div>
       )}
 
-      <div className="flex justify-between text-xs text-muted-foreground">
+      <div className="flex justify-between text-[12px] text-secondary">
         <span>{description}</span>
         {progress.current && progress.total && (
           <span>{progress.current} / {progress.total}</span>
@@ -132,13 +122,13 @@ function SyncDirectionProgress({ title, description, progress, colorClass, iconC
       </div>
 
       {progress.currentItem && (
-        <p className="text-xs text-muted-foreground mt-1 italic">
+        <p className="text-[12px] text-secondary mt-1 italic">
           Processing: {progress.currentItem}
         </p>
       )}
 
       {hasError && progress.error && (
-        <p className="text-xs text-red-600 mt-1">
+        <p className="text-[12px] text-danger-text mt-1">
           Error: {progress.error}
         </p>
       )}
@@ -146,27 +136,24 @@ function SyncDirectionProgress({ title, description, progress, colorClass, iconC
   )
 }
 
-/**
- * Compact progress indicator for use in status bars or banners
- */
 export function CompactProgress({ label, percentage, status = 'running' }) {
   const isComplete = status === 'completed'
   const hasError = status === 'error'
 
   return (
     <div className="flex items-center gap-3">
-      <span className="text-sm font-medium">{label}</span>
+      <span className="text-[13px] font-medium text-primary">{label}</span>
       <div className="flex-1 max-w-[200px]">
-        <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
+        <div className="w-full bg-subtle rounded-full h-[6px] overflow-hidden">
           <div
             className={`h-full rounded-full transition-all duration-300 ${
-              hasError ? 'bg-red-600' : isComplete ? 'bg-green-600' : 'bg-blue-600'
+              hasError ? 'bg-danger-text' : isComplete ? 'bg-success-text' : 'bg-accent'
             }`}
             style={{ width: `${isComplete ? 100 : percentage}%` }}
           />
         </div>
       </div>
-      <span className="text-xs text-muted-foreground">
+      <span className="text-[12px] text-secondary">
         {hasError ? 'Failed' : isComplete ? 'Done' : `${percentage}%`}
       </span>
     </div>

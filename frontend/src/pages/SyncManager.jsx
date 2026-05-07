@@ -209,7 +209,7 @@ export function SyncManager() {
                     Groups from Authentik. Check if they exist in LDAP.
                   </CardDescription>
                 </div>
-                <Badge variant="outline">{filteredGroups.length} groups</Badge>
+                <Badge variant="ghost">{filteredGroups.length} groups</Badge>
               </div>
               <div className="px-6 pb-4">
                 <Input
@@ -252,7 +252,7 @@ export function SyncManager() {
                               )}
                             </Badge>
                             {group.userCount && (
-                              <Badge variant="outline">{group.userCount} users</Badge>
+                              <Badge variant="ghost">{group.userCount} users</Badge>
                             )}
                           </div>
                         </div>
@@ -283,7 +283,7 @@ export function SyncManager() {
                             </SelectContent>
                           </Select>
                           <Button
-                            variant="outline"
+                            variant="ghost"
                             size="sm"
                             onClick={() => handlePreview(group.name, group.sync_config?.sync_direction || 'authentik-to-ldap')}
                             disabled={previewMutation.isPending}
@@ -295,7 +295,7 @@ export function SyncManager() {
                             )}
                           </Button>
                           <Button
-                            variant="default"
+                            
                             size="sm"
                             onClick={() => handleSyncNow(group.name, group.sync_config?.sync_direction || 'authentik-to-ldap')}
                             disabled={syncNowMutation.isPending}
@@ -330,7 +330,7 @@ export function SyncManager() {
                     Groups from LDAP, organized by Organizational Unit
                   </CardDescription>
                 </div>
-                <Badge variant="outline">{filteredGroups.length} groups</Badge>
+                <Badge variant="ghost">{filteredGroups.length} groups</Badge>
               </div>
               <div className="px-6 pb-4">
                 <Input
@@ -384,7 +384,7 @@ export function SyncManager() {
                                     )}
                                   </Badge>
                                   {group.memberCount !== undefined && (
-                                    <Badge variant="outline">{group.memberCount} members</Badge>
+                                    <Badge variant="ghost">{group.memberCount} members</Badge>
                                   )}
                                 </div>
                               </div>
@@ -392,7 +392,7 @@ export function SyncManager() {
                                 {group.authentikExists && (
                                   <>
                                     <Button
-                                      variant="outline"
+                                      variant="ghost"
                                       size="sm"
                                       onClick={() => handlePreview(group.name, 'ldap-to-authentik')}
                                       disabled={previewMutation.isPending}
@@ -404,7 +404,7 @@ export function SyncManager() {
                                       )}
                                     </Button>
                                     <Button
-                                      variant="default"
+                                      
                                       size="sm"
                                       onClick={() => handleSyncNow(group.name, 'ldap-to-authentik')}
                                       disabled={syncNowMutation.isPending}
@@ -510,7 +510,7 @@ export function SyncManager() {
                           <td className="text-right p-3">
                             <div className="flex justify-end gap-2">
                               <Button
-                                variant="outline"
+                                variant="ghost"
                                 size="sm"
                                 onClick={() => handlePreview(item.name, item.syncDirection)}
                                 disabled={previewMutation.isPending}
@@ -522,7 +522,7 @@ export function SyncManager() {
                                 )}
                               </Button>
                               <Button
-                                variant="default"
+                                
                                 size="sm"
                                 onClick={() => handleSyncNow(item.name, item.syncDirection)}
                                 disabled={syncNowMutation.isPending}
@@ -559,7 +559,7 @@ export function SyncManager() {
                     Compare users between Authentik and LDAP
                   </CardDescription>
                 </div>
-                <Badge variant="outline">{users.length} users</Badge>
+                <Badge variant="ghost">{users.length} users</Badge>
               </div>
               <div className="px-6 pb-4">
                 <Input
@@ -617,7 +617,7 @@ export function SyncManager() {
                           <td className="text-right p-3">
                             <div className="flex justify-end gap-2">
                               <Button
-                                variant="outline"
+                                variant="ghost"
                                 size="sm"
                                 onClick={() => navigate(`/users/${user.username}`)}
                               >
@@ -653,9 +653,9 @@ export function SyncManager() {
             {previewData.changes?.length > 0 ? (
               <div className="space-y-2">
                 <div className="flex gap-4 mb-4">
-                  <Badge variant="outline">To Create: {previewData.summary?.toCreate || 0}</Badge>
-                  <Badge variant="outline">To Update: {previewData.summary?.toUpdate || 0}</Badge>
-                  <Badge variant="destructive">To Delete: {previewData.summary?.toDelete || 0}</Badge>
+                  <Badge variant="ghost">To Create: {previewData.summary?.toCreate || 0}</Badge>
+                  <Badge variant="ghost">To Update: {previewData.summary?.toUpdate || 0}</Badge>
+                  <Badge variant="danger">To Delete: {previewData.summary?.toDelete || 0}</Badge>
                 </div>
                 {previewData.changes.map((change, index) => (
                   <div key={index} className="p-3 border rounded-lg">
@@ -715,7 +715,7 @@ export function SyncManager() {
             Sync All (Force)
           </Button>
           <Button
-            variant="outline"
+            variant="ghost"
             onClick={() => {
               handlePreview(null, 'bidirectional')
             }}

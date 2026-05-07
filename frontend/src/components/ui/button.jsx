@@ -1,34 +1,45 @@
 import { cn } from '@/utils/cn'
 
-export function Button({ 
-  className, 
-  variant = 'default', 
-  size = 'default', 
-  ...props 
+export function Button({
+  className,
+  variant = 'accent',
+  size = 'default',
+  type = 'button',
+  ...props
 }) {
   const variants = {
-    default: 'bg-primary text-primary-foreground hover:bg-primary/90',
-    destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
-    outline: 'border border-input bg-background hover:bg-accent hover:text-accent-foreground',
-    secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
-    ghost: 'hover:bg-accent hover:text-accent-foreground',
-    link: 'text-primary underline-offset-4 hover:underline',
+    accent:
+      'bg-accent text-white hover:bg-accent-hover active:bg-accent-hover',
+    dark: 'bg-primary text-surface hover:opacity-90 active:opacity-80',
+    ghost:
+      'bg-transparent text-secondary border border-border hover:bg-subtle hover:text-primary active:bg-subtle',
+    'icon-only':
+      'bg-transparent text-secondary border border-border hover:bg-subtle active:bg-subtle',
   }
 
   const sizes = {
-    default: 'h-10 px-4 py-2',
-    sm: 'h-9 rounded-md px-3',
-    lg: 'h-11 rounded-md px-8',
-    icon: 'h-10 w-10',
+    default: 'h-9 px-5 text-[13px]',
+    sm: 'h-8 px-3 text-[12px]',
+    lg: 'h-10 px-7 text-[14px]',
+    icon: 'h-9 w-9 p-[7px]',
   }
 
   return (
     <button
+      type={type}
       className={cn(
-        'inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
+        'inline-flex items-center justify-center font-medium leading-none cursor-pointer select-none',
+        'transition-[background,color,border-color,opacity] duration-150 ease',
+        'focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_hsl(var(--accent-tint)),0_0_0_1px_hsl(var(--accent))]',
+        'disabled:pointer-events-none disabled:opacity-50',
+        size === 'default' || size === 'sm' || size === 'lg'
+          ? variant === 'ghost'
+            ? 'rounded-sm'
+            : 'rounded-pill'
+          : 'rounded-sm',
         variants[variant],
         sizes[size],
-        className
+        className,
       )}
       {...props}
     />

@@ -4,54 +4,112 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Design System Tokens (Palette A - Slate & Crimson) */
+    --bg-page: 240 8% 96%;
+    --bg-surface: 0 0% 100%;
+    --bg-elevated: 0 0% 100%;
+    --bg-subtle: 240 7% 95%;
+    --border: 240 5% 91%;
+    --border-strong: 240 5% 82%;
+    --text-primary: 0 0% 7%;
+    --text-secondary: 0 0% 40%;
+    --text-tertiary: 0 0% 67%;
+    --accent: 336 83% 42%;
+    --accent-hover: 336 78% 48%;
+    --accent-tint: 336 52% 95%;
+    --accent-tint-border: 336 70% 85%;
+    --success-bg: 89 47% 91%;
+    --success-text: 89 73% 25%;
+    --danger-bg: 0 60% 95%;
+    --danger-text: 0 56% 41%;
+    --inverse-bg: 0 0% 7%;
+    --inverse-text: 0 0% 100%;
+    --inverse-muted: 0 0% 100% / 0.45;
+    --radius: 12px;
+    --radius-sm: 8px;
+    --radius-pill: 999px;
+
+    /* Backward compatibility with shadcn/ui classes */
+    --background: 240 8% 96%;
+    --foreground: 0 0% 7%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
-    --radius: 0.5rem;
+    --card-foreground: 0 0% 7%;
+    --primary: 336 83% 42%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 7% 95%;
+    --secondary-foreground: 0 0% 40%;
+    --muted: 240 7% 95%;
+    --muted-foreground: 0 0% 40%;
+    --accent-foreground: 0 0% 7%;
+    --destructive: 0 56% 41%;
+    --destructive-foreground: 0 0% 100%;
+    --input: 240 5% 91%;
+    --ring: 336 83% 42%;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
-  }
-}
+    /* Design System Tokens (Palette A - Slate & Crimson) */
+    --bg-page: 240 3% 6%;
+    --bg-surface: 240 7% 10%;
+    --bg-elevated: 240 9% 13%;
+    --bg-subtle: 240 8% 7%;
+    --border: 240 2% 17%;
+    --border-strong: 240 3% 24%;
+    --text-primary: 240 8% 95%;
+    --text-secondary: 0 0% 53%;
+    --text-tertiary: 0 0% 27%;
+    --accent: 336 83% 42%;
+    --accent-hover: 339 100% 63%;
+    --accent-tint: 336 62% 10%;
+    --accent-tint-border: 336 83% 42% / 0.25;
+    --success-bg: 90 68% 7%;
+    --success-text: 90 50% 51%;
+    --danger-bg: 0 60% 8%;
+    --danger-text: 0 72% 76%;
+    --inverse-bg: 336 83% 42% / 0.12;
+    --inverse-text: 339 100% 80%;
+    --inverse-muted: 339 100% 70% / 0.4;
 
-@layer base {
+    /* Backward compatibility with shadcn/ui classes */
+    --background: 240 3% 6%;
+    --foreground: 240 8% 95%;
+    --card: 240 7% 10%;
+    --card-foreground: 240 8% 95%;
+    --primary: 336 83% 42%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 8% 7%;
+    --secondary-foreground: 0 0% 53%;
+    --muted: 240 8% 7%;
+    --muted-foreground: 0 0% 53%;
+    --accent-foreground: 240 8% 95%;
+    --destructive: 0 72% 76%;
+    --destructive-foreground: 0 0% 100%;
+    --input: 240 2% 17%;
+    --ring: 336 83% 42%;
+  }
+
   * {
     @apply border-border;
   }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-page text-primary;
     font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  *:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px hsl(var(--accent-tint)), 0 0 0 1px hsl(var(--accent));
+  }
+
+  button:active {
+    transform: scale(0.97);
+    transition: transform 80ms ease;
   }
 }
 
@@ -59,4 +117,9 @@
   .text-balance {
     text-wrap: balance;
   }
+}
+
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
 }

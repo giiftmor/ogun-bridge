@@ -28,21 +28,21 @@ export function Dialog({ open, onClose, children, className }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div 
-        className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+      <div
+        className="fixed inset-0 bg-black/50"
         onClick={onClose}
       />
-      <div 
+      <div
         className={cn(
-          'relative z-50 w-full max-w-md bg-white dark:bg-gray-800 rounded-lg shadow-xl',
-          className
+          'relative z-50 w-full max-w-md bg-elevated border border-border rounded-default',
+          className,
         )}
       >
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+          className="absolute top-4 right-4 text-secondary hover:text-primary transition-colors duration-150"
         >
-          <X className="h-5 w-5" />
+          <X className="h-4 w-4" />
         </button>
         {children}
       </div>
@@ -52,44 +52,44 @@ export function Dialog({ open, onClose, children, className }) {
 
 export function DialogHeader({ className, ...props }) {
   return (
-    <div className={cn('p-6 pb-0', className)} {...props} />
+    <div className={cn('px-5 pt-5 pb-0', className)} {...props} />
   )
 }
 
 export function DialogTitle({ className, ...props }) {
   return (
-    <h2 className={cn('text-lg font-semibold', className)} {...props} />
+    <h2 className={cn('text-[16px] font-medium text-primary', className)} {...props} />
   )
 }
 
 export function DialogDescription({ className, ...props }) {
   return (
-    <p className={cn('text-sm text-muted-foreground mt-1', className)} {...props} />
+    <p className={cn('text-[13px] text-secondary mt-1', className)} {...props} />
   )
 }
 
 export function DialogContent({ className, ...props }) {
   return (
-    <div className={cn('p-6', className)} {...props} />
+    <div className={cn('px-5 py-4', className)} {...props} />
   )
 }
 
 export function DialogFooter({ className, ...props }) {
   return (
-    <div className={cn('p-6 pt-0 flex justify-end gap-2', className)} {...props} />
+    <div className={cn('px-5 pb-5 pt-0 flex justify-end gap-2', className)} {...props} />
   )
 }
 
-export function ConfirmDialog({ 
-  open, 
-  onClose, 
-  onConfirm, 
-  title, 
-  description, 
+export function ConfirmDialog({
+  open,
+  onClose,
+  onConfirm,
+  title,
+  description,
   confirmText = 'Confirm',
   cancelText = 'Cancel',
-  variant = 'destructive',
-  loading = false 
+  variant = 'default',
+  loading = false,
 }) {
   return (
     <Dialog open={open} onClose={onClose}>
@@ -101,7 +101,7 @@ export function ConfirmDialog({
         <button
           onClick={onClose}
           disabled={loading}
-          className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50"
+          className="px-4 py-2 text-[13px] font-medium text-secondary bg-transparent border border-border rounded-sm hover:bg-subtle hover:text-primary transition-colors duration-150 disabled:opacity-50"
         >
           {cancelText}
         </button>
@@ -109,13 +109,13 @@ export function ConfirmDialog({
           onClick={onConfirm}
           disabled={loading}
           className={cn(
-            'px-4 py-2 text-sm font-medium text-white rounded-lg disabled:opacity-50',
-            variant === 'destructive' 
-              ? 'bg-red-600 hover:bg-red-700' 
-              : 'bg-blue-600 hover:bg-blue-700'
+            'px-4 py-2 text-[13px] font-medium text-white rounded-pill transition-colors duration-150 disabled:opacity-50',
+            variant === 'danger'
+              ? 'bg-danger-text hover:opacity-90'
+              : 'bg-accent hover:bg-accent-hover',
           )}
         >
-          {loading ? 'Loading...' : confirmText}
+          {loading ? 'Loading\u2026' : confirmText}
         </button>
       </DialogFooter>
     </Dialog>

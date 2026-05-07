@@ -499,6 +499,31 @@ class ApiClient {
     })
   }
 
+  // Group manager / services endpoints
+  async getServicesList() {
+    return this.request('/groups-manager/services')
+  }
+
+  async addUserToGroup(username, groupName) {
+    return this.request(`/groups-manager/add-user/${username}`, {
+      method: 'POST',
+      body: JSON.stringify({ group_name: groupName }),
+    })
+  }
+
+  async assignServiceToGroup(serviceName, groupId) {
+    return this.request(`/groups-manager/services/${encodeURIComponent(serviceName)}/assign-group`, {
+      method: 'POST',
+      body: JSON.stringify({ group_id: groupId }),
+    })
+  }
+
+  async unassignServiceFromGroup(serviceName, groupName) {
+    return this.request(`/groups-manager/services/${encodeURIComponent(serviceName)}/unassign-group/${encodeURIComponent(groupName)}`, {
+      method: 'DELETE',
+    })
+  }
+
   // Mail config endpoints
   async getMailConfig() {
     return this.request('/mail/config')
