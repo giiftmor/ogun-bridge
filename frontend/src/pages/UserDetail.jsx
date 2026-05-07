@@ -11,6 +11,13 @@ import {
   Trash2,
   Play,
   Cloud,
+  CheckCircle,
+  XCircle,
+  ExternalLink,
+  Copy,
+  Loader2,
+  RefreshCw,
+  Terminal,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
