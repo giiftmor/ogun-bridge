@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import {
   Users,
   ArrowLeftRight,
@@ -13,6 +14,7 @@ import {
   Database,
   Cloud,
   Layers,
+  User,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -35,10 +37,12 @@ const SYNC_DIRECTIONS = [
 export function SyncManager() {
   const [activeTab, setActiveTab] = useState('ldap')
   const [searchQuery, setSearchQuery] = useState('')
+  const [userSearchQuery, setUserSearchQuery] = useState('')
   const [selectedGroup, setSelectedGroup] = useState(null)
   const [previewData, setPreviewData] = useState(null)
   const [isPreviewLoading, setIsPreviewLoading] = useState(false)
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
 
   // Fetch groups based on selected source
   const { data: groups = [], isLoading: loadingGroups } = useQuery({
@@ -70,6 +74,13 @@ export function SyncManager() {
     queryKey: ['auth-groups'],
     queryFn: () => apiClient.getGroups({ source: 'authentik' }),
     enabled: activeTab === 'comparison',
+  })
+
+  // Fetch users for user sync tab
+  const { data: users = [], isLoading: loadingUsers } = useQuery({
+    queryKey: ['sync-users', userSearchQuery],
+    queryFn: () => apiClient.getUsers({ search: userSearchQuery }),
+    enabled: activeTab === 'user-sync',
   })
 
   // Preview sync mutation
@@ -165,7 +176,7 @@ export function SyncManager() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="authentik">
             <Server className="h-4 w-4 mr-2" />
             Authentik Groups
@@ -177,6 +188,10 @@ export function SyncManager() {
           <TabsTrigger value="comparison">
             <Layers className="h-4 w-4 mr-2" />
             Comparison View
+          </TabsTrigger>
+          <TabsTrigger value="user-sync">
+            <User className="h-4 w-4 mr-2" />
+            User Sync
           </TabsTrigger>
         </TabsList>
 
@@ -531,7 +546,98 @@ export function SyncManager() {
         </TabsContent>
       </Tabs>
 
-      {/* Preview Results */}
+        {/* User Sync Tab */}
+        <TabsContent value="user-sync" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <User className="h-5 w-5" />
+                    User Sync Status
+                  </CardTitle>
+                  <CardDescription>
+                    Compare users between Authentik and LDAP
+                  </CardDescription>
+                </div>
+                <Badge variant="outline">{users.length} users</Badge>
+              </div>
+              <div className="px-6 pb-4">
+                <Input
+                  placeholder="Search users..."
+                  value={userSearchQuery}
+                  onChange={(e) => setUserSearchQuery(e.target.value)}
+                />
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {loadingUsers ? (
+                <div className="p-4 space-y-2">
+                  <SkeletonCard />
+                </div>
+              ) : (
+                <div className="max-h-[500px] overflow-y-auto">
+                  <table className="w-full">
+                    <thead className="sticky top-0 bg-background">
+                      <tr className="border-b">
+                        <th className="text-left p-3">Username</th>
+                        <th className="text-left p-3">Email</th>
+                        <th className="text-center p-3">In LDAP</th>
+                        <th className="text-center p-3">In Sync</th>
+                        <th className="text-center p-3">Password</th>
+                        <th className="text-right p-3">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {users.map((user) => (
+                        <tr key={user.id} className="border-b hover:bg-muted/50">
+                          <td className="p-3 font-medium">{user.username}</td>
+                          <td className="p-3 text-sm text-muted-foreground">{user.email || '—'}</td>
+                          <td className="text-center p-3">
+                            {user.syncStatus !== 'not_synced' ? (
+                              <CheckCircle className="h-5 w-5 text-green-500 mx-auto" />
+                            ) : (
+                              <XCircle className="h-5 w-5 text-red-500 mx-auto" />
+                            )}
+                          </td>
+                          <td className="text-center p-3">
+                            <Badge
+                              variant={
+                                user.syncStatus === 'synced' ? 'default' :
+                                user.syncStatus === 'pending' ? 'secondary' : 'destructive'
+                              }
+                            >
+                              {user.syncStatus}
+                            </Badge>
+                          </td>
+                          <td className="text-center p-3">
+                            <Badge variant={user.hasPassword ? 'outline' : 'secondary'}>
+                              {user.hasPassword ? 'Set' : 'Not Set'}
+                            </Badge>
+                          </td>
+                          <td className="text-right p-3">
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => navigate(`/users/${user.username}`)}
+                              >
+                                <Eye className="h-4 w-4 mr-1" />
+                                View
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Preview Results */}
       {previewData && (
         <Card>
           <CardHeader>
