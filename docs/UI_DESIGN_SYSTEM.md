@@ -19,8 +19,8 @@ This skill instructs any model or AI coding agent to generate frontend component
 
 | Token | Value | Usage |
 |---|---|---|
-| `--bg-page` | `#f5f5f7` | Page/canvas background |
-| `--bg-surface` | `#ffffff` | Cards, sidebar, topbar |
+| `--bg-page` | `#ffffff` | Page/canvas background |
+| `--bg-surface` | `#faf7f4` | Sidebar, topbar |
 | `--bg-elevated` | `#ffffff` | Modals, popovers |
 | `--bg-subtle` | `#f0f0f2` | KPI card fills, input backgrounds |
 | `--border` | `#e8e8ea` | All borders (0.5px) |
@@ -553,8 +553,8 @@ button:active { transform: scale(0.97); transition: transform 80ms ease; }
 ```css
 /* globals.css */
 :root {
-  --bg-page: #f5f5f7;
-  --bg-surface: #ffffff;
+  --bg-page: #ffffff;
+  --bg-surface: #faf7f4;
   --bg-subtle: #f0f0f2;
   --border: #e8e8ea;
   --border-strong: #d0d0d4;

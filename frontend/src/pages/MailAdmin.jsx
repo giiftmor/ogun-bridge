@@ -96,7 +96,7 @@ export function MailAdmin() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900">
+                <div className="p-2 rounded-sm bg-blue-100 dark:bg-blue-900">
                   <Mail className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                 </div>
                 <div>
@@ -112,7 +112,7 @@ export function MailAdmin() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900">
+                <div className="p-2 rounded-sm bg-green-100 dark:bg-green-900">
                   <HardDrive className="h-5 w-5 text-green-600 dark:text-green-400" />
                 </div>
                 <div>
@@ -128,7 +128,7 @@ export function MailAdmin() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900">
+                <div className="p-2 rounded-sm bg-purple-100 dark:bg-purple-900">
                   <Settings className="h-5 w-5 text-purple-600 dark:text-purple-400" />
                 </div>
                 <div>
@@ -145,11 +145,11 @@ export function MailAdmin() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 {status?.enabled ? (
-                  <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900">
+                  <div className="p-2 rounded-sm bg-green-100 dark:bg-green-900">
                     <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
                   </div>
                 ) : (
-                  <div className="p-2 rounded-lg bg-red-100 dark:bg-red-900">
+                  <div className="p-2 rounded-sm bg-red-100 dark:bg-red-900">
                     <XCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
                   </div>
                 )}
@@ -194,7 +194,7 @@ export function MailAdmin() {
           </CardHeader>
           <CardContent>
             {showCreate && (
-              <div className="mb-4 p-4 border rounded-lg bg-muted/50">
+              <div className="mb-4 p-4 border rounded bg-muted/50">
                 <h4 className="font-medium mb-3">Create New Mailbox</h4>
                 <div className="flex gap-2">
                   <Input
@@ -232,7 +232,7 @@ export function MailAdmin() {
                 {status.mailboxes.map((mbx) => (
                   <div 
                     key={mbx.email} 
-                    className="flex items-center justify-between p-3 border rounded-lg"
+                    className="flex items-center justify-between p-3 border rounded-sm"
                   >
                     <div className="flex items-center gap-3">
                       <Mail className="h-5 w-5 text-muted-foreground" />

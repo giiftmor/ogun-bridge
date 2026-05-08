@@ -5,8 +5,8 @@
 @layer base {
   :root {
     /* Design System Tokens (Palette A - Slate & Crimson) */
-    --bg-page: 240 8% 96%;
-    --bg-surface: 0 0% 100%;
+    --bg-page: 0 0% 100%;
+    --bg-surface: 30 37% 97%;
     --bg-elevated: 0 0% 100%;
     --bg-subtle: 240 7% 95%;
     --border: 240 5% 91%;
@@ -30,7 +30,7 @@
     --radius-pill: 999px;
 
     /* Backward compatibility with shadcn/ui classes */
-    --background: 240 8% 96%;
+    --background: 0 0% 100%;
     --foreground: 0 0% 7%;
     --card: 0 0% 100%;
     --card-foreground: 0 0% 7%;

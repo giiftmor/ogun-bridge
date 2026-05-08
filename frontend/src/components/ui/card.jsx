@@ -4,7 +4,7 @@ export function Card({ className, ...props }) {
   return (
     <div
       className={cn(
-        'bg-surface border border-border rounded-default p-4',
+        'bg-surface border border-border rounded p-4',
         'transition-[border-color] duration-150 ease hover:border-border-strong',
         className,
       )}

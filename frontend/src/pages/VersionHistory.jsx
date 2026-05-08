@@ -117,7 +117,7 @@ export function VersionHistory() {
                   {filteredEntities.map((entity) => (
                     <div
                       key={`${entity.entity_type}-${entity.entity_id}`}
-                      className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${
+                      className={`flex items-center justify-between p-3 rounded border cursor-pointer transition-colors ${
                         selectedEntity?.id === entity.entity_id && selectedEntity?.type === entity.entity_type
                           ? 'border-primary bg-primary/5'
                           : 'hover:bg-muted/50'
@@ -172,7 +172,7 @@ export function VersionHistory() {
                 {versionHistory.map((version) => (
                   <div
                     key={version.id}
-                    className="border rounded-lg overflow-hidden"
+                    className="border rounded overflow-hidden"
                   >
                     <div
                       className="flex items-center justify-between p-3 bg-muted/30 cursor-pointer hover:bg-muted/50"
@@ -262,7 +262,7 @@ export function VersionHistory() {
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-3">
-            <div className="p-4 border rounded-lg">
+            <div className="p-4 border rounded">
               <h4 className="font-medium mb-2 flex items-center gap-2">
                 <CheckCircle className="h-4 w-4 text-green-500" />
                 Automatic Snapshots
@@ -271,7 +271,7 @@ export function VersionHistory() {
                 Snapshots are automatically created before any sync operation modifies users or groups.
               </p>
             </div>
-            <div className="p-4 border rounded-lg">
+            <div className="p-4 border rounded">
               <h4 className="font-medium mb-2 flex items-center gap-2">
                 <History className="h-4 w-4 text-blue-500" />
                 Version History
@@ -280,7 +280,7 @@ export function VersionHistory() {
                 View all previous versions of any entity with full snapshot data and timestamps.
               </p>
             </div>
-            <div className="p-4 border rounded-lg">
+            <div className="p-4 border rounded">
               <h4 className="font-medium mb-2 flex items-center gap-2">
                 <RotateCcw className="h-4 w-4 text-orange-500" />
                 One-Click Rollback

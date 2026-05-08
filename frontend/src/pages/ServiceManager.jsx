@@ -222,7 +222,7 @@ export function ServiceManager() {
                   ) : (
                     <div className="space-y-2">
                       {assignedGroupNames.map((groupName) => (
-                        <div key={groupName} className="flex items-center justify-between p-3 border rounded-lg">
+                        <div key={groupName} className="flex items-center justify-between p-3 border rounded-sm">
                           <div className="flex items-center gap-2">
                             <CheckCircle className="h-4 w-4 text-green-500" />
                             <span className="font-medium">{groupName}</span>
@@ -370,14 +370,12 @@ function AddServiceDialog({ open, onOpenChange, onAdd, isLoading }) {
             </div>
           </div>
           <DialogFooter>
-            <button type="button" onClick={() => onOpenChange(false)}
-              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600">
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
-            </button>
-            <button type="submit" disabled={isLoading}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50">
+            </Button>
+            <Button type="submit" disabled={isLoading}>
               {isLoading ? 'Adding...' : 'Add Service'}
-            </button>
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

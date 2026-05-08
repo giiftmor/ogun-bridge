@@ -286,7 +286,7 @@ function LogEntry({ log }) {
   const hasDetails = log.context || log.stackTrace
 
   return (
-    <div className={`p-3 rounded-md border ${getLevelBg(log.level)}`}>
+    <div className={`p-3 rounded-sm border ${getLevelBg(log.level)}`}>
       <div className="flex items-start gap-3">
         {/* Timestamp */}
         <span className="text-xs text-muted-foreground whitespace-nowrap">

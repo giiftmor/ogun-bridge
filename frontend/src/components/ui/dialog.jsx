@@ -34,7 +34,7 @@ export function Dialog({ open, onClose, children, className }) {
       />
       <div
         className={cn(
-          'relative z-50 w-full max-w-md bg-elevated border border-border rounded-default',
+          'relative z-50 w-full max-w-md bg-elevated border border-border rounded',
           className,
         )}
       >

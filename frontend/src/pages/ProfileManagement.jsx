@@ -283,7 +283,7 @@ export function ProfileManagement() {
                       return (
                         <div 
                           key={service.id}
-                          className={`border rounded-lg p-4 ${
+                          className={`border rounded p-4 ${
                             service.hasAccess 
                               ? 'border-green-200 bg-green-50 dark:bg-green-950/20' 
                               : 'border-muted opacity-60'
@@ -291,7 +291,7 @@ export function ProfileManagement() {
                         >
                           <div className="flex items-start justify-between">
                             <div className="flex items-center gap-3">
-                              <div className={`p-2 rounded-lg ${
+                              <div className={`p-2 rounded-sm ${
                                 service.hasAccess 
                                   ? 'bg-green-100 dark:bg-green-900' 
                                   : 'bg-muted'

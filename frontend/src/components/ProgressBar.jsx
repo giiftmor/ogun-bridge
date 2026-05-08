@@ -106,7 +106,7 @@ function SyncDirectionProgress({ title, description, progress, iconColor, barCol
       </div>
 
       {!isComplete && !hasError && (
-        <div className="w-full bg-subtle rounded-full h-[6px] mb-2 overflow-hidden">
+        <div className="w-full bg-subtle rounded-full h-[4px] mb-2 overflow-hidden">
           <div
             className={`h-full rounded-full transition-all duration-300 ${barColor}`}
             style={{ width: `${percentage}%` }}
@@ -144,7 +144,7 @@ export function CompactProgress({ label, percentage, status = 'running' }) {
     <div className="flex items-center gap-3">
       <span className="text-[13px] font-medium text-primary">{label}</span>
       <div className="flex-1 max-w-[200px]">
-        <div className="w-full bg-subtle rounded-full h-[6px] overflow-hidden">
+        <div className="w-full bg-subtle rounded-full h-[4px] overflow-hidden">
           <div
             className={`h-full rounded-full transition-all duration-300 ${
               hasError ? 'bg-danger-text' : isComplete ? 'bg-success-text' : 'bg-accent'

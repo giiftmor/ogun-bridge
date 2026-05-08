@@ -383,7 +383,7 @@ export function PasswordManagement() {
                   </div>
 
                   {validation?.valid && newPassword && (
-                    <div className="mt-4 p-3 bg-green-50 dark:bg-green-950 rounded-lg flex items-center gap-2 text-green-700 dark:text-green-300">
+                    <div className="mt-4 p-3 bg-green-50 dark:bg-green-950 rounded-sm flex items-center gap-2 text-green-700 dark:text-green-300">
                       <CheckCircle className="h-4 w-4" />
                       <span className="text-sm">Password meets all requirements</span>
                     </div>
@@ -456,7 +456,7 @@ export function PasswordManagement() {
                     </Button>
 
                     {verifyResult && (
-                      <div className={`p-3 rounded-lg flex items-center gap-2 ${
+                      <div className={`p-3 rounded-sm flex items-center gap-2 ${
                         verifyResult.valid
                           ? 'bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300'
                           : 'bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300'
@@ -540,7 +540,7 @@ export function PasswordManagement() {
                 ) : (
                   <div className="space-y-3">
                     {history.map((item) => (
-                      <div key={item.id} className="flex items-center justify-between p-3 border rounded-lg">
+                      <div key={item.id} className="flex items-center justify-between p-3 border rounded-sm">
                         <div className="flex items-center gap-3">
                           {item.success ? (
                             <CheckCircle className="h-4 w-4 text-green-500" />

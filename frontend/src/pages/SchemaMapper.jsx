@@ -228,7 +228,7 @@ export function SchemaMapper() {
 
 function MappingRow({ authentikField, ldapAttribute, required, description, transformation, locked, highlight }) {
   return (
-    <div className={`p-4 rounded-lg border ${highlight ? 'bg-yellow-50 dark:bg-yellow-950/20 border-yellow-300 dark:border-yellow-700' : 'bg-muted/50'}`}>
+    <div className={`p-4 rounded border ${highlight ? 'bg-yellow-50 dark:bg-yellow-950/20 border-yellow-300 dark:border-yellow-700' : 'bg-muted/50'}`}>
       <div className="flex items-start gap-4">
         <div className="flex-1 space-y-1">
           <div className="flex items-center gap-2">
@@ -260,7 +260,7 @@ function MappingRow({ authentikField, ldapAttribute, required, description, tran
 function TestResult({ result }) {
   if (result.error) {
     return (
-      <div className="p-4 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-lg">
+      <div className="p-4 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-sm">
         <div className="flex items-start gap-2">
           <AlertCircle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
           <div>
@@ -277,7 +277,7 @@ function TestResult({ result }) {
       {/* Authentik Data */}
       <div>
         <h4 className="font-semibold mb-2 text-sm">Authentik Data (Source)</h4>
-        <div className="p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-md">
+        <div className="p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-sm">
           <pre className="text-xs overflow-auto">
             {JSON.stringify(result.authentikData, null, 2)}
           </pre>
@@ -287,7 +287,7 @@ function TestResult({ result }) {
       {/* Generated LDAP Entry */}
       <div>
         <h4 className="font-semibold mb-2 text-sm">Generated LDAP Entry</h4>
-        <div className="p-3 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900 rounded-md">
+        <div className="p-3 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900 rounded-sm">
           <pre className="text-xs overflow-auto">
             {JSON.stringify(result.ldapEntry, null, 2)}
           </pre>
@@ -299,13 +299,13 @@ function TestResult({ result }) {
         <div>
           <h4 className="font-semibold mb-2 text-sm">Validation</h4>
           {result.validation.valid ? (
-            <div className="p-3 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900 rounded-md">
+            <div className="p-3 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900 rounded-sm">
               <p className="text-sm text-green-700 dark:text-green-300">
                 ✓ All required attributes present and valid
               </p>
             </div>
           ) : (
-            <div className="p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-md">
+            <div className="p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-sm">
               <p className="text-sm font-semibold text-red-900 dark:text-red-100 mb-2">
                 Validation Errors:
               </p>

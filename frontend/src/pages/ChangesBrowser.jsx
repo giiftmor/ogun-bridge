@@ -237,7 +237,7 @@ function ChangeItem({ change }) {
   }
 
   return (
-    <div className="border rounded-lg p-4 space-y-3">
+    <div className="border rounded p-4 space-y-3">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
           <User className="h-5 w-5 text-muted-foreground" />
@@ -255,7 +255,7 @@ function ChangeItem({ change }) {
       </div>
 
       {change.change_type === 'field_mismatch' && (
-        <div className="bg-muted rounded-md p-3 text-sm">
+        <div className="bg-muted rounded-sm p-3 text-sm">
           <div className="flex items-center gap-2 mb-1">
             <AlertTriangle className="h-4 w-4 text-yellow-500" />
             <span className="font-medium">Value Mismatch</span>
@@ -274,7 +274,7 @@ function ChangeItem({ change }) {
       )}
 
       {change.change_type === 'orphan' && (
-        <div className="bg-muted rounded-md p-3 text-sm">
+        <div className="bg-muted rounded-sm p-3 text-sm">
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-red-500" />
             <span>User exists in LDAP but not in Authentik</span>
@@ -283,7 +283,7 @@ function ChangeItem({ change }) {
       )}
 
       {change.change_type === 'inactive_user' && (
-        <div className="bg-muted rounded-md p-3 text-sm">
+        <div className="bg-muted rounded-sm p-3 text-sm">
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-yellow-500" />
             <span>User has no password set in Authentik</span>

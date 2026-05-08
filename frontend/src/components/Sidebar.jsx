@@ -12,9 +12,8 @@ import {
   Mail,
   ArrowLeftRight,
   History,
-  HelpCircle,
-  LogOut,
-  Server,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { useAppStore } from '@/store/useAppStore'
@@ -103,47 +102,10 @@ function SidebarBody({ navigation = defaultNavigation, collapsed }) {
   )
 }
 
-function SidebarFooter({ collapsed }) {
-  return (
-    <div className={cn(
-      'flex flex-col gap-[2px] px-[10px] pb-4 pt-2 border-t border-border',
-      collapsed && 'items-center',
-    )}>
-      <Link
-        to="/help"
-        title={collapsed ? 'Help' : undefined}
-        className={cn(
-          'flex items-center gap-2 px-[10px] py-[7px] rounded-sm text-[13px] text-secondary cursor-pointer',
-          'transition-[background,color] duration-150 ease hover:bg-subtle hover:text-primary',
-          collapsed && 'justify-center px-0',
-        )}
-      >
-        <HelpCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
-        {!collapsed && <span>Help</span>}
-      </Link>
-      <button
-        title={collapsed ? 'Log out' : undefined}
-        onClick={() => {
-          useAppStore.getState().logout()
-          window.location.href = '/login'
-        }}
-        className={cn(
-          'flex items-center gap-2 px-[10px] py-[7px] rounded-sm text-[13px] text-secondary cursor-pointer w-full text-left',
-          'transition-[background,color] duration-150 ease hover:bg-subtle hover:text-primary',
-          collapsed && 'justify-center px-0',
-        )}
-      >
-        <LogOut className="h-4 w-4 shrink-0" aria-hidden="true" />
-        {!collapsed && <span>Log out</span>}
-      </button>
-    </div>
-  )
-}
-
 function SidebarHeader({ collapsed }) {
   return (
     <div className={cn(
-      'flex items-center h-12 px-[14px] border-b border-border shrink-0',
+      'flex items-center h-12 px-[14px] shrink-0',
       collapsed && 'justify-center px-0',
     )}>
       <div className={cn(
@@ -165,13 +127,13 @@ function SidebarHeader({ collapsed }) {
 }
 
 export function Sidebar({ sidebarOpen, toggleSidebar, navigation = defaultNavigation }) {
-  const collapsed = false
+  const collapsed = !sidebarOpen
 
   return (
     <aside
       className={cn(
-        'fixed inset-y-0 left-0 z-50 flex flex-col bg-surface border-r border-border',
-        'transition-transform duration-200 ease',
+        'fixed inset-y-0 left-0 z-50 flex flex-col',
+        'transition-[width,transform] duration-200 ease',
         collapsed ? 'w-[52px]' : 'w-[220px]',
         sidebarOpen ? 'translate-x-0' : '-translate-x-full',
         'lg:translate-x-0',
@@ -179,7 +141,20 @@ export function Sidebar({ sidebarOpen, toggleSidebar, navigation = defaultNaviga
     >
       <SidebarHeader collapsed={collapsed} />
       <SidebarBody navigation={navigation} collapsed={collapsed} />
-      <SidebarFooter collapsed={collapsed} />
+      <button
+        onClick={toggleSidebar}
+        title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        className={cn(
+          'hidden lg:flex items-center justify-center h-8 border-t border-border text-tertiary hover:text-primary hover:bg-subtle transition-[background,color] duration-150',
+          collapsed ? 'w-full' : 'w-full',
+        )}
+      >
+        {collapsed ? (
+          <ChevronRight className="h-4 w-4" />
+        ) : (
+          <ChevronLeft className="h-4 w-4" />
+        )}
+      </button>
     </aside>
   )
 }

@@ -78,7 +78,7 @@ function MetricTile({ icon: Icon, label, value, variant = 'default' }) {
     <Card className={`border-l-4 ${variants[variant]}`}>
       <CardContent className="pt-4">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-muted">
+          <div className="p-2 rounded-sm bg-muted">
             <Icon className="h-5 w-5" />
           </div>
           <div>
@@ -127,7 +127,7 @@ function LogEntry({ log }) {
 
   return (
     <div 
-      className={`p-2 rounded-md border text-sm cursor-pointer hover:bg-muted/50 ${getLevelStyle(log.level)}`}
+      className={`p-2 rounded-sm border text-sm cursor-pointer hover:bg-muted/50 ${getLevelStyle(log.level)}`}
       onClick={() => setExpanded(!expanded)}
     >
       <div className="flex items-center gap-2 text-xs">

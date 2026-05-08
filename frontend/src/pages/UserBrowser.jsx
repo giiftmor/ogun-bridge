@@ -318,7 +318,7 @@ export function UserBrowser() {
                       <CardDescription>Manage password, reset, or verify for {selectedUser.username}</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-6">
-                      <div className="flex items-center justify-between p-4 border rounded-lg">
+                      <div className="flex items-center justify-between p-4 border rounded">
                         <div>
                           <p className="font-medium">Password Status</p>
                           <p className="text-sm text-muted-foreground">
@@ -335,7 +335,7 @@ export function UserBrowser() {
                       </div>
 
                       {expiration && (
-                        <div className="p-4 border rounded-lg">
+                        <div className="p-4 border rounded">
                           <p className="text-sm font-medium">Expiration</p>
                           <p className="text-sm text-muted-foreground">
                             Expires: {new Date(expiration.expiration).toLocaleDateString()}
@@ -394,7 +394,7 @@ export function UserBrowser() {
                         </Button>
                       </form>
                       {verifyResult && (
-                        <div className={`mt-3 p-3 rounded-lg flex items-center gap-2 ${
+                        <div className={`mt-3 p-3 rounded-sm flex items-center gap-2 ${
                           verifyResult.valid
                             ? 'bg-green-50 dark:bg-green-950 text-green-700'
                             : 'bg-red-50 dark:bg-red-950 text-red-700'
@@ -420,7 +420,7 @@ export function UserBrowser() {
                       ) : (
                         <div className="space-y-3">
                           {passwordHistory.map((item) => (
-                            <div key={item.id} className="flex items-center justify-between p-3 border rounded-lg">
+                            <div key={item.id} className="flex items-center justify-between p-3 border rounded-sm">
                               <div className="flex items-center gap-3">
                                 {item.success ? <CheckCircle className="h-4 w-4 text-green-500" /> : <XCircle className="h-4 w-4 text-red-500" />}
                                 <div>
@@ -460,12 +460,12 @@ export function UserBrowser() {
                           {profile.services.map(service => {
                             const IconComponent = SERVICE_ICONS[service.icon] || Shield
                             return (
-                              <div key={service.id} className={`border rounded-lg p-4 ${
+                              <div key={service.id} className={`border rounded p-4 ${
                                 service.hasAccess ? 'border-green-200 bg-green-50 dark:bg-green-950/20' : 'border-muted opacity-60'
                               }`}>
                                 <div className="flex items-start justify-between">
                                   <div className="flex items-center gap-3">
-                                    <div className={`p-2 rounded-lg ${service.hasAccess ? 'bg-green-100 dark:bg-green-900' : 'bg-muted'}`}>
+                                    <div className={`p-2 rounded-sm ${service.hasAccess ? 'bg-green-100 dark:bg-green-900' : 'bg-muted'}`}>
                                       <IconComponent className={`h-5 w-5 ${service.hasAccess ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`} />
                                     </div>
                                     <div>
@@ -571,7 +571,7 @@ export function UserBrowser() {
                       <CardContent>
                         <div className="space-y-3">
                           {userGroups.map(group => (
-                            <div key={group.id} className="border rounded-lg p-4">
+                            <div key={group.id} className="border rounded p-4">
                               <div className="flex items-center justify-between mb-2">
                                 <div>
                                   <p className="font-medium">{group.name}</p>

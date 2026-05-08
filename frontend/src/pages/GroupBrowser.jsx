@@ -174,7 +174,7 @@ function GroupListItem({ group, selected, onClick }) {
   return (
     <button
       onClick={onClick}
-      className={`w-full text-left p-4 rounded-lg border transition-colors ${selected
+      className={`w-full text-left p-4 rounded border transition-colors ${selected
           ? 'bg-primary/5 border-primary'
           : 'hover:bg-accent border-transparent'
         }`}
@@ -241,7 +241,7 @@ function GroupDetails({ group }) {
             <h3 className="font-semibold mb-3 text-red-600 dark:text-red-400">
               Error Details
             </h3>
-            <div className="p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-md">
+            <div className="p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-sm">
               <p className="text-sm text-red-900 dark:text-red-100 font-mono">
                 {group.error}
               </p>
@@ -257,7 +257,7 @@ function GroupDetails({ group }) {
                 <h4 className="text-sm font-medium text-muted-foreground mb-2">
                   Authentik Data
                 </h4>
-                <div className="p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-md">
+                <div className="p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-sm">
                   <pre className="text-xs overflow-auto">
                     {JSON.stringify(comparison.authentik, null, 2)}
                   </pre>
@@ -269,13 +269,13 @@ function GroupDetails({ group }) {
                   LDAP Data
                 </h4>
                 {comparison.ldap ? (
-                  <div className="p-3 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900 rounded-md">
+                  <div className="p-3 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900 rounded-sm">
                     <pre className="text-xs overflow-auto">
                       {JSON.stringify(comparison.ldap, null, 2)}
                     </pre>
                   </div>
                 ) : (
-                  <div className="p-3 bg-gray-50 dark:bg-gray-950/20 border border-gray-200 dark:border-gray-900 rounded-md text-sm text-muted-foreground">
+                  <div className="p-3 bg-gray-50 dark:bg-gray-950/20 border border-gray-200 dark:border-gray-900 rounded-sm text-sm text-muted-foreground">
                     Group not found in LDAP
                   </div>
                 )}
@@ -286,7 +286,7 @@ function GroupDetails({ group }) {
                   <h4 className="text-sm font-medium text-muted-foreground mb-2">
                     Differences
                   </h4>
-                  <div className="p-3 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-900 rounded-md">
+                  <div className="p-3 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-900 rounded-sm">
                     <ul className="text-sm space-y-1">
                       {Object.entries(comparison.differences).map(([key, value]) => (
                         <li key={key} className="font-mono">

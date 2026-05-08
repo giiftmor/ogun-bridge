@@ -189,7 +189,7 @@ export function AuditViewer() {
           ) : (
             <div className="space-y-3">
               {filteredLogs.map((log) => (
-                <div key={log.id} className="border rounded-lg p-4">
+                <div key={log.id} className="border rounded p-4">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
                       {getSuccessIcon(log.success)}

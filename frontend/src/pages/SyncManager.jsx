@@ -658,7 +658,7 @@ export function SyncManager() {
                   <Badge variant="danger">To Delete: {previewData.summary?.toDelete || 0}</Badge>
                 </div>
                 {previewData.changes.map((change, index) => (
-                  <div key={index} className="p-3 border rounded-lg">
+                  <div key={index} className="p-3 border rounded">
                     <div className="flex items-center justify-between">
                       <div>
                         <Badge
