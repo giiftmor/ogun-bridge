@@ -1,4 +1,5 @@
 import express from 'express'
+import rateLimit from 'express-rate-limit'
 import { pool } from '../lib/db.js'
 import { authentikClient } from '../services/authentikClient.js'
 import { ldapClient } from '../services/ldapClient.js'
@@ -7,6 +8,14 @@ import { logger } from '../utils/logger.js'
 import { getAuditLogs, getLastAuditLogByAction, getLastPasswordAction } from '../services/auditService.js'
 import { addLogToCache } from '../services/logCache.js'
 import { authenticate } from '../middleware/auth.js'
+
+const publicListLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests' },
+})
 
 function getServiceAccessMethod(serviceType) {
   const methods = {
@@ -22,7 +31,7 @@ export const usersRouter = express.Router()
 
 // Public endpoint for user dropdown - MUST be before authenticate middleware
 // This route does NOT require authentication
-usersRouter.get('/public-list', async (req, res) => {
+usersRouter.get('/public-list', publicListLimiter, async (req, res) => {
   try {
     logger.info('Fetching public user list...')
     const authentikUsers = await authentikClient.getUsers()

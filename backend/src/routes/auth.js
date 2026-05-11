@@ -24,6 +24,11 @@ authRouter.use(cookieParser())
 
 const ROLES = ['admin', 'reviewer', 'viewer']
 
+function extractToken(req) {
+  return extractToken(req) ||
+         req.cookies?.auth_token
+}
+
 async function hashPassword(password) {
   return bcrypt.hash(password, 10)
 }
@@ -178,6 +183,14 @@ authRouter.post('/login', async (req, res) => {
       [user.id]
     )
 
+    // Set HTTP-only cookie for XSS protection
+    res.cookie('auth_token', token, {
+      httpOnly: true,
+      sameSite: 'strict',
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    })
+
     logger.info('User logged in', { username, ip: getClientIp(req) })
 
     res.json({
@@ -212,7 +225,11 @@ async function checkLDAPSystemAdmin(username) {
 
     const members = searchEntries[0]?.member || []
     const memberArray = Array.isArray(members) ? members : [members]
-    const userDN = `uid=${username},ou=people,dc=spectres,dc=co,dc=za`
+    const escapedUsername = String(username).replace(/[,\\+"\\<>;#=\0]/g, (char) => {
+      const codes = { ',': '\\2c', '+': '\\2b', '"': '\\22', '\\': '\\5c', '<': '\\3c', '>': '\\3e', ';': '\\3b', '#': '\\23', '=': '\\3d' }
+      return codes[char]
+    })
+    const userDN = `uid=${escapedUsername},ou=people,dc=spectres,dc=co,dc=za`
 
     return memberArray.includes(userDN)
   } catch (error) {
@@ -223,12 +240,14 @@ async function checkLDAPSystemAdmin(username) {
 
 authRouter.post('/logout', async (req, res) => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '')
+    const token = extractToken(req) ||
+                  req.cookies?.auth_token
     
     if (token) {
       await deleteSession(token)
     }
 
+    res.clearCookie('auth_token', { httpOnly: true, sameSite: 'strict' })
     res.json({ message: 'Logged out successfully' })
   } catch (error) {
     logger.error('Logout error', { error: error.message })
@@ -238,7 +257,8 @@ authRouter.post('/logout', async (req, res) => {
 
 authRouter.get('/me', async (req, res) => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '')
+    const token = extractToken(req) ||
+                  req.cookies?.auth_token
 
     if (!token) {
       return res.status(401).json({ error: 'Not authenticated' })
@@ -264,7 +284,7 @@ authRouter.get('/me', async (req, res) => {
 
 authRouter.get('/users', async (req, res) => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '')
+    const token = extractToken(req)
     const session = await validateSession(token)
 
     if (!session || session.role !== 'admin') {
@@ -286,7 +306,7 @@ authRouter.get('/users', async (req, res) => {
 
 authRouter.delete('/users/:id', async (req, res) => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '')
+    const token = extractToken(req)
     const session = await validateSession(token)
 
     if (!session || session.role !== 'admin') {
@@ -313,7 +333,7 @@ authRouter.delete('/users/:id', async (req, res) => {
 
 authRouter.put('/users/:id/role', async (req, res) => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '')
+    const token = extractToken(req)
     const session = await validateSession(token)
 
     if (!session || session.role !== 'admin') {
@@ -347,7 +367,7 @@ authRouter.put('/users/:id/role', async (req, res) => {
 
 authRouter.put('/users/:id/toggle', async (req, res) => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '')
+    const token = extractToken(req)
     const session = await validateSession(token)
 
     if (!session || session.role !== 'admin') {
@@ -384,7 +404,7 @@ authRouter.put('/users/:id/toggle', async (req, res) => {
 
 authRouter.post('/users/:id/reset-password', async (req, res) => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '')
+    const token = extractToken(req)
     const session = await validateSession(token)
 
     if (!session || session.role !== 'admin') {
@@ -418,7 +438,7 @@ authRouter.post('/users/:id/reset-password', async (req, res) => {
 
 authRouter.post('/change-password', async (req, res) => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '')
+    const token = extractToken(req)
     const session = await validateSession(token)
 
     if (!session) {
@@ -496,7 +516,7 @@ function validateTemporaryPassword(password) {
 // POST /api/auth/generate-temp-password - Generate and send temporary password (admin)
 authRouter.post('/generate-temp-password', async (req, res) => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '')
+    const token = extractToken(req)
     const session = await validateSession(token)
 
     if (!session || session.role !== 'admin') {

@@ -62,6 +62,12 @@ jobs:
         working-directory: ./backend
         run: node --check src/index.js
 
+      - name: Run backend tests
+        working-directory: ./backend
+        run: npm test
+        env:
+          ENCRYPTION_KEY: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+
   # Build Docker images
   docker-build:
     needs: [frontend-build, backend-build]

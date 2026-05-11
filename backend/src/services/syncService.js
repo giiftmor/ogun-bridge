@@ -414,7 +414,7 @@ async function syncGroups(client, config, io) {
       }
     }
   } catch (error) {
-    console.error('Group sync error:', error)
+    logger.error('Group sync error:', { error: error.message })
     broadcastLog(io, 'error',  'Group sync failed', { error: error.message })
   }
 }

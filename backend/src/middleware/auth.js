@@ -58,8 +58,7 @@ export async function deleteUserSessions(userId) {
 
 export function authenticate(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '') ||
-                req.cookies?.auth_token ||
-                req.query?.token
+                req.cookies?.auth_token
 
   if (!token) {
     return res.status(401).json({ error: 'Authentication required' })
@@ -106,8 +105,7 @@ export function requireRole(...allowedRoles) {
 
 export function optionalAuth(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '') ||
-                req.cookies?.auth_token ||
-                req.query?.token
+                req.cookies?.auth_token
 
   if (!token) {
     return next()
@@ -144,6 +142,14 @@ export async function cleanupExpiredSessions() {
 // LDAP group membership check for RBAC
 import { LDAPClient } from '../services/ldapClient.js'
 
+function escapeLDAPDNValue(value) {
+  if (!value) return ''
+  return String(value).replace(/[,\\+"\\<>;#=\0]/g, (char) => {
+    const codes = { ',': '\\2c', '+': '\\2b', '"': '\\22', '\\': '\\5c', '<': '\\3c', '>': '\\3e', ';': '\\3b', '#': '\\23', '=': '\\3d' }
+    return codes[char]
+  })
+}
+
 const ldapClient = new LDAPClient()
 const SYSTEM_ADMINS_GROUP = process.env.LDAP_SYSTEM_ADMINS_GROUP || 'cn=system_admins,ou=groups,dc=spectres,dc=co,dc=za'
 
@@ -162,7 +168,7 @@ export function requireLDAPGroup(groupDN = SYSTEM_ADMINS_GROUP) {
 
     try {
       const username = req.user.username
-      const userDN = `uid=${username},ou=people,dc=spectres,dc=co,dc=za`
+      const userDN = `uid=${escapeLDAPDNValue(username)},ou=people,dc=spectres,dc=co,dc=za`
 
       // Connect to LDAP and check group membership
       await ldapClient.connect()

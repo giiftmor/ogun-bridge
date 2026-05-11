@@ -7,15 +7,18 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js --host --ignore 'data/' --ignore 'logs/'",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:syntax": "node --check src/index.js && echo 'Syntax check passed'",
+    "test:ci": "vitest run --reporter=verbose && node --check src/index.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
-    "electron": "^40.6.0",
     "express": "^4.18.2",
+    "express-rate-limit": "^8.5.1",
     "helmet": "^7.1.0",
     "ldap": "^0.7.1",
     "ldapts": "^4.2.6",
@@ -26,6 +29,7 @@
     "winston": "^3.11.0"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
+    "nodemon": "^3.0.2",
+    "vitest": "^4.1.6"
   }
 }

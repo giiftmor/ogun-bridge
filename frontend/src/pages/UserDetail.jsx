@@ -133,11 +133,13 @@ export function UserDetail({ username: initialUsername, isOwnProfile = false }) 
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="profile"><User className="h-4 w-4 mr-2" />Profile</TabsTrigger>
-          <TabsTrigger value="password"><Key className="h-4 w-4 mr-2" />Password</TabsTrigger>
-          <TabsTrigger value="services"><Server className="h-4 w-4 mr-2" />Services</TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto">
+          <TabsList className="w-full min-w-[400px] grid grid-cols-3">
+            <TabsTrigger value="profile"><User className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">Profile</span><span className="sm:hidden">Profile</span></TabsTrigger>
+            <TabsTrigger value="password"><Key className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">Password</span><span className="sm:hidden">PW</span></TabsTrigger>
+            <TabsTrigger value="services"><Server className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">Services</span><span className="sm:hidden">Svc</span></TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="profile" className="space-y-6">
           <Card>

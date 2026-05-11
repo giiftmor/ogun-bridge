@@ -1,10 +1,7 @@
 import pg from 'pg'
 import { logger } from '../utils/logger.js'
-import dotenv from 'dotenv'
 
-// Load env vars BEFORE creating pool (ESM modules are hoisted)
-dotenv.config()
-
+// dotenv is loaded in index.js before any async code — no need to call again here
 const { Pool } = pg
 
 // Helper to get DB config at runtime (after dotenv loads)
@@ -27,9 +24,34 @@ function getDbConfig() {
 const dbConfig = getDbConfig()
 export const pool = new Pool(dbConfig)
 
+// Pool metrics
+export const poolMetrics = {
+  totalCount: 0,
+  idleCount: 0,
+  waitingCount: 0,
+}
+
 // Handle pool errors
 pool.on('error', (err) => {
   logger.error('Unexpected database pool error', { error: err.message })
+})
+
+pool.on('connect', () => {
+  poolMetrics.totalCount = pool.totalCount
+  poolMetrics.idleCount = pool.idleCount
+  poolMetrics.waitingCount = pool.waitingCount
+})
+
+pool.on('acquire', () => {
+  poolMetrics.totalCount = pool.totalCount
+  poolMetrics.idleCount = pool.idleCount
+  poolMetrics.waitingCount = pool.waitingCount
+})
+
+pool.on('remove', () => {
+  poolMetrics.totalCount = pool.totalCount
+  poolMetrics.idleCount = pool.idleCount
+  poolMetrics.waitingCount = pool.waitingCount
 })
 
 // Database schema

@@ -4,7 +4,27 @@ import { logger } from '../utils/logger.js'
 import { getServiceConfig, SERVICE_LDAP } from '../services/config.js'
 
 function hashPasswordLDAP(password) {
-  return password
+  const salt = crypto.randomBytes(8)
+  const hash = crypto.createHash('sha1').update(password + salt.toString('binary')).digest()
+  const saltedHash = Buffer.concat([hash, salt])
+  const encoded = saltedHash.toString('base64')
+  return '{SSHA}' + encoded
+}
+
+function escapeLDAPFilterValue(value) {
+  if (!value) return ''
+  return String(value).replace(/[\\*()\0]/g, (char) => {
+    const codes = { '\\': '\\5c', '*': '\\2a', '(': '\\28', ')': '\\29', '\0': '\\00' }
+    return codes[char]
+  })
+}
+
+function escapeLDAPDNValue(value) {
+  if (!value) return ''
+  return String(value).replace(/[,\\+"\\<>;#=\0]/g, (char) => {
+    const codes = { ',': '\\2c', '+': '\\2b', '"': '\\22', '\\': '\\5c', '<': '\\3c', '>': '\\3e', ';': '\\3b', '#': '\\23', '=': '\\3d' }
+    return codes[char]
+  })
 }
 
 export class LDAPClient {
@@ -76,7 +96,7 @@ export class LDAPClient {
     
     try {
       const baseDN = await this.getBaseDN()
-      const userDN = 'uid=' + username + ',ou=people,' + baseDN
+      const userDN = 'uid=' + escapeLDAPDNValue(username) + ',ou=people,' + baseDN
       const hashedPassword = hashPasswordLDAP(newPassword)
       
       await this.client.modify(userDN, [
@@ -110,7 +130,7 @@ export class LDAPClient {
       })
       
       const baseDN = await this.getBaseDN()
-      const userDN = 'uid=' + username + ',ou=people,' + baseDN
+      const userDN = 'uid=' + escapeLDAPDNValue(username) + ',ou=people,' + baseDN
       
       await tempClient.bind(userDN, password)
       await tempClient.unbind()
@@ -135,7 +155,7 @@ export class LDAPClient {
     
     try {
       const baseDN = await this.getBaseDN()
-      const userDN = 'uid=' + username + ',ou=people,' + baseDN
+      const userDN = 'uid=' + escapeLDAPDNValue(username) + ',ou=people,' + baseDN
       
       const expireTimestamp = expirationDate 
         ? Math.floor(new Date(expirationDate).getTime() / 1000)
@@ -164,7 +184,7 @@ export class LDAPClient {
     
     try {
       const baseDN = await this.getBaseDN()
-      const userDN = 'uid=' + username + ',ou=people,' + baseDN
+      const userDN = 'uid=' + escapeLDAPDNValue(username) + ',ou=people,' + baseDN
       const { searchEntries } = await this.client.search(userDN, {
         attributes: ['shadowExpire'],
       })
@@ -209,7 +229,7 @@ export class LDAPClient {
     try {
       const baseDN = await this.getBaseDN()
       const entries = await this.search('ou=people,' + baseDN, {
-        filter: '(uid=' + uid + ')',
+        filter: '(uid=' + escapeLDAPFilterValue(uid) + ')',
         attributes: ['uid', 'cn', 'sn', 'mail', 'altEmail', 'memberOf', 'employeeNumber'],
       })
       return entries[0] || null
@@ -236,7 +256,7 @@ export class LDAPClient {
     try {
       const baseDN = await this.getBaseDN()
       const entries = await this.search('ou=groups,' + baseDN, {
-        filter: '(cn=' + cn + ')',
+        filter: '(cn=' + escapeLDAPFilterValue(cn) + ')',
       })
       return entries[0] || null
     } catch (error) {
@@ -249,7 +269,7 @@ export class LDAPClient {
     await this.connect()
     
     const baseDN = await this.getBaseDN()
-    const dn = 'uid=' + uid + ',ou=people,' + baseDN
+    const dn = 'uid=' + escapeLDAPDNValue(uid) + ',ou=people,' + baseDN
     
     try {
       await this.client.modify(dn, [
@@ -272,7 +292,7 @@ export class LDAPClient {
     await this.connect()
     
     const baseDN = await this.getBaseDN()
-    const dn = 'uid=' + uid + ',ou=people,' + baseDN
+    const dn = 'uid=' + escapeLDAPDNValue(uid) + ',ou=people,' + baseDN
     
     try {
       await this.client.del(dn)

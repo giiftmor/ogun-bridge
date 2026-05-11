@@ -18,13 +18,8 @@ export function Login() {
     setError('')
     setLoading(true)
 
-    localStorage.removeItem('auth_token')
-    localStorage.removeItem('user')
-
     try {
       const data = await apiClient.login(username, password)
-      localStorage.setItem('auth_token', data.token)
-      localStorage.setItem('user', JSON.stringify(data.user))
       toast.success('Login successful')
       navigate('/')
     } catch (err) {

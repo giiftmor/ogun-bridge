@@ -129,7 +129,8 @@ export class AlertService {
       const result = await pool.query(
         `DELETE FROM sync_alerts 
          WHERE acknowledged = true 
-         AND created_at < NOW() - INTERVAL '${daysOld} days'`
+         AND created_at < NOW() - $1::integer * INTERVAL '1 day'`,
+      [daysOld]
       )
       if (result.rowCount > 0) {
         logger.info(`Cleared ${result.rowCount} old alerts`)

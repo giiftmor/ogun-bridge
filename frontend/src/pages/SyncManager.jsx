@@ -176,24 +176,30 @@ export function SyncManager() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="authentik">
-            <Server className="h-4 w-4 mr-2" />
-            Authentik Groups
-          </TabsTrigger>
-          <TabsTrigger value="ldap">
-            <Database className="h-4 w-4 mr-2" />
-            LDAP Groups
-          </TabsTrigger>
-          <TabsTrigger value="comparison">
-            <Layers className="h-4 w-4 mr-2" />
-            Comparison View
-          </TabsTrigger>
-          <TabsTrigger value="user-sync">
-            <User className="h-4 w-4 mr-2" />
-            User Sync
-          </TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto">
+          <TabsList className="w-full min-w-[500px] grid grid-cols-4">
+            <TabsTrigger value="authentik">
+              <Server className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Authentik Groups</span>
+              <span className="sm:hidden">Auth</span>
+            </TabsTrigger>
+            <TabsTrigger value="ldap">
+              <Database className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">LDAP Groups</span>
+              <span className="sm:hidden">LDAP</span>
+            </TabsTrigger>
+            <TabsTrigger value="comparison">
+              <Layers className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Comparison View</span>
+              <span className="sm:hidden">Compare</span>
+            </TabsTrigger>
+            <TabsTrigger value="user-sync">
+              <User className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">User Sync</span>
+              <span className="sm:hidden">Users</span>
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         {/* Authentik Groups Tab */}
         <TabsContent value="authentik" className="space-y-6">
@@ -448,97 +454,99 @@ export function SyncManager() {
                 </div>
               ) : (
                 <div className="max-h-[500px] overflow-y-auto">
-                  <table className="w-full">
-                    <thead className="sticky top-0 bg-background">
-                      <tr className="border-b">
-                        <th className="text-left p-3">Group</th>
-                        <th className="text-center p-3">Authentik</th>
-                        <th className="text-center p-3">LDAP</th>
-                        <th className="text-left p-3">Sync Direction</th>
-                        <th className="text-right p-3">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {comparisonData.map((item) => (
-                        <tr key={item.name} className="border-b hover:bg-muted/50">
-                          <td className="p-3">
-                            <p className="font-medium">{item.name}</p>
-                          </td>
-                          <td className="text-center p-3">
-                            {item.inAuthentik ? (
-                              <CheckCircle className="h-5 w-5 text-green-500 mx-auto" />
-                            ) : (
-                              <XCircle className="h-5 w-5 text-red-500 mx-auto" />
-                            )}
-                          </td>
-                          <td className="text-center p-3">
-                            {item.inLDAP ? (
-                              <CheckCircle className="h-5 w-5 text-green-500 mx-auto" />
-                            ) : (
-                              <XCircle className="h-5 w-5 text-red-500 mx-auto" />
-                            )}
-                          </td>
-                          <td className="p-3">
-                          <Select
-                            value={item.syncDirection}
-                            onValueChange={(direction) => {
-                                if (item.authId) {
-                                  apiClient.updateGroupSyncDirection(item.authId, direction)
-                                    .then(() => {
-                                      toast.success('Sync direction updated')
-                                      queryClient.invalidateQueries(['groups'])
-                                    })
-                                    .catch(err => {
-                                      const translated = translateError(err)
-                                      toast.error(translated.message)
-                                    })
-                                }
-                              }}
-                            >
-                              <SelectTrigger className="w-[160px]">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {SYNC_DIRECTIONS.map(dir => (
-                                  <SelectItem key={dir.value} value={dir.value}>
-                                    {dir.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </td>
-                          <td className="text-right p-3">
-                            <div className="flex justify-end gap-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handlePreview(item.name, item.syncDirection)}
-                                disabled={previewMutation.isPending}
-                              >
-                                {previewMutation.isPending ? (
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                  <Eye className="h-4 w-4" />
-                                )}
-                              </Button>
-                              <Button
-                                
-                                size="sm"
-                                onClick={() => handleSyncNow(item.name, item.syncDirection)}
-                                disabled={syncNowMutation.isPending}
-                              >
-                                {syncNowMutation.isPending ? (
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                  <Play className="h-4 w-4" />
-                                )}
-                              </Button>
-                            </div>
-                          </td>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[600px]">
+                      <thead className="sticky top-0 bg-background">
+                        <tr className="border-b">
+                          <th className="text-left p-3">Group</th>
+                          <th className="text-center p-3">Authentik</th>
+                          <th className="text-center p-3">LDAP</th>
+                          <th className="text-left p-3">Sync Direction</th>
+                          <th className="text-right p-3">Actions</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {comparisonData.map((item) => (
+                          <tr key={item.name} className="border-b hover:bg-muted/50">
+                            <td className="p-3">
+                              <p className="font-medium">{item.name}</p>
+                            </td>
+                            <td className="text-center p-3">
+                              {item.inAuthentik ? (
+                                <CheckCircle className="h-5 w-5 text-green-500 mx-auto" />
+                              ) : (
+                                <XCircle className="h-5 w-5 text-red-500 mx-auto" />
+                              )}
+                            </td>
+                            <td className="text-center p-3">
+                              {item.inLDAP ? (
+                                <CheckCircle className="h-5 w-5 text-green-500 mx-auto" />
+                              ) : (
+                                <XCircle className="h-5 w-5 text-red-500 mx-auto" />
+                              )}
+                            </td>
+                            <td className="p-3">
+                            <Select
+                              value={item.syncDirection}
+                              onValueChange={(direction) => {
+                                  if (item.authId) {
+                                    apiClient.updateGroupSyncDirection(item.authId, direction)
+                                      .then(() => {
+                                        toast.success('Sync direction updated')
+                                        queryClient.invalidateQueries(['groups'])
+                                      })
+                                      .catch(err => {
+                                        const translated = translateError(err)
+                                        toast.error(translated.message)
+                                      })
+                                  }
+                                }}
+                              >
+                                <SelectTrigger className="w-[160px]">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {SYNC_DIRECTIONS.map(dir => (
+                                    <SelectItem key={dir.value} value={dir.value}>
+                                      {dir.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </td>
+                            <td className="text-right p-3">
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handlePreview(item.name, item.syncDirection)}
+                                  disabled={previewMutation.isPending}
+                                >
+                                  {previewMutation.isPending ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Eye className="h-4 w-4" />
+                                  )}
+                                </Button>
+                                <Button
+                                  
+                                  size="sm"
+                                  onClick={() => handleSyncNow(item.name, item.syncDirection)}
+                                  disabled={syncNowMutation.isPending}
+                                >
+                                  {syncNowMutation.isPending ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Play className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
             </CardContent>
@@ -576,66 +584,73 @@ export function SyncManager() {
                 </div>
               ) : (
                 <div className="max-h-[500px] overflow-y-auto">
-                  <table className="w-full">
-                    <thead className="sticky top-0 bg-background">
-                      <tr className="border-b">
-                        <th className="text-left p-3">Username</th>
-                        <th className="text-left p-3">Email</th>
-                        <th className="text-center p-3">In LDAP</th>
-                        <th className="text-center p-3">In Sync</th>
-                        <th className="text-center p-3">Password</th>
-                        <th className="text-right p-3">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {users.map((user) => (
-                        <tr key={user.id} className="border-b hover:bg-muted/50">
-                          <td className="p-3 font-medium">{user.username}</td>
-                          <td className="p-3 text-sm text-muted-foreground">{user.email || '—'}</td>
-                          <td className="text-center p-3">
-                            {user.syncStatus !== 'not_synced' ? (
-                              <CheckCircle className="h-5 w-5 text-green-500 mx-auto" />
-                            ) : (
-                              <XCircle className="h-5 w-5 text-red-500 mx-auto" />
-                            )}
-                          </td>
-                          <td className="text-center p-3">
-                            <Badge
-                              variant={
-                                user.syncStatus === 'synced' ? 'default' :
-                                user.syncStatus === 'pending' ? 'secondary' : 'destructive'
-                              }
-                            >
-                              {user.syncStatus}
-                            </Badge>
-                          </td>
-                          <td className="text-center p-3">
-                            <Badge variant={user.hasPassword ? 'outline' : 'secondary'}>
-                              {user.hasPassword ? 'Set' : 'Not Set'}
-                            </Badge>
-                          </td>
-                          <td className="text-right p-3">
-                            <div className="flex justify-end gap-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => navigate(`/users/${user.username}`)}
-                              >
-                                <Eye className="h-4 w-4 mr-1" />
-                                View
-                              </Button>
-                            </div>
-                          </td>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[600px]">
+                      <thead className="sticky top-0 bg-background">
+                        <tr className="border-b">
+                          <th className="text-left p-3">Username</th>
+                          <th className="text-left p-3">Email</th>
+                          <th className="text-center p-3">In LDAP</th>
+                          <th className="text-center p-3">In Sync</th>
+                          <th className="text-center p-3">Password</th>
+                          <th className="text-right p-3">Actions</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {users.map((user) => (
+                          <tr key={user.id} className="border-b hover:bg-muted/50">
+                            <td className="p-3 font-medium">{user.username}</td>
+                            <td className="p-3 text-sm text-muted-foreground">{user.email || '—'}</td>
+                            <td className="text-center p-3">
+                              {user.syncStatus !== 'not_synced' ? (
+                                <CheckCircle className="h-5 w-5 text-green-500 mx-auto" />
+                              ) : (
+                                <XCircle className="h-5 w-5 text-red-500 mx-auto" />
+                              )}
+                            </td>
+                            <td className="text-center p-3">
+                              <Badge
+                                variant={
+                                  user.syncStatus === 'synced' ? 'default' :
+                                  user.syncStatus === 'pending' ? 'secondary' : 'destructive'
+                                }
+                              >
+                                {user.syncStatus}
+                              </Badge>
+                            </td>
+                            <td className="text-center p-3">
+                              <Badge variant={user.hasPassword ? 'outline' : 'secondary'}>
+                                {user.hasPassword ? 'Set' : 'Not Set'}
+                              </Badge>
+                            </td>
+                            <td className="text-right p-3">
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => navigate(`/users/${user.username}`)}
+                                >
+                                  <Eye className="h-4 w-4 mr-1" />
+                                  View
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Sync Progress */}
+      <div id="sync-progress">
+        <ProgressBar />
+      </div>
 
         {/* Preview Results */}
       {previewData && (
@@ -700,7 +715,7 @@ export function SyncManager() {
             Run sync for all groups or preview all changes
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex gap-2">
+        <CardContent className="flex gap-2 flex-wrap">
           <Button
             onClick={() => {
               runSyncMutation.mutate({ force: true })
@@ -731,10 +746,6 @@ export function SyncManager() {
         </CardContent>
       </Card>
 
-      {/* Progress Bar (if sync running) */}
-      <div id="sync-progress">
-        <ProgressBar />
-      </div>
     </div>
   )
 }

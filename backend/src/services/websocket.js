@@ -22,19 +22,19 @@ export function setupWebSocket(io) {
     })
   })
 
-  // Heartbeat every 5 minutes
+  // Heartbeat every 5 minutes (debug level to avoid log noise)
   setInterval(() => {
     try {
       const logEntry = {
         timestamp: new Date().toISOString(),
-        level: 'info',
+        level: 'debug',
         message: 'Service heartbeat',
         context: { test: true }
       }
       addLogToCache(logEntry)
       io.to('logs').emit('log', logEntry)
     } catch (error) {
-      console.error('[websocket] Interval error:', error.message)
+      logger.error('[websocket] Interval error:', { error: error.message })
     }
   }, 300000) // 5 minutes
 

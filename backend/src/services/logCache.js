@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { logger } from '../utils/logger.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const LOG_CACHE_DIR = path.join(__dirname, '../../data')
@@ -14,7 +15,7 @@ function ensureLogCacheDir() {
       fs.mkdirSync(LOG_CACHE_DIR, { recursive: true })
     }
   } catch (error) {
-    console.error('[logCache] Failed to create directory:', error.message)
+    logger.error('[logCache] Failed to create directory:', { error: error.message })
   }
 }
 
@@ -26,7 +27,7 @@ function readLogCache() {
       return JSON.parse(data)
     }
   } catch (error) {
-    console.error('[logCache] Error reading log cache:', error.message)
+    logger.error('[logCache] Error reading log cache:', { error: error.message })
   }
   return []
 }
@@ -36,7 +37,7 @@ function writeLogCache(logs) {
     ensureLogCacheDir()
     fs.writeFileSync(LOG_CACHE_FILE, JSON.stringify(logs, null, 2))
   } catch (error) {
-    console.error('[logCache] Error writing log cache:', error.message)
+    logger.error('[logCache] Error writing log cache:', { error: error.message })
   }
 }
 
@@ -52,7 +53,7 @@ export function addLogToCache(logEntry) {
     
     writeLogCache(logs)
   } catch (error) {
-    console.error('[logCache] Error adding log to cache:', error.message)
+    logger.error('[logCache] Error adding log to cache:', { error: error.message })
   }
 }
 
@@ -61,7 +62,7 @@ export function getCachedLogs(limit = 1000) {
     const logs = readLogCache()
     return logs.slice(0, limit)
   } catch (error) {
-    console.error('[logCache] Error getting cached logs:', error.message)
+    logger.error('[logCache] Error getting cached logs:', { error: error.message })
     return []
   }
 }
@@ -83,7 +84,7 @@ export function searchLogs(query, level = 'all') {
       return matchesLevel && (messageMatch || contextMatch)
     })
   } catch (error) {
-    console.error('[logCache] Error searching logs:', error.message)
+    logger.error('[logCache] Error searching logs:', { error: error.message })
     return []
   }
 }

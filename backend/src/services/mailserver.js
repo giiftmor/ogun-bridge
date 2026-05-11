@@ -1,14 +1,42 @@
-import { exec } from 'child_process'
-import { promisify } from 'util'
+import { spawn } from 'child_process'
 import { logger } from '../utils/logger.js'
 import { ldapClient } from './ldapClient.js'
 
-const execPromise = promisify(exec)
+function validateEmail(email) {
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error(`Invalid email address: ${email}`)
+  }
+  return email
+}
+
+function validateContainerName(name) {
+  if (!name || !/^[a-zA-Z0-9_-]+$/.test(name)) {
+    throw new Error(`Invalid container name: ${name}`)
+  }
+  return name
+}
+
+function runDockerCommand(containerName, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('docker', ['exec', containerName, ...args], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.on('data', (data) => { stdout += data.toString() })
+    child.stderr.on('data', (data) => { stderr += data.toString() })
+    child.on('close', (code) => {
+      if (code === 0) resolve(stdout.trim())
+      else reject(new Error(stderr.trim() || `Exit code ${code}`))
+    })
+    child.on('error', reject)
+  })
+}
 
 export class MailserverIntegration {
   constructor(config) {
     this.config = config
-    this.containerName = config.containerName || 'mailserver'
+    this.containerName = validateContainerName(config.containerName || 'mailserver')
     this.ldapMode = config.ldapMode !== false
   }
 
@@ -21,9 +49,9 @@ export class MailserverIntegration {
     }
 
     try {
-      const command = `docker exec ${this.containerName} setup email add ${email}`
+      validateEmail(email)
       logger.info('Creating mailbox', { username, email })
-      await execPromise(command)
+      await runDockerCommand(this.containerName, ['setup', 'email', 'add', email])
       logger.info('Mailbox created successfully', { email })
     } catch (error) {
       if (error.message.includes('already exists')) {
@@ -44,9 +72,9 @@ export class MailserverIntegration {
 
     try {
       const email = `${username}@${this.config.domain}`
-      const command = `docker exec ${this.containerName} setup email del ${email}`
+      validateEmail(email)
       logger.info('Deleting mailbox', { username, email })
-      await execPromise(command)
+      await runDockerCommand(this.containerName, ['setup', 'email', 'del', email])
       logger.info('Mailbox deleted successfully', { email })
     } catch (error) {
       logger.error('Failed to delete mailbox', { username, error: error.message })
@@ -62,8 +90,8 @@ export class MailserverIntegration {
     }
 
     try {
-      const command = `docker exec ${this.containerName} setup quota set ${email} ${quotaInMB}M`
-      await execPromise(command)
+      validateEmail(email)
+      await runDockerCommand(this.containerName, ['setup', 'quota', 'set', email, `${quotaInMB}M`])
       logger.info('Updated mailbox quota', { email, quota: quotaInMB })
     } catch (error) {
       logger.error('Failed to update quota', { email, error: error.message })
@@ -78,9 +106,8 @@ export class MailserverIntegration {
     }
 
     try {
-      const command = `docker exec ${this.containerName} setup email list`
-      const { stdout } = await execPromise(command)
-      const mailboxes = stdout.trim().split('\n').filter(line => line.includes('@'))
+      const stdout = await runDockerCommand(this.containerName, ['setup', 'email', 'list'])
+      const mailboxes = stdout.split('\n').filter(line => line.includes('@'))
       logger.debug('Listed mailboxes', { count: mailboxes.length })
       return mailboxes
     } catch (error) {

@@ -1,5 +1,5 @@
 import express from 'express'
-import { pool } from '../lib/db.js'
+import { pool, poolMetrics } from '../lib/db.js'
 import { getSyncState } from '../services/syncService.js'
 import { authentikClient } from '../services/authentikClient.js'
 import { ldapClient } from '../services/ldapClient.js'
@@ -146,6 +146,11 @@ async function getMetrics() {
       failedLogins24h: parseInt(failedLogins.rows[0].count),
       lastSync: recentSync.rows[0]?.created_at || null,
       lastSyncStatus: recentSync.rows[0]?.status || 'unknown',
+      dbPool: {
+        total: poolMetrics.totalCount,
+        idle: poolMetrics.idleCount,
+        waiting: poolMetrics.waitingCount,
+      },
     }
   } catch (error) {
     logger.error('Error getting metrics:', error.message)

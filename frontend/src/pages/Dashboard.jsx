@@ -22,10 +22,7 @@ export function Dashboard() {
   const [showForceConfirm, setShowForceConfirm] = useState(false)
 
   const syncMutation = useMutation({
-    mutationFn: () => fetch('/api/sync/run', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` }
-    }).then(r => r.json()),
+    mutationFn: () => apiClient.runSync({}),
     onSuccess: () => {
       toast.success('Sync started')
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
@@ -37,10 +34,7 @@ export function Dashboard() {
   })
 
   const forceSyncMutation = useMutation({
-    mutationFn: () => fetch('/api/sync/run?force=true', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` }
-    }).then(r => r.json()),
+    mutationFn: () => apiClient.runSync({ force: true }),
     onSuccess: () => {
       setShowForceConfirm(false)
       toast.success('Force sync started - syncing all users')
@@ -72,9 +66,7 @@ export function Dashboard() {
 
   const { data: syncHistory = [] } = useQuery({
     queryKey: ['sync-history'],
-    queryFn: () => fetch('/api/sync/history', {
-      headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` }
-    }).then(r => r.json()),
+    queryFn: () => fetch('/api/sync/history').then(r => r.json()),
     refetchInterval: 60000,
   })
 
@@ -123,8 +115,8 @@ export function Dashboard() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-[20px] font-medium text-primary">Dashboard</h1>
-          <p className="text-[13px] text-secondary mt-0.5">Monitor your Authentik LDAP sync service</p>
+          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+          <p className="text-muted-foreground mt-2">Monitor your Authentik LDAP sync service</p>
         </div>
       </div>
 
@@ -144,23 +136,23 @@ export function Dashboard() {
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               {syncStatus?.status === 'running' && (
                 <Badge variant="default">Sync Running...</Badge>
               )}
               <Button variant="ghost" size="sm" onClick={() => refetchHealth()}>
                 <Activity className={`h-4 w-4 mr-2 ${healthLoading ? 'animate-spin' : ''}`} />
-                Health Check
+                <span className="hidden sm:inline">Health Check</span>
               </Button>
               <Button variant="ghost" size="sm" onClick={() => syncMutation.mutate()}
                 disabled={syncMutation.isPending || syncStatus?.status === 'running'}>
                 <RefreshCw className={`h-4 w-4 mr-2 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
-                Sync Now
+                <span className="hidden sm:inline">Sync Now</span>
               </Button>
               <Button variant="ghost" size="sm" onClick={() => setShowForceConfirm(true)}
                 disabled={forceSyncMutation.isPending || syncStatus?.status === 'running'}>
                 <Zap className={`h-4 w-4 mr-2 ${forceSyncMutation.isPending ? 'animate-spin' : ''}`} />
-                Force Sync
+                <span className="hidden sm:inline">Force Sync</span>
               </Button>
               <Badge variant={getStatusVariant(stats?.syncStatus)}>
                 {stats?.syncStatus || 'Unknown'}

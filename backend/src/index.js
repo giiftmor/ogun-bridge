@@ -8,6 +8,9 @@ import { createServer } from 'http'
 import { Server } from 'socket.io'
 import cors from 'cors'
 import helmet from 'helmet'
+import rateLimit from 'express-rate-limit'
+import cookieParser from 'cookie-parser'
+import crypto from 'crypto'
 
 import { healthRouter } from './routes/health.js'
 import { dashboardRouter } from './routes/dashboard.js'
@@ -51,18 +54,74 @@ global.__io = io
 // Make io accessible in routes via req.app.get('io')
 app.set('io', io)
 
+// Global rate limiter
+const globalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later' },
+})
+
+// Auth route rate limiter (more aggressive)
+const authLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many authentication attempts, please try again later' },
+})
+
+// Password reset rate limiter
+const passwordResetLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 3,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many password reset attempts, please try again later' },
+})
+
+// Request ID middleware
+app.use((req, res, next) => {
+  req.id = crypto.randomUUID()
+  res.setHeader('X-Request-Id', req.id)
+  next()
+})
+
 // Middleware
-app.use(helmet())
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      fontSrc: ["'self'"],
+      connectSrc: ["'self'", process.env.CORS_ORIGIN || 'http://localhost:3331'],
+      frameSrc: ["'none'"],
+      objectSrc: ["'none'"],
+    },
+  },
+}))
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:3331',
 }))
 app.use(express.json())
+app.use(cookieParser())
 
 // Request logging
 app.use((req, res, next) => {
-  logger.info(`${req.method} ${req.path}`)
+  logger.info(`${req.method} ${req.path}`, { requestId: req.id })
   next()
 })
+
+// Apply global rate limiter to all API routes
+app.use('/api/', globalLimiter)
+
+// Apply aggressive rate limiters to auth routes
+app.use('/api/auth/login', authLimiter)
+app.use('/api/auth/forgot-password', passwordResetLimiter)
+app.use('/api/auth/resend-reset-token', passwordResetLimiter)
 
 // WebSocket setup
 setupWebSocket(io)
@@ -72,10 +131,9 @@ setInterval(cleanupExpiredSessions, 60 * 60 * 1000)
 
 // Error handling
 app.use((err, req, res, next) => {
-  logger.error('Unhandled error:', err)
+  logger.error('Unhandled error:', { error: err.message, stack: err.stack })
   res.status(500).json({
     error: 'Internal server error',
-    message: err.message,
   })
 })
 
@@ -91,6 +149,15 @@ const shutdown = () => {
 
 process.on('SIGTERM', shutdown)
 process.on('SIGINT', shutdown)
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled Rejection:', { reason: reason?.message || reason, stack: reason?.stack })
+})
+
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught Exception:', { error: error.message, stack: error.stack })
+  shutdown()
+})
 
 // API Routes (FULL server only)
 function setupFullRoutes() {
@@ -152,11 +219,11 @@ function startFullServer() {
         context: { service: 'startup' }
       })
     } catch (error) {
-      console.error('[startup] Failed to write startup log:', error.message)
+      logger.error('[startup] Failed to write startup log:', { error: error.message })
     }
     
     await startSyncService(io)
-    logger.info('✅ Full server started - all services operational')
+    logger.info('Full server started - all services operational')
   })
 }
 
@@ -176,7 +243,7 @@ function startLimitedServer() {
         context: { service: 'startup' }
       })
     } catch (error) {
-      console.error('[startup] Failed to write startup log:', error.message)
+      logger.error('[startup] Failed to write startup log:', { error: error.message })
     }
     
     logger.info('Sync service disabled until setup complete')
@@ -196,12 +263,13 @@ async function startServer() {
       return // Don't start anything
     }
 
-    // 2. Import encryption module (needs DB or .env fallback)
+    // 2. Verify encryption key availability (env-only, no DB storage)
     const { saveKeyToDB } = await import('./services/encryption.js')
     try {
       await saveKeyToDB()
     } catch (e) {
-      logger.warn('Encryption key not saved to DB (DB may be down):', e.message)
+      logger.error('Failed to load encryption key:', e.message)
+      return
     }
 
     // 3. Health check critical services (BEFORE HTTP server starts)
@@ -248,6 +316,29 @@ async function startServer() {
     process.exit(1)
   }
 }
+
+// Validate required environment variables at startup
+function validateRequiredEnv() {
+  const required = [
+    { var: 'ENCRYPTION_KEY', name: 'ENCRYPTION_KEY' },
+    { var: 'SUPER_ADMIN_PASS', name: 'SUPER_ADMIN_PASS' },
+    { var: 'DB_HOST', name: 'DB_HOST' },
+    { var: 'DB_NAME', name: 'DB_NAME' },
+    { var: 'DB_USER', name: 'DB_USER' },
+    { var: 'DB_PASSWORD', name: 'DB_PASSWORD' },
+  ]
+
+  const missing = required.filter(r => !process.env[r.var])
+  if (missing.length > 0) {
+    logger.error('Missing required environment variables:', {
+      missing: missing.map(r => r.name).join(', '),
+    })
+    logger.error('Set these in .env or docker-compose environment before starting.')
+    process.exit(1)
+  }
+}
+
+validateRequiredEnv()
 
 // Start the server
 startServer()

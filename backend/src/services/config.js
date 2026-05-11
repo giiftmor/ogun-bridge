@@ -417,8 +417,10 @@ export async function createSuperAdminIfNeeded() {
 
     // Create super admin
     const bcrypt = await import('bcryptjs')
-    const password = process.env.SUPER_ADMIN_PASS || 'Kali@1403'
-    const hashedPassword = await bcrypt.default.hash(password, 10)
+    if (!process.env.SUPER_ADMIN_PASS) {
+      throw new Error('SUPER_ADMIN_PASS must be set in environment to create super admin')
+    }
+    const hashedPassword = await bcrypt.default.hash(process.env.SUPER_ADMIN_PASS, 10)
 
     await client.query(
       `INSERT INTO auth_users (username, password_hash, email, first_name, last_name, is_admin, is_super_admin, created_at, updated_at)

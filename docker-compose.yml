@@ -23,6 +23,8 @@ services:
       LDAP_BIND_DN: ${LDAP_BIND_DN}
       LDAP_BIND_PASSWORD: ${LDAP_BIND_PASSWORD}
       LDAP_BASE_DN: ${LDAP_BASE_DN}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      SUPER_ADMIN_PASS: ${SUPER_ADMIN_PASS}
       CORS_ORIGIN: ${CORS_ORIGIN:-https://ogun.spectres.co.za}
       SMTP_HOST: ${SMTP_HOST:-localhost}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -33,6 +35,17 @@ services:
       SMTP_FROM_ADDRESS: ${SMTP_FROM_ADDRESS:-}
       MAILSERVER_ENABLED: ${MAILSERVER_ENABLED:-true}
       MAILSERVER_DOMAIN: ${MAILSERVER_DOMAIN:-spectres.co.za}
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3333/health',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     networks:
       - ogun-network
       - thoth-network
@@ -47,7 +60,24 @@ services:
         VITE_WS_URL: /socket.io
     container_name: ogun-bridge-frontend
     restart: unless-stopped
-    network_mode: host
+    ports:
+      - "3331:3331"
+    depends_on:
+      backend:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://127.0.0.1:3331/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    networks:
+      - ogun-network
 
 networks:
   ogun-network:

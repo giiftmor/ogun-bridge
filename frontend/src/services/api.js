@@ -1,6 +1,10 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
 
-const getToken = () => localStorage.getItem('auth_token')
+const getToken = () => {
+  // Auth token is set as HTTP-only cookie on login; no localStorage needed.
+  // Return null to rely on automatic cookie-based auth.
+  return null
+}
 
 class ApiClient {
   async request(endpoint, options = {}) {
@@ -24,9 +28,8 @@ class ApiClient {
       if (!response.ok) {
         const error = await response.json().catch(() => ({}))
         
-        // Only clear token and redirect for actual auth failures
+        // Only redirect for actual auth failures (cookie will be cleared server-side)
         if (error.error?.includes('expired') || error.error?.includes('Invalid') || error.error?.includes('Not authenticated')) {
-          localStorage.removeItem('auth_token')
           window.location.href = '/login'
         }
         // For other 401s, just throw without redirect
@@ -41,7 +44,6 @@ class ApiClient {
 
       return await response.json()
     } catch (error) {
-      console.error('API Error:', error)
       throw error
     }
   }
@@ -60,7 +62,6 @@ class ApiClient {
     }
 
     const data = await response.json()
-    localStorage.setItem('auth_token', data.token)
     return data
   }
 
@@ -76,7 +77,6 @@ class ApiClient {
         console.warn('Logout request failed:', e)
       }
     }
-    localStorage.removeItem('auth_token')
   }
 
   async getCurrentUser() {

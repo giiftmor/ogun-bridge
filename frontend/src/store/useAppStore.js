@@ -9,17 +9,23 @@ const getInitialTheme = () => {
   return 'light'
 }
 
-const getStoredToken = () => {
+const getInitialSidebarOpen = () => {
   if (typeof window !== 'undefined') {
-    return localStorage.getItem('auth_token')
+    const stored = localStorage.getItem('sidebar_open')
+    if (stored !== null) return stored === 'true'
+    return window.innerWidth >= 1024
   }
-  return null
+  return true
 }
 
 export const useAppStore = create((set, get) => ({
   // UI State
-  sidebarOpen: true,
-  toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+  sidebarOpen: getInitialSidebarOpen(),
+  toggleSidebar: () => set((state) => {
+    const next = !state.sidebarOpen
+    localStorage.setItem('sidebar_open', next)
+    return { sidebarOpen: next }
+  }),
 
   // Theme
   theme: getInitialTheme(),
@@ -30,22 +36,17 @@ export const useAppStore = create((set, get) => ({
     document.documentElement.classList.toggle('dark', newTheme === 'dark')
   },
 
-  // Auth State
-  token: getStoredToken(),
-  setToken: (token) => {
-    if (token) {
-      localStorage.setItem('auth_token', token)
-    } else {
-      localStorage.removeItem('auth_token')
-    }
-    set({ token })
+  // Auth State (token managed via HTTP-only cookie)
+  token: null,
+  setToken: () => {
+    // Token is handled via HTTP-only cookie set by backend
+    set({ token: 'authenticated' })
   },
 
   // User State
   currentUser: null,
   setCurrentUser: (user) => set({ currentUser: user }),
   logout: () => {
-    localStorage.removeItem('auth_token')
     set({ token: null, currentUser: null })
   },
 

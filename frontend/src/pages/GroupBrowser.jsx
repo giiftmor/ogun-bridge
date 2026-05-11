@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Search, AlertCircle, CheckCircle2, Users, Eye } from 'lucide-react'
+import { Search, AlertCircle, CheckCircle2, Users, Eye, ArrowLeft } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -115,7 +115,16 @@ export function GroupBrowser() {
 
         <div className="sticky top-6">
           {selectedGroup ? (
-            <GroupDetails group={selectedGroup} />
+            <>
+              <button
+                onClick={() => setSelectedGroup(null)}
+                className="lg:hidden flex items-center gap-1 text-[13px] text-accent hover:text-accent-hover mb-3 transition-colors"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back to group list
+              </button>
+              <GroupDetails group={selectedGroup} />
+            </>
           ) : (
             <Card>
               <CardContent className="pt-6">

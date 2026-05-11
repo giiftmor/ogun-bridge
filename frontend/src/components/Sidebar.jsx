@@ -132,7 +132,7 @@ export function Sidebar({ sidebarOpen, toggleSidebar, navigation = defaultNaviga
   return (
     <aside
       className={cn(
-        'fixed inset-y-0 left-0 z-50 flex flex-col',
+        'fixed inset-y-0 left-0 z-50 flex flex-col bg-elevated lg:bg-surface',
         'transition-[width,transform] duration-200 ease',
         collapsed ? 'w-[52px]' : 'w-[220px]',
         sidebarOpen ? 'translate-x-0' : '-translate-x-full',

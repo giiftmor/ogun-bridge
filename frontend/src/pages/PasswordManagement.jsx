@@ -215,7 +215,8 @@ export function PasswordManagement() {
 
       {/* Tabs */}
       <Tabs defaultValue="set" className="space-y-4">
-        <TabsList className="grid grid-cols-3 w-full">
+        <div className="overflow-x-auto">
+          <TabsList className="w-full min-w-[400px] grid grid-cols-3">
           <TabsTrigger value="set" className="flex items-center gap-2">
             <KeyRound className="h-4 w-4" />
             <span className="hidden sm:inline">Set Password</span>
@@ -229,6 +230,7 @@ export function PasswordManagement() {
             <span className="hidden sm:inline">History</span>
           </TabsTrigger>
         </TabsList>
+        </div>
 
         {/* Tab 1: Set Password */}
         <TabsContent value="set" className="space-y-4">
