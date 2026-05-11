@@ -9,3 +9,9 @@ logs/
 .env
 backend/.env
 frontend/.env
+
+# Runtime data files
+backend/data/
+
+# Frontend build artifacts
+frontend/dist/

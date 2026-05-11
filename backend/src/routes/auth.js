@@ -25,7 +25,7 @@ authRouter.use(cookieParser())
 const ROLES = ['admin', 'reviewer', 'viewer']
 
 function extractToken(req) {
-  return extractToken(req) ||
+  return req.headers.authorization?.replace('Bearer ', '') ||
          req.cookies?.auth_token
 }
 

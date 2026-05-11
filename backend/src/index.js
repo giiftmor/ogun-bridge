@@ -40,6 +40,7 @@ import { initializeDatabase } from './lib/db.js'
 import { markSetupComplete } from './services/config.js'
 
 const app = express()
+app.set('trust proxy', 1)
 const httpServer = createServer(app)
 const io = new Server(httpServer, {
   cors: {
