@@ -4,6 +4,7 @@ import { pool } from '../lib/db.js'
 import { logger } from '../utils/logger.js'
 import { addLogToCache } from '../services/logCache.js'
 import { createAuditLog } from '../services/auditService.js'
+import { setServiceConfig } from '../services/config.js'
 import { authenticate } from '../middleware/auth.js'
 
 export const mailRouter = express.Router()
@@ -16,6 +17,32 @@ async function loadMailConfig() {
 }
 
 async function getMailConfig() {
+  // Primary source: service_configs table
+  try {
+    const result = await pool.query(
+      "SELECT key, value FROM service_configs WHERE service = 'smtp'"
+    )
+    if (result.rows.length > 0) {
+      const cfg = {}
+      for (const row of result.rows) {
+        cfg[row.key] = row.value
+      }
+      return {
+        host: cfg.host || '',
+        port: parseInt(cfg.port || '587'),
+        secure: cfg.secure === 'true',
+        requireTLS: cfg.requireTLS !== 'false',
+        user: cfg.username || '',
+        password: cfg.password || '',
+        fromName: cfg.fromName || '',
+        fromAddress: cfg.fromAddress || '',
+      }
+    }
+  } catch (error) {
+    logger.error('Error loading mail config from service_configs:', error.message)
+  }
+
+  // Fallback: mail_settings table (legacy)
   try {
     const result = await pool.query('SELECT * FROM mail_settings WHERE id = 1')
     if (result.rows.length > 0) {
@@ -32,7 +59,7 @@ async function getMailConfig() {
       }
     }
   } catch (error) {
-    logger.error('Error loading mail config:', error.message)
+    logger.error('Error loading mail config from mail_settings:', error.message)
   }
   
   return {
@@ -112,6 +139,22 @@ mailRouter.post('/config', async (req, res) => {
       [host, port, secure, requireTLS, user || null, password || null, fromName || null, fromAddress || null]
     )
     
+    // Sync to service_configs table to eliminate dual-truth
+    try {
+      await setServiceConfig('smtp', {
+        host: host || undefined,
+        port: port || undefined,
+        secure: secure !== undefined ? String(secure) : undefined,
+        requireTLS: requireTLS !== undefined ? String(requireTLS) : undefined,
+        username: user || undefined,
+        password: password || undefined,
+        fromName: fromName || undefined,
+        fromAddress: fromAddress || undefined,
+      })
+    } catch (syncErr) {
+      logger.warn('Failed to sync mail config to service_configs:', syncErr.message)
+    }
+
     // Reload config
     await loadMailConfig()
     

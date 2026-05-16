@@ -2,7 +2,7 @@ import express from 'express'
 import { logger } from '../utils/logger.js'
 import { MailserverIntegration } from '../services/mailserver.js'
 import { ldapClient } from '../services/ldapClient.js'
-import { authenticate } from '../middleware/auth.js'
+import { authenticate, requireRole } from '../middleware/auth.js'
 
 export const mailAdminRouter = express.Router()
 
@@ -42,7 +42,7 @@ mailAdminRouter.get('/status', async (req, res) => {
   }
 })
 
-mailAdminRouter.post('/mailbox', async (req, res) => {
+mailAdminRouter.post('/mailbox', requireRole('admin'), async (req, res) => {
   try {
     const { username, email } = req.body
     
@@ -64,7 +64,7 @@ mailAdminRouter.post('/mailbox', async (req, res) => {
   }
 })
 
-mailAdminRouter.delete('/mailbox/:email', async (req, res) => {
+mailAdminRouter.delete('/mailbox/:email', requireRole('admin'), async (req, res) => {
   try {
     const { email } = req.params
     const config = getMailserverConfig()
@@ -81,7 +81,7 @@ mailAdminRouter.delete('/mailbox/:email', async (req, res) => {
   }
 })
 
-mailAdminRouter.post('/quota', async (req, res) => {
+mailAdminRouter.post('/quota', requireRole('admin'), async (req, res) => {
   try {
     const { email, quotaInMB } = req.body
     
@@ -110,7 +110,7 @@ mailAdminRouter.get('/config', (req, res) => {
   })
 })
 
-mailAdminRouter.post('/config', (req, res) => {
+mailAdminRouter.post('/config', requireRole('admin'), (req, res) => {
   const { enabled, domain } = req.body
   
   if (enabled !== undefined) {

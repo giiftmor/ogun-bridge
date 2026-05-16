@@ -15,6 +15,7 @@ auditRouter.get('/', async (req, res) => {
       actor: req.query.actor,
       start_date: req.query.start_date,
       end_date: req.query.end_date,
+      search: req.query.search,
       limit: req.query.limit ? parseInt(req.query.limit) : 100,
     }
 

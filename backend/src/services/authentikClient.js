@@ -60,6 +60,8 @@ export class AuthentikClient {
     const searchParams = new URLSearchParams()
     if (params.search) searchParams.set('search', params.search)
     if (params.is_active !== undefined) searchParams.set('is_active', params.is_active)
+    if (params.page_size) searchParams.set('page_size', params.page_size)
+    if (params.ordering) searchParams.set('ordering', params.ordering)
 
     const query = searchParams.toString()
     const endpoint = '/api/v3/core/users/' + (query ? '?' + query : '')
@@ -106,6 +108,8 @@ export class AuthentikClient {
   async getGroups(params = {}) {
     const searchParams = new URLSearchParams()
     if (params.search) searchParams.set('search', params.search)
+    if (params.page_size) searchParams.set('page_size', params.page_size)
+    if (params.ordering) searchParams.set('ordering', params.ordering)
 
     const query = searchParams.toString()
     const endpoint = '/api/v3/core/groups/' + (query ? '?' + query : '')
@@ -113,8 +117,39 @@ export class AuthentikClient {
     return data.results || []
   }
 
-  async getGroup(groupId) {
-    return this.request('/api/v3/core/groups/' + groupId + '/')
+  async getGroup(groupId, options = {}) {
+    const params = new URLSearchParams()
+    if (options.includeChildren) params.set('include_children', 'true')
+    if (options.includeParents) params.set('include_parents', 'true')
+    const query = params.toString()
+    return this.request('/api/v3/core/groups/' + groupId + '/' + (query ? '?' + query : ''))
+  }
+
+  async resolveEffectiveMembers(groupId, depth = 3, visited = new Set()) {
+    if (depth <= 0 || visited.has(groupId)) return []
+    visited.add(groupId)
+
+    const group = await this.getGroup(groupId, { includeChildren: true })
+    const directMembers = group.users_obj?.map(u => u.username) || []
+    const childMembers = (group.children_obj || []).flatMap(child =>
+      this.resolveEffectiveMembers(child.pk, depth - 1, visited)
+    )
+    return [...new Set([...directMembers, ...childMembers])]
+  }
+
+  async getGroupAncestors(groupId, depth = 3) {
+    if (depth <= 0) return []
+
+    const group = await this.getGroup(groupId, { includeParents: true })
+    const ancestors = []
+    if (group.parents_obj?.length > 0) {
+      for (const parent of group.parents_obj) {
+        ancestors.push({ pk: parent.pk, name: parent.name, group_uuid: parent.group_uuid })
+        const grandParents = await this.getGroupAncestors(parent.pk, depth - 1)
+        ancestors.push(...grandParents)
+      }
+    }
+    return ancestors
   }
 
   async createGroup(groupData) {
@@ -155,21 +190,31 @@ export class AuthentikClient {
   }
 
   async addUserToGroup(groupId, username) {
-    const group = await this.getGroup(groupId)
+    const [group, user] = await Promise.all([
+      this.getGroup(groupId),
+      this.getUserByUsername(username),
+    ])
+    if (!user) throw new Error(`User '${username}' not found in Authentik`)
+
     const currentUsers = group.users_obj || []
-    if (!currentUsers.some(u => u.username === username)) {
-      const updatedUsers = [...currentUsers.map(u => u.username), username]
+    if (!currentUsers.some(u => u.pk === user.pk)) {
+      const updatedUsers = [...currentUsers.map(u => u.pk), user.pk]
       return this.updateGroup(groupId, { users: updatedUsers })
     }
     return { success: true, message: 'User already in group' }
   }
 
   async removeUserFromGroup(groupId, username) {
-    const group = await this.getGroup(groupId)
+    const [group, user] = await Promise.all([
+      this.getGroup(groupId),
+      this.getUserByUsername(username),
+    ])
+    if (!user) throw new Error(`User '${username}' not found in Authentik`)
+
     const currentUsers = group.users_obj || []
     const updatedUsers = currentUsers
-      .filter(u => typeof u === 'string' ? u !== username : u.username !== username)
-      .map(u => typeof u === 'string' ? u : u.username)
+      .filter(u => u.pk !== user.pk)
+      .map(u => u.pk)
     return this.updateGroup(groupId, { users: updatedUsers })
   }
 }

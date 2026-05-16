@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiClient } from '../services/api'
 import { Card, CardContent } from '@/components/ui/card'
@@ -7,9 +7,10 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { CheckCircle, Loader2 } from 'lucide-react'
 
-const STEPS = [
+const ALL_STEPS = [
   { id: 'welcome', title: 'Welcome' },
-  { id: 'admin', title: 'Admin Account' },
+  { id: 'database', title: 'Database' },
+  { id: 'admin', title: 'Verify Admin' },
   { id: 'authentik', title: 'Authentik' },
   { id: 'ldap', title: 'LDAP' },
   { id: 'smtp', title: 'SMTP' },
@@ -27,6 +28,13 @@ export function Setup() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
+  // Filter out database step from the progress bar when DB is already connected
+  const steps = useMemo(() => {
+    if (setupStatus?.db_connected === false) return ALL_STEPS
+    return ALL_STEPS.filter(s => s.id !== 'database')
+  }, [setupStatus?.db_connected])
+
+  const [dbForm, setDbForm] = useState({ host: '', port: '5432', database: '', user: '', password: '' })
   const [adminForm, setAdminForm] = useState({ username: 'superadmin', password: '', email: '' })
   const [authentikForm, setAuthentikForm] = useState({ baseUrl: '', apiToken: '' })
   const [ldapForm, setLdapForm] = useState({ host: '', port: '389', bindDN: '', bindPassword: '', baseDN: '', userBaseDN: '', groupBaseDN: '' })
@@ -41,12 +49,30 @@ export function Setup() {
     finally { setLoading(false) }
   }
 
-  const handleNext = () => { setError(''); setSuccess(''); setCurrentStep(prev => Math.min(prev + 1, STEPS.length - 1)) }
+  const handleNext = () => { setError(''); setSuccess(''); setCurrentStep(prev => Math.min(prev + 1, steps.length - 1)) }
   const handleBack = () => { setError(''); setSuccess(''); setCurrentStep(prev => Math.max(prev - 1, 0)) }
 
-  const handleCreateAdmin = async (e) => {
+  const handleSaveDatabase = async (e) => {
+    e.preventDefault(); setSaving(true); setError(''); setSuccess('')
+    try {
+      const result = await apiClient.saveDatabaseConfig({
+        host: dbForm.host,
+        port: dbForm.port,
+        database: dbForm.database,
+        user: dbForm.user,
+        password: dbForm.password,
+      })
+      setSuccess(result.message || 'Database configured!')
+      // Refresh status — the steps memo will recompute, shifting us to the Admin step
+      const status = await apiClient.getSetupStatus()
+      setSetupStatus(status)
+    } catch (e) { setError(e.message) }
+    finally { setSaving(false) }
+  }
+
+  const handleVerifyAdmin = async (e) => {
     e.preventDefault(); setSaving(true); setError('')
-    try { await apiClient.createSetupAdmin(adminForm.username, adminForm.password, adminForm.email); setSuccess('Admin account created!'); setTimeout(() => handleNext(), 1000) }
+    try { await apiClient.verifyAdmin(adminForm.username, adminForm.password); setSuccess('Admin credentials verified!'); setTimeout(() => handleNext(), 1000) }
     catch (e) { setError(e.message) } finally { setSaving(false) }
   }
 
@@ -96,7 +122,7 @@ export function Setup() {
     return <div className="min-h-screen flex items-center justify-center bg-page"><div className="text-secondary text-[13px]">Loading setup...</div></div>
   }
 
-  const step = STEPS[currentStep]
+  const step = steps[currentStep]
 
   return (
     <div className="min-h-screen bg-page flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
@@ -109,7 +135,7 @@ export function Setup() {
             </div>
 
             <div className="mb-8 flex justify-between">
-              {STEPS.map((s, idx) => (
+              {steps.map((s, idx) => (
                 <div key={s.id} className="flex flex-col items-center">
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[13px] font-medium ${
                     idx < currentStep ? 'bg-accent text-white' :
@@ -132,6 +158,7 @@ export function Setup() {
                   <h2 className="text-[16px] font-medium text-primary mb-4">Welcome to Ogun Bridge</h2>
                   <p className="text-[13px] text-secondary mb-4">This setup wizard will guide you through configuring:</p>
                   <ul className="list-disc list-inside text-[13px] text-secondary space-y-1.5 mb-6">
+                    <li>Database connection</li>
                     <li>Admin account for managing the system</li>
                     <li>Authentik integration for user management</li>
                     <li>LDAP (389DS) connection for directory services</li>
@@ -142,19 +169,40 @@ export function Setup() {
                 </div>
               )}
 
+              {step.id === 'database' && (
+                <form onSubmit={handleSaveDatabase}>
+                  <h2 className="text-[16px] font-medium text-primary mb-4">Configure Database</h2>
+                  <p className="text-[13px] text-secondary mb-6">The database connection failed on startup. Enter the correct credentials below to reconnect.</p>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div><label className="block text-[12px] font-medium text-secondary mb-1.5">Host</label>
+                        <Input type="text" required value={dbForm.host} onChange={e => setDbForm(p => ({ ...p, host: e.target.value }))} placeholder="localhost" /></div>
+                      <div><label className="block text-[12px] font-medium text-secondary mb-1.5">Port</label>
+                        <Input type="number" required value={dbForm.port} onChange={e => setDbForm(p => ({ ...p, port: e.target.value }))} /></div>
+                    </div>
+                    <div><label className="block text-[12px] font-medium text-secondary mb-1.5">Database Name</label>
+                      <Input type="text" required value={dbForm.database} onChange={e => setDbForm(p => ({ ...p, database: e.target.value }))} placeholder="ogun_bridge" /></div>
+                    <div><label className="block text-[12px] font-medium text-secondary mb-1.5">Username</label>
+                      <Input type="text" required value={dbForm.user} onChange={e => setDbForm(p => ({ ...p, user: e.target.value }))} placeholder="postgres" /></div>
+                    <div><label className="block text-[12px] font-medium text-secondary mb-1.5">Password</label>
+                      <Input type="password" value={dbForm.password} onChange={e => setDbForm(p => ({ ...p, password: e.target.value }))} placeholder="Database password" /></div>
+                  </div>
+                  {saving && <p className="mt-3 text-[13px] text-secondary">Testing connection and saving configuration...</p>}
+                  <div className="mt-6 flex justify-end"><Button type="submit" disabled={saving}>{saving ? 'Connecting...' : 'Test & Save'}</Button></div>
+                </form>
+              )}
+
               {step.id === 'admin' && (
-                <form onSubmit={handleCreateAdmin}>
-                  <h2 className="text-[16px] font-medium text-primary mb-4">Create Admin Account</h2>
-                  <p className="text-[13px] text-secondary mb-6">This account will have full administrative access.</p>
+                <form onSubmit={handleVerifyAdmin}>
+                  <h2 className="text-[16px] font-medium text-primary mb-4">Enter Admin Credentials</h2>
+                  <p className="text-[13px] text-secondary mb-6">Verify your super admin credentials (set in .env) to continue with the setup.</p>
                   <div className="space-y-4">
                     <div><label className="block text-[12px] font-medium text-secondary mb-1.5">Username</label>
                       <Input type="text" required value={adminForm.username} onChange={e => setAdminForm(p => ({ ...p, username: e.target.value }))} /></div>
                     <div><label className="block text-[12px] font-medium text-secondary mb-1.5">Password</label>
-                      <Input type="password" required minLength={8} value={adminForm.password} onChange={e => setAdminForm(p => ({ ...p, password: e.target.value }))} placeholder="Minimum 8 characters" /></div>
-                    <div><label className="block text-[12px] font-medium text-secondary mb-1.5">Email (optional)</label>
-                      <Input type="email" value={adminForm.email} onChange={e => setAdminForm(p => ({ ...p, email: e.target.value }))} /></div>
+                      <Input type="password" required value={adminForm.password} onChange={e => setAdminForm(p => ({ ...p, password: e.target.value }))} placeholder="Enter your super admin password" /></div>
                   </div>
-                  <div className="mt-6 flex justify-end"><Button type="submit" disabled={saving}>{saving ? 'Creating...' : 'Create Admin & Continue'}</Button></div>
+                  <div className="mt-6 flex justify-end"><Button type="submit" disabled={saving}>{saving ? 'Verifying...' : 'Verify & Continue'}</Button></div>
                 </form>
               )}
 

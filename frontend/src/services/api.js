@@ -139,6 +139,20 @@ class ApiClient {
     return response.json()
   }
 
+  async verifyAdmin(username, password) {
+    const response = await fetch(`${API_BASE_URL}/setup/verify-admin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Invalid admin credentials' }))
+      throw new Error(error.message || 'Invalid admin credentials')
+    }
+    return response.json()
+  }
+
   async createSetupAdmin(username, password, email) {
     const response = await fetch(`${API_BASE_URL}/setup/admin`, {
       method: 'POST',
@@ -199,6 +213,22 @@ class ApiClient {
       throw new Error(error.message || 'Failed to complete setup')
     }
     return response.json()
+  }
+
+  async saveDatabaseConfig(config) {
+    const response = await fetch(`${API_BASE_URL}/setup/config/database`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(data.error || data.message || 'Failed to configure database')
+    }
+
+    return data
   }
 
   // Dashboard endpoints
@@ -326,6 +356,14 @@ class ApiClient {
     return this.request(`/groups/${groupId}/compare`)
   }
 
+  async getGroupTree() {
+    return this.request('/groups/tree')
+  }
+
+  async getGroupMembers(groupId) {
+    return this.request(`/groups/${groupId}/members`)
+  }
+
   async getGroup(groupId) {
     return this.request(`/groups/${groupId}`)
   }
@@ -338,18 +376,18 @@ class ApiClient {
   }
 
   async getGroupServices(groupId) {
-    return this.request(`/groups/${groupId}/services`)
+    return this.request(`/groups-manager/${groupId}/services`)
   }
 
   async addGroupService(groupId, service) {
-    return this.request(`/groups/${groupId}/services`, {
+    return this.request(`/groups-manager/${groupId}/services`, {
       method: 'POST',
       body: JSON.stringify(service),
     })
   }
 
   async removeGroupService(groupId, serviceId) {
-    return this.request(`/groups/${groupId}/services/${serviceId}`, {
+    return this.request(`/groups-manager/${groupId}/services/${serviceId}`, {
       method: 'DELETE',
     })
   }
@@ -370,10 +408,6 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify(options),
     })
-  }
-
-  async getGroupMembers(groupId) {
-    return this.request(`/groups/${groupId}/members`)
   }
 
   // Schema endpoints
@@ -496,6 +530,89 @@ class ApiClient {
     return this.request(`/password/expiration/${username}`, {
       method: 'POST',
       body: JSON.stringify({ expirationDays }),
+    })
+  }
+
+  // Group lifecycle CRUD
+  async createGroup(data) {
+    return this.request('/groups-manager/groups', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async updateGroup(id, data) {
+    return this.request(`/groups-manager/groups/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteGroup(id) {
+    return this.request(`/groups-manager/groups/${id}`, {
+      method: 'DELETE',
+    })
+  }
+
+  async addGroupMembers(id, usernames) {
+    return this.request(`/groups-manager/groups/${id}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ usernames }),
+    })
+  }
+
+  async removeGroupMember(id, username) {
+    return this.request(`/groups-manager/groups/${id}/members/${username}`, {
+      method: 'DELETE',
+    })
+  }
+
+  // User lifecycle CRUD
+  async createUser(data) {
+    return this.request('/users', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async updateUser(id, data) {
+    return this.request(`/users/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteUser(id) {
+    return this.request(`/users/${id}`, {
+      method: 'DELETE',
+    })
+  }
+
+  async getUserGroups(username) {
+    return this.request(`/users/${username}/groups`)
+  }
+
+  async addUserToGroupByPk(username, group_pk) {
+    return this.request(`/users/${username}/groups`, {
+      method: 'POST',
+      body: JSON.stringify({ group_pk }),
+    })
+  }
+
+  async removeUserFromGroupByPk(username, groupId) {
+    return this.request(`/users/${username}/groups/${groupId}`, {
+      method: 'DELETE',
+    })
+  }
+
+  async searchAll(q) {
+    return this.request(`/search?q=${encodeURIComponent(q)}`)
+  }
+
+  async onboardUser(data) {
+    return this.request('/onboarding', {
+      method: 'POST',
+      body: JSON.stringify(data),
     })
   }
 

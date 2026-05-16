@@ -217,7 +217,7 @@ function ChangeItem({ change }) {
       case 'approved':
         return <Badge variant="success">Approved</Badge>
       case 'rejected':
-        return <Badge variant="error">Rejected</Badge>
+        return <Badge variant="danger">Rejected</Badge>
       default:
         return <Badge>{change.status}</Badge>
     }

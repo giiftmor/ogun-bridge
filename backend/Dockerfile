@@ -8,8 +8,8 @@ RUN npm ci --omit=dev
 
 COPY src ./src
 
-# Create logs directory with proper permissions
-RUN mkdir -p /app/logs && chown -R node:node /app
+# Create logs and data directories with proper permissions
+RUN mkdir -p /app/logs /app/data && chown -R node:node /app
 
 EXPOSE 3333
 

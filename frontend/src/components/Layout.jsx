@@ -1,28 +1,39 @@
 import { useState, useRef, useEffect } from 'react'
-import { Link, Outlet } from 'react-router-dom'
-import { Search, Bell, Sun, Moon, User, LogOut, Settings, Menu, MoreVertical } from 'lucide-react'
+import { Link, Outlet, useNavigate } from 'react-router-dom'
+import { Bell, Sun, Moon, User, LogOut, Settings, Menu, MoreVertical } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { useAppStore } from '@/store/useAppStore'
 import { Sidebar } from './Sidebar'
+import { CmdPalette } from './CmdPalette'
 import { apiClient } from '@/services/api'
 
 export function Layout() {
   const { sidebarOpen, toggleSidebar, theme, toggleTheme } = useAppStore()
-  const [searchFocused, setSearchFocused] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
-  const searchRef = useRef(null)
+  const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false)
   const moreRef = useRef(null)
+  const navigate = useNavigate()
 
   useEffect(() => {
     const handleKeyDown = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault()
-        searchRef.current?.focus()
+        setCmdPaletteOpen(true)
       }
     }
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [])
+
+  const handleCmdSelect = (item) => {
+    if (item.type === 'user') {
+      navigate(`/?q=${item.username}`)
+    } else if (item.type === 'group') {
+      navigate(`/?q=${item.name}`)
+    } else if (item.type === 'service') {
+      navigate(`/?q=${item.name}`)
+    }
+  }
 
   useEffect(() => {
     if (!moreOpen) return
@@ -54,26 +65,19 @@ export function Layout() {
           <Menu className="h-4 w-4" />
         </button>
 
-        <div className="relative max-w-[240px] w-full sm:w-auto">
-          <Search className={cn(
-            'absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 transition-colors duration-150',
-            searchFocused ? 'text-accent' : 'text-tertiary',
-          )} />
-          <input
-            ref={searchRef}
-            type="text"
-            placeholder="Search..."
-            onFocus={() => setSearchFocused(true)}
-            onBlur={() => setSearchFocused(false)}
-            className={cn(
-              'h-8 w-full sm:w-[200px] rounded-pill bg-subtle border border-border pl-9 pr-3',
-              'text-[13px] text-primary placeholder:text-tertiary',
-              'transition-[border-color] duration-150 ease',
-              'hover:border-border-strong',
-              'focus-visible:outline-none focus-visible:border-border-strong focus-visible:shadow-[0_0_0_3px_hsl(var(--accent-tint)),0_0_0_1px_hsl(var(--accent))]',
-            )}
-          />
-        </div>
+        <button
+          onClick={() => setCmdPaletteOpen(true)}
+          className="flex items-center gap-2 h-8 px-3 rounded-pill bg-subtle border border-border text-tertiary hover:text-primary hover:border-border-strong transition-[border-color,color] duration-150 text-[13px] ml-2"
+        >
+          <span>Search...</span>
+          <kbd className="px-1 py-0.5 rounded bg-page border border-border text-[10px] ml-4">⌘K</kbd>
+        </button>
+
+        <CmdPalette
+          open={cmdPaletteOpen}
+          onClose={() => setCmdPaletteOpen(false)}
+          onSelect={handleCmdSelect}
+        />
 
         <div className="flex-1 min-w-4" />
 

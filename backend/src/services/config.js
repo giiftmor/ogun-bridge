@@ -389,7 +389,7 @@ export async function hasAdminUser() {
   const client = await pool.connect()
   try {
     const result = await client.query(
-      "SELECT COUNT(*) as count FROM auth_users WHERE is_admin = true OR is_super_admin = true"
+      "SELECT COUNT(*) as count FROM auth_users WHERE role = 'admin' OR role = 'super_admin'"
     )
     return parseInt(result.rows[0].count) > 0
   } catch (error) {
@@ -408,7 +408,7 @@ export async function createSuperAdminIfNeeded() {
   try {
     // Check if super admin already exists
     const existing = await client.query(
-      "SELECT id FROM auth_users WHERE username = $1 OR is_super_admin = true LIMIT 1",
+      "SELECT id FROM auth_users WHERE username = $1 OR role = 'super_admin' LIMIT 1",
       [process.env.SUPER_ADMIN_USER || 'superadmin']
     )
     if (existing.rows.length > 0) {
@@ -423,14 +423,12 @@ export async function createSuperAdminIfNeeded() {
     const hashedPassword = await bcrypt.default.hash(process.env.SUPER_ADMIN_PASS, 10)
 
     await client.query(
-      `INSERT INTO auth_users (username, password_hash, email, first_name, last_name, is_admin, is_super_admin, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, true, true, NOW(), NOW())`,
+      `INSERT INTO auth_users (username, password_hash, email, role, active, created_at, updated_at)
+       VALUES ($1, $2, $3, 'super_admin', true, NOW(), NOW())`,
       [
         process.env.SUPER_ADMIN_USER || 'superadmin',
         hashedPassword,
         process.env.SUPER_ADMIN_EMAIL || 'superadmin@spectres.co.za',
-        'Super',
-        'Admin'
       ]
     )
 
@@ -448,29 +446,45 @@ export async function createSuperAdminIfNeeded() {
  * Get full setup status (for /api/setup/status)
  */
 export async function getSetupStatus() {
-  const client = await pool.connect()
+  // Gracefully handle DB-down: return partial status
+  let setupComplete = false
+  let adminExists = false
+  let ldapConfig = null
+  let authentikConfig = null
+  let smtpConfig = null
+
   try {
-    const setupComplete = await isSetupComplete()
-    const adminExists = await hasAdminUser()
-    
-    // Get service configs
-    const ldapConfig = await getServiceConfig('ldap')
-    const authentikConfig = await getServiceConfig('authentik')
-    const smtpConfig = await getServiceConfig('smtp')
-    
-    return {
-      setup_complete: setupComplete,
-      admin_exists: adminExists,
-      services: {
-        ldap: { configured: !!ldapConfig },
-        authentik: { configured: !!authentikConfig },
-        smtp: { configured: !!smtpConfig }
-      }
+    setupComplete = await isSetupComplete()
+    adminExists = await hasAdminUser()
+  } catch {
+    // DB is down, use defaults
+  }
+
+  try {
+    ldapConfig = await getServiceConfig('ldap')
+  } catch {
+    // LDAP config unavailable (DB down or no config)
+  }
+
+  try {
+    authentikConfig = await getServiceConfig('authentik')
+  } catch {
+    // Authentik config unavailable
+  }
+
+  try {
+    smtpConfig = await getServiceConfig('smtp')
+  } catch {
+    // SMTP config unavailable
+  }
+
+  return {
+    setup_complete: setupComplete,
+    admin_exists: adminExists,
+    services: {
+      ldap: { configured: !!ldapConfig },
+      authentik: { configured: !!authentikConfig },
+      smtp: { configured: !!smtpConfig }
     }
-  } catch (error) {
-    logger.error('Failed to get setup status', { error: error.message })
-    throw error
-  } finally {
-    client.release()
   }
 }

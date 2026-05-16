@@ -145,7 +145,7 @@ export function LogViewer() {
                 active={logFilters.level === 'error'}
                 onClick={() => setLogFilters({ level: 'error' })}
                 count={stats.error}
-                variant="error"
+                variant="danger"
               >
                 Error
               </FilterButton>

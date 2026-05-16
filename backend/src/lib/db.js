@@ -1,13 +1,20 @@
 import pg from 'pg'
+import fs from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
 import { logger } from '../utils/logger.js'
 
 // dotenv is loaded in index.js before any async code — no need to call again here
 const { Pool } = pg
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const DB_CONFIG_PATH = path.resolve(__dirname, '../../data/db-config.json')
+
 // Helper to get DB config at runtime (after dotenv loads)
 function getDbConfig() {
+  // Start with env vars
   const rawPassword = process.env.DB_PASSWORD || ''
-  return {
+  const config = {
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT || '5432'),
     database: process.env.DB_NAME || 'alsm_ui',
@@ -17,12 +24,57 @@ function getDbConfig() {
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 2000,
   }
+
+  // Override with file-based config (saved via setup wizard when DB is down)
+  try {
+    const fileConfig = loadDbConfigFromFile()
+    if (fileConfig) {
+      config.host = fileConfig.host || config.host
+      config.port = fileConfig.port !== undefined ? fileConfig.port : config.port
+      config.database = fileConfig.database || config.database
+      config.user = fileConfig.user || config.user
+      config.password = fileConfig.password !== undefined ? fileConfig.password : config.password
+    }
+  } catch {
+    // File doesn't exist or is invalid — use env defaults
+  }
+
+  return config
+}
+
+function getDbConfigPath() {
+  const dir = path.dirname(DB_CONFIG_PATH)
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true })
+  }
+  return DB_CONFIG_PATH
+}
+
+function loadDbConfigFromFile() {
+  try {
+    if (fs.existsSync(DB_CONFIG_PATH)) {
+      return JSON.parse(fs.readFileSync(DB_CONFIG_PATH, 'utf-8'))
+    }
+  } catch (e) {
+    logger.warn('Failed to read DB config file:', e.message)
+  }
+  return null
+}
+
+function saveDbConfigToFile(config) {
+  try {
+    const filePath = getDbConfigPath()
+    fs.writeFileSync(filePath, JSON.stringify(config, null, 2))
+    logger.info('DB config saved to file:', filePath)
+  } catch (e) {
+    logger.warn('Could not save DB config to file (non-fatal):', e.message)
+  }
 }
 
 // Create pool normally - env vars will be available when first query runs
 // because dotenv.config() is called at the top of index.js before any async code
 const dbConfig = getDbConfig()
-export const pool = new Pool(dbConfig)
+export let pool = new Pool(dbConfig)
 
 // Pool metrics
 export const poolMetrics = {
@@ -53,6 +105,58 @@ pool.on('remove', () => {
   poolMetrics.idleCount = pool.idleCount
   poolMetrics.waitingCount = pool.waitingCount
 })
+
+/**
+ * Check if the database pool can establish a connection
+ */
+export async function isDbConnected() {
+  try {
+    const client = await pool.connect()
+    await client.query('SELECT 1')
+    client.release()
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Reconfigure the database pool with new settings
+ * Saves config to file so it persists across restarts
+ */
+export async function reconfigurePool(newConfig) {
+  // Close existing pool
+  try {
+    await pool.end()
+  } catch (e) {
+    logger.warn('Error closing existing pool:', e.message)
+  }
+
+  // Save to file for persistence (used before env vars on next startup)
+  saveDbConfigToFile(newConfig)
+
+  // Create new pool
+  const config = {
+    host: newConfig.host || 'localhost',
+    port: parseInt(newConfig.port) || 5432,
+    database: newConfig.database || 'ogun_bridge',
+    user: newConfig.user || 'postgres',
+    password: newConfig.password || '',
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 2000,
+  }
+
+  pool = new Pool(config)
+
+  // Re-attach error handler
+  pool.on('error', (err) => {
+    logger.error('Unexpected database pool error', { error: err.message })
+  })
+
+  logger.info('Database pool reconfigured')
+  return true
+}
 
 // Database schema
 const schema = `
@@ -109,9 +213,16 @@ CREATE TABLE IF NOT EXISTS audit_log (
   entity_type VARCHAR(50),
   entity_id VARCHAR(255),
   changes JSONB,
+  source VARCHAR(50) DEFAULT 'api',
   ip_address INET,
-  user_agent TEXT
+  user_agent TEXT,
+  success BOOLEAN DEFAULT true,
+  error_message TEXT
 );
+
+ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS source VARCHAR(50) DEFAULT 'api';
+ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS success BOOLEAN DEFAULT true;
+ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS error_message TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_log(actor);
@@ -147,8 +258,24 @@ CREATE INDEX IF NOT EXISTS idx_user_profiles_auth_uuid ON user_profiles(authenti
 CREATE INDEX IF NOT EXISTS idx_user_profiles_password_status ON user_profiles(password_method, password_synced_to_ldap);
 
 -- ============================================
--- Admin Users Table
+-- Auth Users Table (admin/super_admin accounts)
 -- ============================================
+CREATE TABLE IF NOT EXISTS auth_users (
+  id SERIAL PRIMARY KEY,
+  username VARCHAR(255) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  email VARCHAR(255),
+  role VARCHAR(50) DEFAULT 'admin',
+  active BOOLEAN DEFAULT true,
+  last_login TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_users_username ON auth_users(username);
+CREATE INDEX IF NOT EXISTS idx_auth_users_role ON auth_users(role);
+
+-- Legacy admin_users table (kept for backward compatibility)
 CREATE TABLE IF NOT EXISTS admin_users (
   id SERIAL PRIMARY KEY,
   username VARCHAR(255) UNIQUE NOT NULL,
@@ -214,6 +341,88 @@ CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_expires ON password_reset_t
 
 CREATE INDEX IF NOT EXISTS idx_service_configs_service ON service_configs(service);
 CREATE INDEX IF NOT EXISTS idx_service_configs_lookup ON service_configs(service, key);
+
+-- ============================================
+-- Field Mappings Table (Authentik ↔ LDAP)
+-- ============================================
+-- ============================================
+-- Group Sync Config Table
+-- ============================================
+CREATE TABLE IF NOT EXISTS group_sync_config (
+  group_name VARCHAR(255) PRIMARY KEY,
+  sync_direction VARCHAR(50) DEFAULT 'bidirectional',
+  ldap_ou VARCHAR(255),
+  parent_group VARCHAR(255),
+  is_active BOOLEAN DEFAULT true,
+  group_pk INTEGER,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================
+-- Group Services Table
+-- ============================================
+CREATE TABLE IF NOT EXISTS group_services (
+  id SERIAL PRIMARY KEY,
+  group_name VARCHAR(255) NOT NULL,
+  service_name VARCHAR(255) NOT NULL,
+  service_url TEXT,
+  service_type VARCHAR(50),
+  description TEXT,
+  icon VARCHAR(50) DEFAULT 'default',
+  is_public BOOLEAN DEFAULT false,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(group_name, service_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_group_services_group ON group_services(group_name);
+CREATE INDEX IF NOT EXISTS idx_group_services_service ON group_services(service_name);
+
+-- ============================================
+-- Sync State Table
+-- ============================================
+CREATE TABLE IF NOT EXISTS sync_state (
+  entity_type VARCHAR(100) NOT NULL,
+  entity_id VARCHAR(255) NOT NULL,
+  sync_direction VARCHAR(50) DEFAULT 'bidirectional',
+  metadata JSONB,
+  last_synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(entity_type, entity_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sync_state_entity ON sync_state(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_sync_state_synced ON sync_state(last_synced_at DESC);
+
+-- ============================================
+-- Field Mappings Table (Authentik ↔ LDAP)
+-- ============================================
+CREATE TABLE IF NOT EXISTS field_mappings (
+  id SERIAL PRIMARY KEY,
+  authentik_field VARCHAR(100) NOT NULL UNIQUE,
+  ldap_attribute VARCHAR(100) NOT NULL,
+  is_required BOOLEAN DEFAULT false,
+  is_locked BOOLEAN DEFAULT false,
+  transformation TEXT,
+  description TEXT,
+  sort_order INTEGER DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Seed default mappings
+INSERT INTO field_mappings (authentik_field, ldap_attribute, is_required, is_locked, transformation, description, sort_order)
+VALUES
+  ('username', 'uid', true, true, NULL, 'Login username', 0),
+  ('email', 'mail', true, false, NULL, 'Primary email address', 1),
+  ('name', 'cn', true, false, NULL, 'Common name / display name', 2),
+  ('name || username', 'sn', true, false, 'name username', 'Surname — falls back to username if name is empty', 3),
+  ('phone', 'telephoneNumber', false, false, NULL, 'Phone number', 4),
+  ('groups', 'memberOf', false, false, NULL, 'Group membership DN list', 5)
+ON CONFLICT (authentik_field) DO NOTHING;
 `
 
 // Helper to check if database exists
@@ -303,17 +512,18 @@ export async function initializeDatabase() {
   try {
     const config = getDbConfig()
     
+    // Test basic connection first
+    const connected = await testConnection()
+    if (!connected) {
+      logger.error('Database connection failed — will retry with setup wizard')
+      return false
+    }
+    
     // Check if database exists, create if not
     const dbExists = await checkDatabaseExists()
     if (!dbExists) {
       logger.info(`Database '${config.database}' does not exist, creating...`)
       await createDatabase()
-    }
-    
-    // Test connection
-    const connected = await testConnection()
-    if (!connected) {
-      throw new Error('Could not connect to database')
     }
     
     // Initialize tables
@@ -325,9 +535,8 @@ export async function initializeDatabase() {
   } catch (error) {
     logger.error('Database initialization failed', { 
       error: error.message,
-      stack: error.stack 
     })
-    throw error
+    return false
   }
 }
 

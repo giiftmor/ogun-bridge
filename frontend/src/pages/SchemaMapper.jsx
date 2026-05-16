@@ -68,64 +68,53 @@ export function SchemaMapper() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {/* Core Required Mappings */}
-            <div>
-              <h3 className="font-semibold mb-3 text-sm text-muted-foreground">
-                Required Attributes
-              </h3>
-              <div className="space-y-3">
-                <MappingRow
-                  authentikField="username"
-                  ldapAttribute="uid"
-                  required={true}
-                  description="Unique identifier"
-                  locked={true}
-                />
-                <MappingRow
-                  authentikField="email"
-                  ldapAttribute="mail"
-                  required={true}
-                  description="Email address"
-                  transformation="If empty, generate from username@domain"
-                />
-                <MappingRow
-                  authentikField="name"
-                  ldapAttribute="cn"
-                  required={true}
-                  description="Common name (full name)"
-                  transformation="If empty, use username"
-                />
-                <MappingRow
-                  authentikField="name || username"
-                  ldapAttribute="sn"
-                  required={true}
-                  description="Surname (last name)"
-                  transformation="If empty, use username"
-                  highlight={true}
-                />
-              </div>
-            </div>
+            {mappings && (
+              <>
+                {/* Required Mappings */}
+                {mappings.filter(m => m.is_required).length > 0 && (
+                  <div>
+                    <h3 className="font-semibold mb-3 text-sm text-muted-foreground">
+                      Required Attributes
+                    </h3>
+                    <div className="space-y-3">
+                      {mappings.filter(m => m.is_required).map(m => (
+                        <MappingRow
+                          key={m.authentik_field}
+                          authentikField={m.authentik_field}
+                          ldapAttribute={m.ldap_attribute}
+                          required={m.is_required}
+                          description={m.description}
+                          transformation={m.transformation}
+                          locked={m.is_locked}
+                          highlight={m.authentik_field === 'name || username'}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-            {/* Optional Mappings */}
-            <div>
-              <h3 className="font-semibold mb-3 text-sm text-muted-foreground">
-                Optional Attributes
-              </h3>
-              <div className="space-y-3">
-                <MappingRow
-                  authentikField="phone"
-                  ldapAttribute="telephoneNumber"
-                  required={false}
-                  description="Phone number"
-                />
-                <MappingRow
-                  authentikField="groups"
-                  ldapAttribute="memberOf"
-                  required={false}
-                  description="Group memberships"
-                />
-              </div>
-            </div>
+                {/* Optional Mappings */}
+                {mappings.filter(m => !m.is_required).length > 0 && (
+                  <div>
+                    <h3 className="font-semibold mb-3 text-sm text-muted-foreground">
+                      Optional Attributes
+                    </h3>
+                    <div className="space-y-3">
+                      {mappings.filter(m => !m.is_required).map(m => (
+                        <MappingRow
+                          key={m.authentik_field}
+                          authentikField={m.authentik_field}
+                          ldapAttribute={m.ldap_attribute}
+                          required={m.is_required}
+                          description={m.description}
+                          transformation={m.transformation}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
 
             {/* Action Buttons */}
             <div className="flex gap-2 pt-4 border-t">
@@ -136,6 +125,7 @@ export function SchemaMapper() {
                 <Save className="h-4 w-4 mr-2" />
                 Save Mappings
               </Button>
+
             </div>
           </div>
         </CardContent>
@@ -236,7 +226,7 @@ function MappingRow({ authentikField, ldapAttribute, required, description, tran
             <span className="text-muted-foreground">→</span>
             <span className="font-mono text-sm font-medium">{ldapAttribute}</span>
             {required && (
-              <Badge variant="error" className="text-xs">Required</Badge>
+              <Badge variant="destructive" className="text-xs">Required</Badge>
             )}
             {locked && (
               <Badge variant="secondary" className="text-xs">Locked</Badge>
@@ -272,14 +262,16 @@ function TestResult({ result }) {
     )
   }
 
+  const failures = result.validations?.filter(v => v.status === 'fail') || []
+
   return (
     <div className="space-y-4">
-      {/* Authentik Data */}
+      {/* Authentik Source Data */}
       <div>
         <h4 className="font-semibold mb-2 text-sm">Authentik Data (Source)</h4>
         <div className="p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-sm">
           <pre className="text-xs overflow-auto">
-            {JSON.stringify(result.authentikData, null, 2)}
+            {JSON.stringify(result.source, null, 2)}
           </pre>
         </div>
       </div>
@@ -289,16 +281,16 @@ function TestResult({ result }) {
         <h4 className="font-semibold mb-2 text-sm">Generated LDAP Entry</h4>
         <div className="p-3 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900 rounded-sm">
           <pre className="text-xs overflow-auto">
-            {JSON.stringify(result.ldapEntry, null, 2)}
+            {JSON.stringify(result.generated, null, 2)}
           </pre>
         </div>
       </div>
 
       {/* Validation Results */}
-      {result.validation && (
+      {result.validations && (
         <div>
           <h4 className="font-semibold mb-2 text-sm">Validation</h4>
-          {result.validation.valid ? (
+          {failures.length === 0 ? (
             <div className="p-3 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900 rounded-sm">
               <p className="text-sm text-green-700 dark:text-green-300">
                 ✓ All required attributes present and valid
@@ -310,8 +302,8 @@ function TestResult({ result }) {
                 Validation Errors:
               </p>
               <ul className="list-disc list-inside space-y-1 text-sm text-red-700 dark:text-red-300">
-                {result.validation.errors.map((error, index) => (
-                  <li key={index}>{error}</li>
+                {failures.map((f, i) => (
+                  <li key={i}>{f.field} → {f.ldapAttribute}: {f.message}</li>
                 ))}
               </ul>
             </div>

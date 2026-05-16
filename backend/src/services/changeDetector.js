@@ -476,6 +476,12 @@ export async function getChanges(filters = {}) {
       paramCount++
     }
 
+    if (filters.search) {
+      query += ` AND entity_id ILIKE $${paramCount}`
+      params.push(`%${filters.search}%`)
+      paramCount++
+    }
+
     query += ' ORDER BY detected_at DESC'
 
     if (filters.limit) {

@@ -74,13 +74,7 @@ function getConfig() {
       baseDN: process.env.LDAP_BASE_DN || 'dc=spectres,dc=co,dc=za',
       userBaseDN: process.env.LDAP_USER_BASE_DN || 'ou=people,dc=spectres,dc=co,dc=za',
       groupBaseDN: process.env.LDAP_GROUP_BASE_DN || 'ou=groups,dc=spectres,dc=co,dc=za',
-      attributeMapping: {
-        phone: 'telephoneNumber',
-        title: 'title',
-        department: 'ou',
-        employee_number: 'employeeNumber',
-        alt_email: 'altEmail',
-      },
+
     },
     mailserver: {
       enabled: process.env.MAILSERVER_ENABLED === 'true',
@@ -177,6 +171,23 @@ async function fetchGroupDetails(config, groupPk) {
   return response.json()
 }
 
+// Load attribute mappings from field_mappings table (instead of hardcoded config)
+async function getAttributeMappings() {
+  try {
+    const result = await pool.query(
+      'SELECT authentik_field, ldap_attribute FROM field_mappings WHERE ldap_attribute IS NOT NULL'
+    )
+    const mapping = {}
+    for (const row of result.rows) {
+      mapping[row.authentik_field] = row.ldap_attribute
+    }
+    return mapping
+  } catch (error) {
+    logger.warn('Failed to load field_mappings, using fallback:', error.message)
+    return {}
+  }
+}
+
 // ─── LDAP User Operations ─────────────────────────────────────────────────────
 
 async function searchLDAPUsers(client, config, io) {
@@ -224,11 +235,12 @@ async function createLDAPUser(client, user, config, io, existingUsers = []) {
     homeDirectory: `/var/mail/${user.username}`,
   }
 
-  // Add custom attributes from Authentik
+  // Add custom attributes from Authentik using DB mappings
   if (user.attributes) {
+    const attrMapping = await getAttributeMappings()
     Object.keys(user.attributes).forEach(key => {
-      if (config.ldap.attributeMapping[key] && user.attributes[key]) {
-        entry[config.ldap.attributeMapping[key]] = user.attributes[key]
+      if (attrMapping[key] && user.attributes[key]) {
+        entry[attrMapping[key]] = user.attributes[key]
       }
     })
   }
@@ -262,11 +274,16 @@ async function updateLDAPUser(client, user, existingUser, config, io) {
     changes.push(new Attribute({ type: 'cn', values: [user.name] }))
   }
 
-  // Sync altEmail from Authentik custom attributes to LDAP
-  const currentAltEmail = existingUser.altEmail?.[0] || null
-  const newAltEmail = user.attributes?.alt_email || null
-  if (newAltEmail && newAltEmail !== currentAltEmail) {
-    changes.push(new Attribute({ type: 'altEmail', values: [newAltEmail] }))
+  // Sync custom attributes from Authentik to LDAP using DB mappings
+  if (user.attributes) {
+    const attrMapping = await getAttributeMappings()
+    for (const [authKey, ldapAttr] of Object.entries(attrMapping)) {
+      const currentValue = existingUser[ldapAttr]?.[0] || null
+      const newValue = user.attributes[authKey] || null
+      if (newValue && newValue !== currentValue) {
+        changes.push(new Attribute({ type: ldapAttr, values: [String(newValue)] }))
+      }
+    }
   }
 
   // Add uidNumber if missing (even if no other changes)

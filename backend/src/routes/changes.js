@@ -14,6 +14,7 @@ changesRouter.get('/', async (req, res) => {
       status: req.query.status,
       entity_type: req.query.entity_type,
       change_type: req.query.change_type,
+      search: req.query.search,
       limit: req.query.limit ? parseInt(req.query.limit) : 100,
     }
 
@@ -56,22 +57,22 @@ changesRouter.get('/:id', async (req, res) => {
 changesRouter.post('/:id/approve', async (req, res) => {
   try {
     const changeId = parseInt(req.params.id)
-    const { approved_by, comment } = req.body
+    const approver = req.user?.username || 'system'
 
-    // Update status to approved
-    const change = await updateChangeStatus(changeId, 'approved', approved_by || 'system')
-
-    // Apply the change (revert LDAP to match Authentik)
+    // Apply the change FIRST, before marking approved
     try {
       await applyChange(changeId)
-      logger.info('Change approved and applied', { changeId })
+      logger.info('Change applied, now approving', { changeId })
     } catch (applyError) {
       logger.error('Failed to apply change', { changeId, error: applyError.message })
       return res.status(500).json({
         success: false,
-        error: 'Change approved but failed to apply: ' + applyError.message
+        error: 'Failed to apply change: ' + applyError.message
       })
     }
+
+    // Only mark approved if apply succeeded
+    const change = await updateChangeStatus(changeId, 'approved', approver)
 
     res.json({
       success: true,

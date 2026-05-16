@@ -17,6 +17,7 @@ import { dashboardRouter } from './routes/dashboard.js'
 import { usersRouter } from './routes/users.js'
 import { groupsRouter } from './routes/groups.js'
 import { groupServicesRouter } from './routes/groupServices.js'
+import { groupManagementRouter } from './routes/groupManagement.js'
 import { schemaRouter } from './routes/schema.js'
 import { changesRouter } from './routes/changes.js'
 import { syncRouter } from './routes/sync.js'
@@ -29,7 +30,9 @@ import { mailAdminRouter } from './routes/mailAdmin.js'
 import { inviteRouter } from './routes/invite.js'
 import { authRouter } from './routes/auth.js'
 import { versionRouter } from './routes/versions.js'
+import { searchRouter } from './routes/search.js'
 import { operationsRouter } from './routes/operations.js'
+import { onboardingRouter } from './routes/onboarding.js'
 import { setupRouter } from './routes/setup.js'
 import { setupWebSocket } from './services/websocket.js'
 import { cleanupExpiredSessions } from './middleware/auth.js'
@@ -37,7 +40,7 @@ import { addLogToCache } from './services/logCache.js'
 import { startSyncService, stopSyncService } from './services/syncService.js'
 import { logger } from './utils/logger.js'
 import { initializeDatabase } from './lib/db.js'
-import { markSetupComplete } from './services/config.js'
+import { markSetupComplete, createSuperAdminIfNeeded } from './services/config.js'
 
 const app = express()
 app.set('trust proxy', 1)
@@ -175,6 +178,7 @@ function setupFullRoutes() {
   app.use('/api/users', usersRouter)
   app.use('/api/groups', groupsRouter)
   app.use('/api/groups-manager', groupServicesRouter)
+  app.use('/api/groups-manager', groupManagementRouter)
   app.use('/api/schema', schemaRouter)
   app.use('/api/changes', changesRouter)
   app.use('/api/sync', syncRouter)
@@ -187,6 +191,8 @@ function setupFullRoutes() {
   app.use('/api/invite', inviteRouter)
   app.use('/api/auth', authRouter)
   app.use('/api/versions', versionRouter)
+  app.use('/api/search', searchRouter)
+  app.use('/api/onboarding', onboardingRouter)
   app.use('/api/operations', operationsRouter)
 }
 
@@ -229,7 +235,13 @@ function startFullServer() {
 }
 
 // Start LIMITED server (frontend + /api/setup/* only)
-function startLimitedServer() {
+async function startLimitedServer() {
+  // Auto-create super admin from env vars so setup wizard skips the admin step
+  try {
+    await createSuperAdminIfNeeded()
+  } catch (err) {
+    logger.warn('Super admin creation skipped (may already exist):', err.message)
+  }
   setupLimitedRoutes()
   const PORT = process.env.PORT || 3333
   httpServer.listen(PORT, '0.0.0.0', async () => {
@@ -259,21 +271,32 @@ async function startServer() {
     if (!dbReady) {
       logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
       logger.error('🚨 DATABASE CONNECTION FAILED')
-      logger.error('🚨 Fix: Set DB_HOST, DB_NAME, DB_USER, DB_PASSWORD in .env')
+      logger.error('🚨 Start limited server for DB configuration via /god-mode')
       logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-      return // Don't start anything
+      
+      await startLimitedServer()
+      return
     }
 
-    // 2. Verify encryption key availability (env-only, no DB storage)
+    // 2. Ensure super admin exists from .env vars
+    try {
+      await createSuperAdminIfNeeded()
+    } catch (e) {
+      logger.warn('Super admin auto-creation failed (may already exist):', e.message)
+    }
+
+    // 3. Verify encryption key availability (env-only, no DB storage)
     const { saveKeyToDB } = await import('./services/encryption.js')
     try {
       await saveKeyToDB()
     } catch (e) {
       logger.error('Failed to load encryption key:', e.message)
+      logger.error('Starting limited server for configuration')
+      await startLimitedServer()
       return
     }
 
-    // 3. Health check critical services (BEFORE HTTP server starts)
+    // 4. Health check critical services (BEFORE HTTP server starts)
     // SMTP is optional - don't fail god-mode if SMTP is down
     const { verifyEnvVars } = await import('./services/config.js')
     const health = await verifyEnvVars()
@@ -293,11 +316,11 @@ async function startServer() {
       if (!health.smtp) logger.info('ℹ️  SMTP is optional but currently unavailable')
       
       // Start LIMITED server (frontend + /api/setup/* only)
-      startLimitedServer()
+      await startLimitedServer()
       return
     }
 
-    // 4. All critical services healthy → auto-disable god-mode
+    // 5. All critical services healthy → auto-disable god-mode
     logger.info('✅ All critical services healthy! Auto-completing setup...')
     if (health.smtp) {
       logger.info('✅ SMTP also available!')
@@ -309,7 +332,7 @@ async function startServer() {
     await markSetupComplete()
     logger.info('God-mode auto-disabled - setup complete!')
 
-    // 5. Start FULL server (frontend + API + Sync)
+    // 6. Start FULL server (frontend + API + Sync)
     startFullServer()
 
   } catch (error) {

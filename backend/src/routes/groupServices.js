@@ -11,13 +11,13 @@ groupServicesRouter.use(authenticate)
 groupServicesRouter.get('/services', async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT gs.id, gs.service_name, gs.service_url, gs.service_type,
+      `SELECT gs.service_name, gs.service_url, gs.service_type,
               gs.description, gs.icon, gs.is_public,
               array_agg(gs.group_name) as groups,
               COUNT(*) OVER() as total_count
        FROM group_services gs
        WHERE gs.is_active = true
-       GROUP BY gs.id, gs.service_name, gs.service_url, gs.service_type,
+       GROUP BY gs.service_name, gs.service_url, gs.service_type,
                 gs.description, gs.icon, gs.is_public
        ORDER BY gs.service_name`
     )
@@ -106,6 +106,113 @@ groupServicesRouter.post('/services/:serviceName/assign-group', async (req, res)
     res.json({ success: true, message: `Service assigned to ${aGroup.name}` })
   } catch (error) {
     logger.error('Error assigning service to group:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// Update service metadata globally — updates ALL group_services rows + Authentik group attributes
+groupServicesRouter.put('/services/:serviceName', async (req, res) => {
+  try {
+    const { serviceName } = req.params
+    const { service_url, service_type, description, icon, is_public } = req.body
+
+    const client = await pool.connect()
+
+    const result = await client.query(
+      `UPDATE group_services
+       SET service_url = COALESCE($1, service_url),
+           service_type = COALESCE($2, service_type),
+           description = COALESCE($3, description),
+           icon = COALESCE($4, icon),
+           is_public = COALESCE($5, is_public),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE service_name = $6
+       RETURNING *`,
+      [service_url, service_type, description, icon, is_public, serviceName]
+    )
+
+    client.release()
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Service not found' })
+    }
+
+    // Also update Authentik group attributes for all groups with this service
+    try {
+      const groupsWithService = await pool.query(
+        'SELECT DISTINCT group_name FROM group_services WHERE service_name = $1',
+        [serviceName]
+      )
+      for (const row of groupsWithService.rows) {
+        const groups = await authentikClient.getGroups({ search: row.group_name })
+        for (const g of groups) {
+          if (g.name === row.group_name) {
+            const attrs = g.attributes || {}
+            if (attrs.services?.[serviceName]) {
+              attrs.services[serviceName] = {
+                ...attrs.services[serviceName],
+                url: service_url || attrs.services[serviceName].url,
+                type: service_type || attrs.services[serviceName].type,
+                description: description || attrs.services[serviceName].description,
+                icon: icon || attrs.services[serviceName].icon,
+              }
+              await authentikClient.updateGroupAttributes(g.pk, { services: attrs.services })
+            }
+          }
+        }
+      }
+    } catch (err) {
+      logger.warn('Failed to update Authentik attributes for service:', err.message)
+    }
+
+    res.json({ success: true, message: 'Service updated globally', updated: result.rows.length })
+  } catch (error) {
+    logger.error('Error updating service:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// Delete service globally — removes ALL group_services rows + cleans up Authentik attributes
+groupServicesRouter.delete('/services/:serviceName', async (req, res) => {
+  try {
+    const { serviceName } = req.params
+
+    // Get affected groups before deletion
+    const affectedGroups = await pool.query(
+      'SELECT DISTINCT group_name FROM group_services WHERE service_name = $1',
+      [serviceName]
+    )
+
+    const client = await pool.connect()
+
+    const result = await client.query(
+      'DELETE FROM group_services WHERE service_name = $1 RETURNING id',
+      [serviceName]
+    )
+
+    client.release()
+
+    // Clean up Authentik attributes
+    for (const row of affectedGroups.rows) {
+      try {
+        const groups = await authentikClient.getGroups({ search: row.group_name })
+        for (const g of groups) {
+          if (g.name === row.group_name) {
+            const attrs = g.attributes || {}
+            if (attrs.services?.[serviceName]) {
+              delete attrs.services[serviceName]
+              await authentikClient.updateGroupAttributes(g.pk, { services: attrs.services })
+            }
+          }
+        }
+      } catch (err) {
+        logger.warn(`Failed to clean up Authentik attributes for ${row.group_name}:`, err.message)
+      }
+    }
+
+    res.json({ success: true, message: 'Service deleted globally', deleted: result.rows.length })
+  } catch (error) {
+    logger.error('Error deleting service:', error)
     res.status(500).json({ error: error.message })
   }
 })

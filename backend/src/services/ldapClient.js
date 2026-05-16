@@ -265,22 +265,98 @@ export class LDAPClient {
     }
   }
 
+  async resolveNestedGroupMembers(groupDN, depth = 3, visited = new Set()) {
+    if (depth <= 0 || visited.has(groupDN)) return []
+    visited.add(groupDN)
+
+    const members = []
+    const searchEntries = await this.search(groupDN, {
+      scope: 'base',
+      attributes: ['member'],
+    })
+    const memberDNs = searchEntries[0]?.member || []
+    const memberArray = Array.isArray(memberDNs) ? memberDNs : [memberDNs]
+
+    for (const member of memberArray) {
+      if (/^uid=/i.test(member)) {
+        const match = member.match(/^uid=([^,]+)/)
+        if (match) members.push(match[1])
+      } else if (/^cn=/i.test(member)) {
+        const nestedMembers = await this.resolveNestedGroupMembers(member, depth - 1, visited)
+        members.push(...nestedMembers)
+      }
+    }
+    return [...new Set(members)]
+  }
+
+  async getGroupTree(baseDN = null, depth = 3) {
+    if (!baseDN) baseDN = await this.getGroupBaseDN()
+    const groups = await this.search(baseDN, {
+      filter: '(objectClass=groupOfNames)',
+      attributes: ['cn', 'description', 'member'],
+    })
+
+    const buildTree = async (parentDN, remainingDepth) => {
+      if (remainingDepth <= 0) return []
+      const children = []
+      for (const group of groups) {
+        const members = Array.isArray(group.member) ? group.member : [group.member]
+        if (members.includes(parentDN)) {
+          const childGroups = await buildTree(group.dn, remainingDepth - 1)
+          children.push({
+            cn: group.cn,
+            dn: group.dn,
+            description: (group.description || [''])[0],
+            memberCount: members.filter(m => /^uid=/i.test(m)).length,
+            nestedGroupCount: members.filter(m => /^cn=/i.test(m)).length,
+            children: childGroups,
+          })
+        }
+      }
+      return children
+    }
+
+    const tree = []
+    for (const group of groups) {
+      const parentCheck = group.member
+        ? (Array.isArray(group.member) ? group.member : [group.member])
+            .some(m => m === parentDN)
+        : false
+      const isRoot = !parentCheck
+      if (isRoot) {
+        const children = await buildTree(group.dn, depth - 1)
+        const members = Array.isArray(group.member) ? group.member : [group.member]
+        tree.push({
+          cn: group.cn,
+          dn: group.dn,
+          description: (group.description || [''])[0],
+          memberCount: members.filter(m => /^uid=/i.test(m)).length,
+          nestedGroupCount: members.filter(m => /^cn=/i.test(m)).length,
+          children,
+        })
+      }
+    }
+    return tree
+  }
+
   async updateUser(uid, attributes) {
     await this.connect()
     
     const baseDN = await this.getBaseDN()
     const dn = 'uid=' + escapeLDAPDNValue(uid) + ',ou=people,' + baseDN
     
-    try {
-      await this.client.modify(dn, [
-        new Change({
-          operation: 'replace',
-          modification: new Attribute({
-            type: Object.keys(attributes)[0],
-            values: [Object.values(attributes)[0]],
-          }),
+    const changes = Object.entries(attributes).map(([key, value]) =>
+      new Change({
+        operation: 'replace',
+        modification: new Attribute({
+          type: key,
+          values: Array.isArray(value) ? value : [String(value)],
         }),
-      ])
+      })
+    )
+    
+    try {
+      await this.client.modify(dn, changes)
       logger.info('Updated LDAP user ' + uid, { attributes })
     } catch (error) {
       logger.error('Failed to update LDAP user ' + uid + ':', error)
@@ -299,6 +375,66 @@ export class LDAPClient {
       logger.info('Deleted LDAP user ' + uid)
     } catch (error) {
       logger.error('Failed to delete LDAP user ' + uid + ':', error)
+      throw error
+    }
+  }
+
+  async createGroup(groupName, attrs = {}) {
+    await this.connect()
+    const baseDN = await this.getBaseDN()
+    const dn = 'cn=' + escapeLDAPDNValue(groupName) + ',ou=groups,' + baseDN
+
+    const entry = {
+      objectClass: ['groupOfNames', 'top'],
+      cn: groupName,
+      member: attrs.member || ['uid=placeholder,ou=people,' + baseDN],
+    }
+    if (attrs.description) entry.description = attrs.description
+
+    try {
+      await this.client.add(dn, entry)
+      logger.info('Created LDAP group ' + groupName)
+      return { dn }
+    } catch (error) {
+      logger.error('Failed to create LDAP group ' + groupName + ':', error)
+      throw error
+    }
+  }
+
+  async updateGroup(groupName, attributes) {
+    await this.connect()
+    const baseDN = await this.getBaseDN()
+    const dn = 'cn=' + escapeLDAPDNValue(groupName) + ',ou=groups,' + baseDN
+
+    const changes = Object.entries(attributes).map(([key, value]) =>
+      new Change({
+        operation: 'replace',
+        modification: new Attribute({
+          type: key,
+          values: Array.isArray(value) ? value : [String(value)],
+        }),
+      })
+    )
+
+    try {
+      await this.client.modify(dn, changes)
+      logger.info('Updated LDAP group ' + groupName)
+    } catch (error) {
+      logger.error('Failed to update LDAP group ' + groupName + ':', error)
+      throw error
+    }
+  }
+
+  async deleteGroup(groupName) {
+    await this.connect()
+    const baseDN = await this.getBaseDN()
+    const dn = 'cn=' + escapeLDAPDNValue(groupName) + ',ou=groups,' + baseDN
+
+    try {
+      await this.client.del(dn)
+      logger.info('Deleted LDAP group ' + groupName)
+    } catch (error) {
+      logger.error('Failed to delete LDAP group ' + groupName + ':', error)
       throw error
     }
   }

@@ -7,6 +7,7 @@ import { Change, Attribute } from 'ldapts'
 import { logger } from '../utils/logger.js'
 import { getAuditLogs, getLastAuditLogByAction, getLastPasswordAction } from '../services/auditService.js'
 import { addLogToCache } from '../services/logCache.js'
+import { createAuditLog } from '../services/auditService.js'
 import { authenticate } from '../middleware/auth.js'
 
 const publicListLimiter = rateLimit({
@@ -80,9 +81,9 @@ const isServiceAccount = (user) => {
 
 usersRouter.get('/', async (req, res) => {
   try {
-    const { search, status } = req.query
+    const { search, status, limit } = req.query
     
-    let authentikUsers = await authentikClient.getUsers({ search })
+    let authentikUsers = await authentikClient.getUsers({ search, page_size: limit || undefined })
     
     // Filter out service accounts
     authentikUsers = authentikUsers.filter(u => !isServiceAccount(u))
@@ -134,7 +135,6 @@ usersRouter.get('/', async (req, res) => {
         syncStatus,
         error,
         hasPassword,
-        lastSynced: lUser ? new Date().toISOString() : null,
         lastPasswordAction,
       }
     }))
@@ -329,11 +329,53 @@ usersRouter.get('/:username/profile', async (req, res) => {
     const authGroups = groups.filter(g => 
       g.users && userPk && g.users.includes(userPk)
     )
-    const userGroupNames = authGroups.map(g => g.name)
-    
+    const directGroupNames = authGroups.map(g => g.name)
+
+    // Resolve inherited (ancestor) groups
+    const directGroupIds = authGroups.map(g => g.pk)
+    const allAncestors = []
+    for (const gid of directGroupIds) {
+      try {
+        const ancestors = await authentikClient.getGroupAncestors(gid)
+        allAncestors.push(...ancestors)
+      } catch (err) {
+        logger.warn(`Failed to resolve ancestors for group ${gid}:`, err.message)
+      }
+    }
+
+    // Deduplicate ancestors by pk
+    const seenAncestor = new Set()
+    const inheritedGroups = allAncestors.filter(a => {
+      if (seenAncestor.has(a.pk)) return false
+      seenAncestor.add(a.pk)
+      return true
+    })
+
+    // Build hierarchy for each direct group: [direct, parent, grandparent, ...]
+    const groupHierarchy = []
+    for (const g of authGroups) {
+      const chain = [{ pk: g.pk, name: g.name }]
+      const ancestors = allAncestors.filter(a => {
+        // Find ancestors that are reachable from this group
+        return directGroupIds.some(dgId => {
+          const ancestorsForGroup = allAncestors.filter(aa => aa.pk === dgId)
+          return ancestorsForGroup.length > 0
+        })
+      })
+      // Simplified: attach all ancestors found
+      groupHierarchy.push({
+        group: { pk: g.pk, name: g.name },
+        inheritedFrom: ancestors,
+      })
+    }
+
+    // Flatten unique ancestor names for service queries
+    const inheritedGroupNames = inheritedGroups.map(g => g.name)
+    const allGroupNames = [...new Set([...directGroupNames, ...inheritedGroupNames])]
+
     // Also query local database for services (more up-to-date than hardcoded)
     let accessibleServices = []
-    if (userGroupNames.length > 0) {
+    if (allGroupNames.length > 0) {
       try {
         const servicesResult = await pool.query(
           `SELECT gs.service_name, gs.service_url, gs.service_type, gs.description, gs.icon,
@@ -342,7 +384,7 @@ usersRouter.get('/:username/profile', async (req, res) => {
            WHERE gs.group_name = ANY($1) AND gs.is_active = true
            GROUP BY gs.service_name, gs.service_url, gs.service_type, gs.description, gs.icon
            ORDER BY gs.service_name`,
-          [userGroupNames]
+          [allGroupNames]
         )
         
         accessibleServices = servicesResult.rows.map(row => ({
@@ -376,7 +418,7 @@ usersRouter.get('/:username/profile', async (req, res) => {
         : null
     
     // Determine user role based on groups (check if systems_admins)
-    const isAdmin = userGroupNames.some(g => g.toLowerCase() === 'systems_admins')
+    const isAdmin = allGroupNames.some(g => g.toLowerCase() === 'systems_admins')
     
     // Get altEmail - prefer Authentik, then LDAP
     const altEmail = aUser?.attributes?.alt_email || 
@@ -392,7 +434,10 @@ usersRouter.get('/:username/profile', async (req, res) => {
       email: aUser?.email || lUser?.mail?.[0],
       altEmail: altEmail,
       employeeNumber,
-      groups: userGroupNames,
+      groups: directGroupNames,
+      directGroups: directGroupNames,
+      inheritedGroups: inheritedGroups.map(g => ({ pk: g.pk, name: g.name })),
+      groupHierarchy,
       role: isAdmin ? 'admin' : 'user',
       isAdmin: isAdmin,
       services: accessibleServices,
@@ -486,6 +531,187 @@ usersRouter.put('/:username/alt-email', async (req, res) => {
     res.json({ success: true, username, altEmail })
   } catch (error) {
     logger.error('Error setting alt-email:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// Create user in Authentik + LDAP
+usersRouter.post('/', async (req, res) => {
+  try {
+    const { username, name, email, groups } = req.body
+    if (!username) return res.status(400).json({ error: 'Username is required' })
+
+    const authentikUser = await authentikClient.createUser({
+      username,
+      name: name || username,
+      email: email || `${username}@spectres.co.za`,
+    })
+
+    try {
+      await ldapClient.updateUser(username, {
+        cn: name || username,
+        sn: name || username,
+        mail: email || `${username}@spectres.co.za`,
+      })
+    } catch (ldapErr) {
+      logger.warn('LDAP user creation failed (non-fatal):', ldapErr.message)
+    }
+
+    if (groups && Array.isArray(groups)) {
+      for (const groupId of groups) {
+        try {
+          await authentikClient.addUserToGroup(groupId, username)
+        } catch (groupErr) {
+          logger.warn(`Failed to add user to group ${groupId}:`, groupErr.message)
+        }
+      }
+    }
+
+    await createAuditLog({
+      action: 'user_created',
+      actor: req.user?.username || 'api',
+      entity_type: 'user',
+      entity_id: username,
+      changes: { username, name, email, groups },
+      source: 'api',
+    })
+
+    res.json({ success: true, message: `User '${username}' created`, user: authentikUser })
+  } catch (error) {
+    logger.error('Error creating user:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// Edit user name, email, is_active
+usersRouter.put('/:id', async (req, res) => {
+  try {
+    const { id } = req.params
+    const { name, email, is_active } = req.body
+
+    const aUser = await authentikClient.getUser(id)
+    const updates = {}
+    if (name !== undefined) updates.name = name
+    if (email !== undefined) updates.email = email
+    if (is_active !== undefined) updates.is_active = is_active
+
+    const authentikUser = await authentikClient.updateUser(id, updates)
+
+    await createAuditLog({
+      action: 'user_updated',
+      actor: req.user?.username || 'api',
+      entity_type: 'user',
+      entity_id: aUser.username,
+      changes: { before: { name: aUser.name, email: aUser.email, is_active: aUser.is_active }, after: updates },
+      source: 'api',
+    })
+
+    res.json({ success: true, message: 'User updated', user: authentikUser })
+  } catch (error) {
+    logger.error('Error updating user:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// Delete user
+usersRouter.delete('/:id', async (req, res) => {
+  try {
+    const { id } = req.params
+    const aUser = await authentikClient.getUser(id)
+
+    await authentikClient.deleteUser(id)
+
+    try {
+      await ldapClient.deleteUser(aUser.username)
+    } catch (ldapErr) {
+      logger.warn('LDAP user deletion failed (non-fatal):', ldapErr.message)
+    }
+
+    await createAuditLog({
+      action: 'user_deleted',
+      actor: req.user?.username || 'api',
+      entity_type: 'user',
+      entity_id: aUser.username,
+      changes: { deleted: aUser.username },
+      source: 'api',
+    })
+
+    res.json({ success: true, message: `User '${aUser.username}' deleted` })
+  } catch (error) {
+    logger.error('Error deleting user:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// List user's groups + available groups
+usersRouter.get('/:username/groups', async (req, res) => {
+  try {
+    const { username } = req.params
+    const aUser = await authentikClient.getUserByUsername(username)
+    if (!aUser) return res.status(404).json({ error: 'User not found' })
+
+    const allGroups = await authentikClient.getGroups()
+
+    const userGroupPks = (aUser.groups || []).map(g => typeof g === 'object' ? g.pk : g)
+    const userGroups = allGroups.filter(g => userGroupPks.includes(g.pk) || userGroupPks.includes(g.name))
+    const availableGroups = allGroups.filter(g => !userGroupPks.includes(g.pk) && !userGroupPks.includes(g.name))
+
+    res.json({
+      username,
+      userGroups: userGroups.map(g => ({ pk: g.pk, name: g.name })),
+      availableGroups: availableGroups.map(g => ({ pk: g.pk, name: g.name })),
+    })
+  } catch (error) {
+    logger.error('Error fetching user groups:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// Add user to group
+usersRouter.post('/:username/groups', async (req, res) => {
+  try {
+    const { username } = req.params
+    const { group_pk } = req.body
+
+    if (!group_pk) return res.status(400).json({ error: 'group_pk is required' })
+
+    await authentikClient.addUserToGroup(group_pk, username)
+
+    await createAuditLog({
+      action: 'user_group_added',
+      actor: req.user?.username || 'api',
+      entity_type: 'user',
+      entity_id: username,
+      changes: { group_pk },
+      source: 'api',
+    })
+
+    res.json({ success: true, message: 'User added to group' })
+  } catch (error) {
+    logger.error('Error adding user to group:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// Remove user from group
+usersRouter.delete('/:username/groups/:groupId', async (req, res) => {
+  try {
+    const { username, groupId } = req.params
+
+    await authentikClient.removeUserFromGroup(groupId, username)
+
+    await createAuditLog({
+      action: 'user_group_removed',
+      actor: req.user?.username || 'api',
+      entity_type: 'user',
+      entity_id: username,
+      changes: { group_pk: groupId },
+      source: 'api',
+    })
+
+    res.json({ success: true, message: 'User removed from group' })
+  } catch (error) {
+    logger.error('Error removing user from group:', error)
     res.status(500).json({ error: error.message })
   }
 })

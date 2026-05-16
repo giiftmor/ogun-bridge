@@ -1,223 +1,238 @@
-# Ogun Bridge UI Enhancement & System Fixes Plan
+# Ogun Bridge — Implementation Plan
 
-## Goal
-Enhance Ogun Bridge UI for non-technical administrators with task-centric design, couple Password/Profile/Group Manager, keep Dashboard as standalone landing page, and fix nginx proxy/CORS issues.
-
-## Constraints & Preferences
-- Dashboard remains standalone landing page (not merged with Operations Center)
-- Use task-centric design (not entity-centric) for non-technical admins
-- Use Recharts (already installed) for trends visualization
-- Map technical errors to user-friendly messages with action buttons
-- Query local database for user's groups/services
-- Service access activates on first login via LDAP/Authentik group sync
+## Status Legend
+- 🔴 **Not started**
+- 🟡 **In progress**
+- 🟢 **Complete**
+- ⚪ **Blocked**
 
 ---
 
-## Progress Tracking
+## Phase A: Missing DB Table Definitions
 
-### ✅ Done
-- [x] Enhanced nginx.conf: added CORS headers, 60s API/7d WebSocket timeouts, /health endpoint, OPTIONS preflight handling
-- [x] Fixed docker-compose.yml: renamed containers alsm-* → ogun-bridge-*, changed frontend to host network mode, updated CORS_ORIGIN to ogun.spectres.co.za
-- [x] Committed and pushed: `fix: enhance nginx proxy with CORS headers, timeouts, and health endpoint` to `origin/feature/group-manager-and-bidirectional-sync`
-- [x] Investigated bidirectional sync: code implemented in syncService.js (lines 470-517), supports authentik-to-ldap/ldap-to-authentik/bidirectional
-- [x] Found UI components: GroupManager.jsx (sync direction selector), Dashboard.jsx (sync now/force sync), ChangesBrowser.jsx (drift detection)
-- [x] Researched admin dashboard patterns: task-centric design, status page components, progressive disclosure
-- [x] Analyzed current UI: Recharts installed but unused, custom components built on Tailwind, developer-centric (raw errors, no trends)
-- [x] Investigated thoth-esu email relay failure: mailcow postfix logs show `SASL PLAIN authentication failed` for `oracle@spectres.co.za` from IP 172.30.1.1
-- [x] Found ogun-bridge works via thoth-esu SMTP (port 2525), but thoth-esu direct relay to mailcow (port 587) fails
-- [x] Analyzed current navigation: 3 separate categories (Sync/Passwords/Mailing) should merge to "User Administration"
-- [x] Identified Dashboard only shows sync stats, needs full system overview (service health, metrics, needs attention)
-- [x] **Implemented navigation restructure in Layout.jsx**: created "User Administration" and "Monitoring" sections
-- [x] **Created MyProfile.jsx**: personal self-service profile page with groups/services/password change
-- [x] **Enhanced Dashboard.jsx**: added system health grid (4 services), 8 stats cards, "Needs Attention" section
-- [x] **Created errorTranslator.js**: maps 12 common technical errors to user-friendly messages with action buttons
-- [x] **Created ProgressBar.jsx**: shows bidirectional sync progress (A→L and L→A separately) with compact variant
+Add 3 `CREATE TABLE IF NOT EXISTS` blocks to `backend/src/lib/db.js` before the seed data (line 354). These tables already exist in production (created by external migrations/sync) but are absent from the automated schema, so a fresh DB init would miss them.
 
-### 🔄 In Progress
-- [x] **Integrate ProgressBar into Dashboard.jsx**: Add sync progress visualization when sync is running
-- [x] **Integrate errorTranslator.js**: Replace raw error messages in toast notifications across pages
-- [x] ~~Resolve thoth-esu mailcow auth: fix credentials in mailcow UI OR route through local SMTP (port 2525)~~ **(User handling - moved mailcow to own server, updating IP in config)**
-- [x] **Recharts dashboards**: Sync success rate (7-day line chart), error distribution (pie chart), response time (area chart)
+| Table | Key Columns | Used By |
+|---|---|---|
+| `group_sync_config` | `group_name PK`, `sync_direction`, `ldap_ou`, `parent_group`, `is_active`, `group_pk`, timestamps | `groups.js:128,344`, `syncService.js:443,542,583` |
+| `group_services` | `id PK`, `group_name`, `service_name`, `service_url`, `service_type`, `description`, `icon`, `is_public`, `is_active`, timestamps, `UNIQUE(group_name, service_name)` | `groupServices.js`, `users.js:382`, `invite.js:42` |
+| `sync_state` | `entity_type`, `entity_id`, `sync_direction`, `metadata JSONB`, `last_synced_at`, timestamps, `UNIQUE(entity_type, entity_id)` | `syncService.js:464,482` |
 
-### 🚧 Blocked
-- [ ] thoth-esu → mailcow SMTP auth: credentials `oracle@spectres.co.za` / `Kali@1403` rejected by mailcow (Options: fix mailcow user or route through local SMTP like ogun-bridge does)
+**Files**: `backend/src/lib/db.js`
+
+**Status**: 🔴 Not started
 
 ---
 
-## Key Decisions
-- **Dashboard stays standalone**: User wants it as landing page, not merged with Operations Center health grid
-- **Navigation restructure**: Split into "User Administration" (Users/Groups/Passwords/Admin Profile) + "Monitoring" (Dashboard/Operations/Changes/Audit/Logs) + "System" (Mail/Schema/Versions)
-- **Rename "Operations" page to "Monitoring"**: Better describes purpose of the page
-- **Rename "/profile" to "Admin Profile"**: Clarifies it shows admin functions for any user, not personal profile
-- **Create "/my-profile"**: Personal self-service profile for logged-in user (separate from admin profile)
-- **Couple Password + Profile + Group Manager**: Create unified UserDetail.jsx with tabs (Profile/Password/Groups/Activity)
-- **Enhance Dashboard**: Add service health grid, 8 metrics tiles, "Needs Attention" task-centric section
-- **Error translation layer**: Map technical errors to user-friendly messages with action buttons
-- **Use Recharts for trends**: Sync success rate (7-day line chart), error distribution (pie chart), response time (area chart)
+## Phase B: Backend Group Lifecycle CRUD
+
+Add routes to a new `backend/src/routes/groupManagement.js` mounted at `/api/groups-manager` (reuses existing prefix from `index.js:177`).
+
+| Route | Purpose | Authentik Call | LDAP Call |
+|---|---|---|---|
+| `POST /groups` | Create group | `createGroup({name, description, parent})` | `createGroup(name, attrs)` |
+| `PUT /groups/:id` | Edit name, description, parent | `updateGroup(id, {name, description, parent})` | `updateGroup(name, {description})` |
+| `DELETE /groups/:id` | Delete group | `deleteGroup(id)` | `deleteGroup(name)` |
+| `POST /groups/:id/members` | Add user(s) to group | `addUserToGroup(id, username)` | — (sync handles) |
+| `DELETE /groups/:id/members/:username` | Remove user from group | `removeUserFromGroup(id, username)` | — (sync handles) |
+
+All routes: create pre-mutation snapshot, write audit log, return `{ success, message, group }`.
+
+**Files created**: `backend/src/routes/groupManagement.js`
+**Files modified**: `backend/src/index.js` (import + mount), `frontend/src/services/api.js` (add frontend methods)
+
+**Status**: 🔴 Not started
 
 ---
 
-## Next Steps
-1. [ ] Implement navigation restructure in `Layout.jsx`: create "User Administration" and "Monitoring" sections
-2. [ ] Create `MyProfile.jsx`: personal profile page with groups/services/change password
-3. [ ] Modify `Dashboard.jsx`: add service health grid, metrics tiles, needs attention section
-4. [ ] Create `errorTranslator.js`: map 10 common technical errors to user-friendly messages
-5. [ ] Implement `ProgressBar` component: show bidirectional sync progress (A→L and L→A separately)
-6. [ ] Resolve thoth-esu mailcow auth: fix credentials in mailcow UI OR route through local SMTP (port 2525)
+## Phase C: Backend User Lifecycle CRUD
+
+Add routes to `backend/src/routes/users.js`.
+
+| Route | Purpose | Backing Methods |
+|---|---|---|
+| `POST /` | Create user in Authentik + LDAP | `authentikClient.createUser({username, name, email})`, `ldapClient.updateUser()` |
+| `PUT /:id` | Edit name, email, is_active | `authentikClient.updateUser(pk, {name, email, is_active})` |
+| `DELETE /:id` | Delete user | `authentikClient.deleteUser(pk)`, `ldapClient.deleteUser(username)` |
+| `GET /:username/groups` | List user's groups + available groups | `authentikClient.getGroups()`, resolve membership |
+| `POST /:username/groups` | Add user to group | `authentikClient.addUserToGroup(groupPk, username)` |
+| `DELETE /:username/groups/:groupId` | Remove user from group | `authentikClient.removeUserFromGroup(groupPk, username)` |
+
+All routes: audit log, pre-mutation snapshot, `{ success, message }`.
+
+**Files modified**: `backend/src/routes/users.js`, `frontend/src/services/api.js`
+
+**Status**: 🔴 Not started
 
 ---
 
-## Critical Context
-- **Mailcow auth failure**: `warning: unknown[172.30.1.1]: SASL PLAIN authentication failed: (reason unavailable), sasl_username=oracle@spectres.co.za`
-- **LDAP bind**: `cn=Directory Manager,dc=spectres,dc=co,dc=za` with password `Kali@1403`
-- **389DS password scheme**: SSHA512 (send plain text, 389DS hashes internally)
-- **Docker containers**: backend :3333 (0.0.0.0), frontend :3331 (host network mode)
-- **Repository**: `git@github.com:giiftmor/ogun-bridge.git` (branch: `feature/group-manager-and-bidirectional-sync`)
-- **Bidirectional sync code exists**: `syncService.js` lines 470-710 (unverified if working, need DB access to check `group_sync_config` table)
-- **Recharts installed but unused**: `package.json` has recharts dependency, no charts implemented
-- **UI stack**: Custom components on Tailwind CSS, Lucide React icons, no shadcn/ui
+## Phase D: Frontend Group CRUD UI
+
+Add UI to `frontend/src/pages/GroupBrowser.jsx`.
+
+| UI Element | Backend Route |
+|---|---|
+| "Create Group" button + dialog (name, description, parent picker) | `POST /api/groups-manager/groups` |
+| Inline edit in detail panel (name, description, parent selector) | `PUT /api/groups-manager/groups/:id` |
+| "Delete" button in detail panel (confirmation + impact summary) | `DELETE /api/groups-manager/groups/:id` |
+| "Members" tab (list, "Add Member" search, "Remove" per user) | `GET /groups/:id/members`, `POST/DELETE /api/groups-manager/groups/:id/members/...` |
+
+**Files modified**: `frontend/src/pages/GroupBrowser.jsx`, `frontend/src/services/api.js`
+
+**Status**: 🔴 Not started
 
 ---
 
-## Relevant Files
-| File | Purpose |
-|------|---------|
-| `frontend/nginx.conf` | Proxy config, CORS headers, timeouts |
-| `docker-compose.yml` | Container config, network mode, build args |
-| `frontend/src/components/Layout.jsx` | Sidebar navigation (lines 26-65) to restructure |
-| `frontend/src/pages/Dashboard.jsx` | Enhance with health grid + metrics |
-| `frontend/src/pages/GroupManager.jsx` | Sync direction selector, RBAC services |
-| `frontend/src/pages/ProfileManagement.jsx` | Admin-style profile (rename to "Admin Profile") |
-| `frontend/src/pages/MyProfile.jsx` | CREATE: personal self-service profile |
-| `backend/src/services/syncService.js` | Bidirectional sync logic (lines 470-710) |
-| `backend/src/routes/groups.js` | Sync direction API (PATCH /:id/sync-direction) |
-| `thoth-esu-gateway/localmail-api/config.yaml` | Mailcow relay config (host: 100.96.233.80, port: 587) |
+## Phase E: Frontend User CRUD + Group Membership UI
+
+Add UI to `frontend/src/pages/UserBrowser.jsx` and `UserDetail.jsx`.
+
+| Page | UI Element | Backend Route |
+|---|---|---|
+| UserBrowser | "Create User" button + dialog (username, name, email, group selector, invite checkbox) | `POST /api/users` |
+| UserBrowser | "Deactivate" toggle (confirmation) | `PUT /api/users/:id` |
+| UserBrowser | "Delete" button (double confirmation) | `DELETE /api/users/:id` |
+| UserDetail | "Groups" management section (current groups + "Add to Group" selector + "Remove") | `GET /api/users/:username/groups`, `POST/DELETE` |
+| UserDetail | "Edit" mode (name, email fields) | `PUT /api/users/:id` |
+
+**Files modified**: `frontend/src/pages/UserBrowser.jsx`, `frontend/src/pages/UserDetail.jsx`, `frontend/src/services/api.js`
+
+**Status**: 🔴 Not started
 
 ---
 
-## Revised Dashboard Enhancement Plan (Standalone Landing Page)
-*Approved: [ ] Pending user approval*
+## Phase F: Service Editing
 
-### Current Dashboard Analysis (`Dashboard.jsx` lines 1-265)
-| Section | Content | Source |
-|---------|---------|--------|
-| Header | "Dashboard", "Monitor your Authentik LDAP sync service" | Static text |
-| Status Banner | System status icon, Last sync time, Sync Running badge | `syncStatus`, `stats.lastSyncTime` |
-| Stats Grid (4 cards) | Authentik Users, LDAP Users, Pending Changes, Failed Syncs | `getDashboardStats()` |
-| Recent Activity | Sync history list | `getRecentActivity()` |
+Add routes to `backend/src/routes/groupServices.js`.
 
-### Missing Metrics for Landing Page Overview
-| Missing Metric | Why It Matters |
-|----------------|----------------|
-| System Health Indicators | Users shouldn't navigate to Operations to see service status |
-| Active Users/Sessions | Key operational metric for current system usage |
-| Failed Logins (24h) | Security/operational health indicator |
-| Response Time | Performance indicator |
-| Last Sync Duration | Execution time for last sync |
-| "Needs Attention" Section | Actionable tasks for admins to address immediately |
+| Route | Purpose |
+|---|---|
+| `PUT /services/:serviceName` | Update service metadata globally — updates ALL `group_services` rows + Authentik group attributes |
+| `DELETE /services/:serviceName` | Delete service globally — removes ALL `group_services` rows + cleans up Authentik attributes |
 
-### Proposed Enhanced Layout
+Add UI to `frontend/src/pages/ServiceManager.jsx`:
+- "Edit" button on service detail (dialog pre-filled with current metadata)
+- "Delete Service Globally" button (shows all assigned groups, confirmation)
+
+**Files modified**: `backend/src/routes/groupServices.js`, `frontend/src/pages/ServiceManager.jsx`, `frontend/src/services/api.js`
+
+**Status**: 🔴 Not started
+
+---
+
+## Phase G: One-Click Onboarding Wizard
+
+**New backend file**: `backend/src/routes/onboarding.js` mounted at `/api/onboarding`
+
+| Route | Flow |
+|---|---|
+| `POST /` | 1. `authentikClient.createUser()` 2. `authentikClient.addUserToGroup()` per group 3. `inviteService.sendInvite()` — all in transaction, rollback user if invite fails |
+
+**New frontend file**: `frontend/src/components/OnboardingWizard.jsx`
+- Multi-step dialog: User details → Group selection (tree picker) → Invite options → Summary + Submit
+
+**Files created**: `backend/src/routes/onboarding.js`, `frontend/src/components/OnboardingWizard.jsx`
+**Files modified**: `backend/src/index.js`, `frontend/src/pages/UserBrowser.jsx`
+
+**Status**: 🔴 Not started
+
+---
+
+## Search Part 1: Global Command Palette
+
+### Backend — new search endpoint
+**New file**: `backend/src/routes/search.js` — `GET /api/search?q=...`
+
+Runs 3 queries in parallel with `Promise.allSettled()`, capped at 8 per category, 5s timeout:
+1. `authentikClient.getUsers({ search: q })` → `{ username, name, email, _type: 'user' }`
+2. `authentikClient.getGroups({ search: q })` → `{ name, description, pk, _type: 'group' }`
+3. `pool.query(ILIKE on group_services.service_name)` → `{ service_name, service_url, service_type, _type: 'service' }`
+
+Returns: `{ users: [...], groups: [...], services: [...] }`
+
+**Files created**: `backend/src/routes/search.js`
+**Files modified**: `backend/src/index.js` (mount at `/api/search`)
+
+### Frontend — CmdPalette component
+**New file**: `frontend/src/components/CmdPalette.jsx`
+
+| Feature | Detail |
+|---|---|
+| Trigger | `Cmd+K` (Mac) / `Ctrl+K` (Win) global listener; `/` to focus when no input active |
+| Search | Debounced 200ms → `api.searchAll(q)` → grouped results with section headers + counts |
+| Navigation | Arrow keys, Enter to select, Escape to dismiss |
+| Auto-select | Navigates to `/?q=<name>` — page reads URL param to auto-select result |
+| States | Loading spinner, empty ("No results for '{q}'"), error (red banner + retry) |
+
+**File modified**: `frontend/src/components/Layout.jsx` (mount component), `frontend/src/services/api.js` (add `searchAll(q)`), `frontend/src/pages/UserBrowser.jsx`, `GroupBrowser.jsx`, `ServiceManager.jsx` (read `?q=` param)
+
+**Status**: 🔴 Not started
+
+---
+
+## Search Part 2: Page-Level Search Fixes
+
+Apply to ALL 10 search inputs across every page.
+
+| Fix | Pages | What |
+|---|---|---|
+| Debounce (300ms) | GroupBrowser, OperationsCenter, ChangesBrowser, SyncManager, AuditViewer | Replace raw `searchTerm` in queryKey with `useDebounce(searchTerm, 300)` |
+| Error states | ALL 10 pages | Render `error` from `useQuery` — red alert banner + retry button |
+| Result highlighting | ALL 10 pages | `<Highlight text={item.name} query={searchTerm} />` — wraps matches in `<mark>` |
+| Keyboard shortcuts | ALL 10 search inputs | `/` focuses, `Escape` clears/blurs |
+| Remove redundant re-filter | UserBrowser, GroupBrowser, SyncManager | Delete client-side `.filter()` after API already searched |
+| Pass search param to API | ChangesBrowser, AuditViewer | Add `searchTerm` to API call so backend pre-filters |
+| Backend search + limit params | users.js, groups.js, changes.js, audit.js | Accept `search` + `limit` query params |
+
+**Files modified**: All 10 page files in `frontend/src/pages/`, plus `backend/src/routes/users.js`, `groups.js`, `changes.js`, `audit.js`, `changeDetector.js`, `auditService.js`
+
+**Status**: 🔴 Not started
+
+---
+
+## Search Part 3: Backend Search Improvements
+
+| File | Change |
+|---|---|
+| `backend/src/services/authentikClient.js:59-68` | Pass `page_size` and `ordering` params through to Authentik API |
+| `backend/src/routes/users.js:85` | Accept `?limit=`, pass `page_size` to Authentik |
+| `backend/src/routes/groups.js:22,50` | Accept `?limit=`, pass `page_size` to Authentik |
+| `backend/src/routes/changes.js + changeDetector.js` | Add `?search=` → SQL `ILIKE` on `entity_id` |
+| `backend/src/routes/audit.js + auditService.js` | Add `?search=` → SQL `ILIKE` on `entity_id`, `actor` |
+
+**Files modified**: 6 backend files
+
+**Status**: 🔴 Not started
+
+---
+
+## Implementation Order (Dependency Chain)
+
 ```
-┌─────────────────────────────────────────────────────┐
-│  Dashboard                                         │
-├─────────────────────────────────────────────────────┤
-│  Monitor your Authentik LDAP sync service          │
-│                                                     │
-│  ┌─────────────────────────────────────┐           │
-│  │  ✅ Healthy • Last sync: 2m ago     │           │
-│  └─────────────────────────────────────┘           │
-│                                                     │
-│  SYSTEM HEALTH (4 service indicators)               │
-│  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐     │
-│  │Auth ✅ │ │LDAP ✅ │ │DB  ✅ │ │SMTP ❌ │     │
-│  └────────┘ └────────┘ └────────┘ └────────┘     │
-│                                                     │
-│  STATS (8 cards)                                    │
-│  [Auth Users] [LDAP Users] [Active Sessions]       │
-│  [Pending]    [Failed Syncs] [Failed Logins]       │
-│  [Response]   [Last Sync Duration]                 │
-│                                                     │
-│  NEEDS ATTENTION (task-centric)                    │
-│  📊 2 pending changes from LDAP drift  [Review]    │
-│  🔴 1 service down (SMTP)                [Fix]     │
-│  📧 3 invites pending password setup        [Send]  │
-│                                                     │
-│  QUICK ACTIONS                                      │
-│  [🔄 Sync Now] [📧 Invite] [⚙️ Health Check]     │
-│                                                     │
-│  RECENT ACTIVITY (sync history)                    │
-│  ✅ Sync completed - 9 users updated  2m ago       │
-│  ✅ User "neo" changed password     15m ago        │
-└─────────────────────────────────────────────────────┘
+Search Part 3 ──→ Search Part 1 ──→ Search Part 2
+(backend infra)   (search route +    (page-level polish)
+                   CmdPalette)
+
+Phase A ──→ Phase B ──→ Phase D
+(DB)         (backend      (frontend
+              group CRUD)   group UI)
+
+Phase C ──→ Phase E
+(backend     (frontend
+ user CRUD)  user UI)
+
+Phase A ──→ Phase F
+(DB)         (service editing)
+
+Phase C + E ──→ Phase G
+                 (onboarding)
 ```
 
-### Dashboard Implementation Steps
-1. [ ] Add System Health Indicators from `/health` endpoint
-   - Create `ServiceIndicator` component
-   - Add health query to Dashboard.jsx
-2. [ ] Expand Stats Grid from 4 to 8 cards
-   - Add Active Sessions, Failed Logins, Response Time, Sync Duration
-3. [ ] Add "Needs Attention" task-centric section
-   - Show pending changes, failed syncs, failed logins with action buttons
-4. [ ] Enhance Quick Actions
-   - Add Health Check button to Status Banner
+Parallel tracks:
+- **Track 1**: Search (Parts 3 → 1 → 2) — all search improvements
+- **Track 2**: Groups (A → B → D) — full group lifecycle
+- **Track 3**: Users (C → E) — full user lifecycle
+- **Track 4**: Services (F) — service editing (needs Phase A)
+- **Track 5**: Onboarding (G) — needs Phase C + E
 
----
-
-## Navigation Restructure Plan
-*Approved: [ ] Pending user approval*
-
-### Proposed Layout
-```
-User Administration
-├── Users (/users)
-├── Groups (/groups)
-├── Group Manager (/groups-manager)
-├── Passwords (/password)
-└── Admin Profile (/profile)  ← Renamed from "Profile"
-
-Monitoring
-├── Dashboard (/)
-├── Monitoring (/operations)  ← Renamed from "Operations"
-├── Changes (/changes)
-├── Audit (/audit)
-└── Logs (/logs)
-
-System
-├── Mail Settings (/mail)
-├── Schema Mapper (/schema)
-└── Version History (/versions)
-
-User Menu (top right)
-├── My Profile (/my-profile)  ← New personal profile
-└── Logout
-```
-
-### Layout.jsx Changes Needed
-| Change | Line | Reason |
-|--------|------|--------|
-| Rename "Profile" to "Admin Profile" | 41 | Clarifies it shows any user's data, not personal |
-| Create "User Administration" section | 26-45 | Group user management tools |
-| Create "Monitoring" section | 46-65 | Group system monitoring tools |
-| Rename "Operations" to "Monitoring" | 60 | Better describes page purpose |
-| Add "My Profile" to user menu | 188-203 | Personal self-service profile link |
-
----
-
-## Error Handling Plan
-*Approved: [ ] Pending user approval*
-
-### Error Translation Layer
-Create `frontend/src/utils/errorTranslator.js` to map technical errors to user-friendly messages with action buttons.
-
-| Technical Error | User-Friendly Message | Action Button |
-|-----------------|-----------------------|---------------|
-| `535 5.7.8 Error: authentication failed` | Mail server password is incorrect | [Update SMTP Password] |
-| `LDAP: invalid credentials` | LDAP bind credentials are invalid | [Update LDAP Config] |
-| `Authentik: 401 Unauthorized` | Authentik API token expired | [Refresh Token] |
-| `ECONNREFUSED: Connection refused` | Service is unreachable | [Check Health] |
-
-### ProgressBar Component
-Create `frontend/src/components/ProgressBar.jsx` to show bidirectional sync progress:
-- Separate bars for Authentik → LDAP and LDAP → Authentik
-- Show percentage complete, current step, estimated time remaining
+Tracks 1-3 can proceed in parallel after Phase A.

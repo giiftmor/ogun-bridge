@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  Server, Plus, Trash2,  Loader2, CheckCircle, Users,
+  Server, Plus, Trash2, Loader2, CheckCircle, Users, Edit3,
+  ChevronRight, ChevronDown, GitBranch,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -9,7 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, ConfirmDialog } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { SkeletonCard } from '@/components/ui/skeleton'
 import toast from 'react-hot-toast'
@@ -28,6 +29,9 @@ export function ServiceManager() {
   const [showAddService, setShowAddService] = useState(false)
   const [showAssignGroup, setShowAssignGroup] = useState(false)
   const [selectedGroupToAssign, setSelectedGroupToAssign] = useState('')
+  const [showEditService, setShowEditService] = useState(false)
+  const [editServiceData, setEditServiceData] = useState({})
+  const [deleteConfirm, setDeleteConfirm] = useState({ open: false, serviceName: '' })
   const queryClient = useQueryClient()
 
   const { data: allServices = [], isLoading: loadingServices } = useQuery({
@@ -63,6 +67,18 @@ export function ServiceManager() {
     onError: (error) => toast.error(error.message),
   })
 
+  const updateServiceMutation = useMutation({
+    mutationFn: ({ serviceName, data }) => apiClient.updateService(serviceName, data),
+    onSuccess: () => { toast.success('Service updated'); setShowEditService(false); queryClient.invalidateQueries(['services-list']) },
+    onError: (err) => toast.error(err.message),
+  })
+
+  const deleteServiceMutation = useMutation({
+    mutationFn: (serviceName) => apiClient.deleteService(serviceName),
+    onSuccess: () => { toast.success('Service deleted'); setDeleteConfirm({ open: false, serviceName: '' }); setSelectedService(null); queryClient.invalidateQueries(['services-list']) },
+    onError: (err) => toast.error(err.message),
+  })
+
   const unassignGroupMutation = useMutation({
     mutationFn: ({ serviceName, groupName }) =>
       apiClient.unassignServiceFromGroup(serviceName, groupName),
@@ -84,13 +100,12 @@ export function ServiceManager() {
   const assignedGroupNames = selectedServiceDetail?.groups || []
   const availableGroups = groups.filter(g => !assignedGroupNames.includes(g.name))
 
-  const handleAddService = (service) => {
-    const firstGroup = groups[0]
-    if (!firstGroup) {
-      toast.error('No groups available. Create a group first.')
+  const handleAddService = (service, groupId) => {
+    if (!groupId) {
+      toast.error('Please select a group')
       return
     }
-    addServiceMutation.mutate({ groupId: firstGroup.id, service })
+    addServiceMutation.mutate({ groupId, service })
   }
 
   const handleAssignGroup = () => {
@@ -185,7 +200,15 @@ export function ServiceManager() {
                         {selectedServiceDetail?.description || 'No description'}
                       </CardDescription>
                     </div>
-                    <Badge variant="ghost">{selectedServiceDetail?.service_type}</Badge>
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" onClick={() => { setEditServiceData({ service_url: selectedServiceDetail?.service_url || '', service_type: selectedServiceDetail?.service_type || 'web', description: selectedServiceDetail?.description || '', icon: selectedServiceDetail?.icon || 'default', is_public: selectedServiceDetail?.is_public || false }); setShowEditService(true) }}>
+                        <Edit3 className="h-3.5 w-3.5 mr-1" />Edit
+                      </Button>
+                      <Button variant="destructive" size="sm" onClick={() => setDeleteConfirm({ open: true, serviceName: selectedServiceDetail?.service_name })}>
+                        <Trash2 className="h-3.5 w-3.5 mr-1" />Delete
+                      </Button>
+                      <Badge variant="ghost">{selectedServiceDetail?.service_type}</Badge>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -285,6 +308,28 @@ export function ServiceManager() {
         </div>
       </div>
 
+      {/* Edit Service Dialog */}
+      {showEditService && (
+        <EditServiceDialog
+          open={showEditService}
+          serviceName={selectedServiceDetail?.service_name}
+          initialData={editServiceData}
+          onClose={() => setShowEditService(false)}
+          onConfirm={(data) => updateServiceMutation.mutate({ serviceName: selectedServiceDetail?.service_name, data })}
+          isLoading={updateServiceMutation.isPending}
+        />
+      )}
+
+      {/* Delete Confirmation */}
+      <ConfirmDialog
+        open={deleteConfirm.open}
+        onClose={() => setDeleteConfirm({ open: false, serviceName: '' })}
+        onConfirm={() => deleteServiceMutation.mutate(deleteConfirm.serviceName)}
+        title="Delete Service"
+        description={`Permanently delete '${deleteConfirm.serviceName}'? This will remove it from all groups.`}
+        loading={deleteServiceMutation.isPending}
+      />
+
       {/* Add Service Dialog */}
       <AddServiceDialog
         open={showAddService}
@@ -296,6 +341,65 @@ export function ServiceManager() {
   )
 }
 
+function GroupTreePicker({ selectedId, onSelect }) {
+  const { data: treeData, isLoading } = useQuery({
+    queryKey: ['group-tree'],
+    queryFn: () => apiClient.getGroupTree(),
+  })
+  const [expanded, setExpanded] = useState(new Set())
+
+  const toggleExpand = (pk) => {
+    setExpanded(prev => {
+      const next = new Set(prev)
+      if (next.has(pk)) next.delete(pk); else next.add(pk)
+      return next
+    })
+  }
+
+  const renderNode = (node, depth) => {
+    const hasChildren = node.children?.length > 0
+    const isSelected = selectedId === node.pk
+
+    return (
+      <div key={node.pk}>
+        <button
+          type="button"
+          onClick={() => { if (!isSelected) onSelect(node.pk); toggleExpand(node.pk) }}
+          className={`w-full text-left p-2 rounded border text-sm mb-0.5 flex items-center gap-2 ${
+            isSelected ? 'bg-primary/10 border-primary' : 'hover:bg-accent border-transparent'
+          }`}
+          style={{ paddingLeft: `${depth * 16 + 8}px` }}
+        >
+          {hasChildren ? (
+            expanded.has(node.pk) ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />
+          ) : (
+            <span className="w-3" />
+          )}
+          <span className="truncate">{node.name}</span>
+          {node.users_count > 0 && (
+            <span className="text-xs text-muted-foreground ml-auto shrink-0">{node.users_count} users</span>
+          )}
+        </button>
+        {hasChildren && expanded.has(node.pk) && (
+          <div>{node.children.map(child => renderNode(child, depth + 1))}</div>
+        )}
+      </div>
+    )
+  }
+
+  if (isLoading) return <div className="text-sm text-muted-foreground py-4 text-center">Loading groups...</div>
+
+  return (
+    <div className="max-h-[240px] overflow-y-auto border rounded p-1">
+      {treeData?.authentik?.length > 0 ? (
+        treeData.authentik.map(node => renderNode(node, 0))
+      ) : (
+        <div className="text-sm text-muted-foreground py-4 text-center">No groups available</div>
+      )}
+    </div>
+  )
+}
+
 function AddServiceDialog({ open, onOpenChange, onAdd, isLoading }) {
   const [serviceName, setServiceName] = useState('')
   const [serviceUrl, setServiceUrl] = useState('')
@@ -303,10 +407,12 @@ function AddServiceDialog({ open, onOpenChange, onAdd, isLoading }) {
   const [description, setDescription] = useState('')
   const [icon, setIcon] = useState('default')
   const [isPublic, setIsPublic] = useState(false)
+  const [selectedGroupId, setSelectedGroupId] = useState('')
 
   const handleSubmit = (e) => {
     e.preventDefault()
     if (!serviceName.trim()) { toast.error('Service name is required'); return }
+    if (!selectedGroupId) { toast.error('Please select a group'); return }
     onAdd({
       service_name: serviceName.trim(),
       service_url: serviceUrl.trim(),
@@ -314,9 +420,9 @@ function AddServiceDialog({ open, onOpenChange, onAdd, isLoading }) {
       description: description.trim(),
       icon,
       is_public: isPublic,
-    })
+    }, selectedGroupId)
     setServiceName(''); setServiceUrl(''); setServiceType('web')
-    setDescription(''); setIcon('default'); setIsPublic(false)
+    setDescription(''); setIcon('default'); setIsPublic(false); setSelectedGroupId('')
   }
 
   return (
@@ -347,6 +453,10 @@ function AddServiceDialog({ open, onOpenChange, onAdd, isLoading }) {
               </Select>
             </div>
             <div className="space-y-2">
+              <Label>Assign to Group *</Label>
+              <GroupTreePicker selectedId={selectedGroupId} onSelect={setSelectedGroupId} />
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="description">Description</Label>
               <Input id="description" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Brief description" />
             </div>
@@ -370,11 +480,91 @@ function AddServiceDialog({ open, onOpenChange, onAdd, isLoading }) {
             </div>
           </div>
           <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
             <Button type="submit" disabled={isLoading}>
-              {isLoading ? 'Adding...' : 'Add Service'}
+              {isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Plus className="h-4 w-4 mr-1" />}
+              Add Service
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function EditServiceDialog({ open, serviceName, initialData, onClose, onConfirm, isLoading }) {
+  const [serviceUrl, setServiceUrl] = useState(initialData?.service_url || '')
+  const [serviceType, setServiceType] = useState(initialData?.service_type || 'web')
+  const [description, setDescription] = useState(initialData?.description || '')
+  const [icon, setIcon] = useState(initialData?.icon || 'default')
+  const [isPublic, setIsPublic] = useState(initialData?.is_public || false)
+
+  useEffect(() => {
+    if (open) {
+      setServiceUrl(initialData?.service_url || '')
+      setServiceType(initialData?.service_type || 'web')
+      setDescription(initialData?.description || '')
+      setIcon(initialData?.icon || 'default')
+      setIsPublic(initialData?.is_public || false)
+    }
+  }, [open, initialData])
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    onConfirm({ service_url: serviceUrl.trim(), service_type: serviceType, description: description.trim(), icon, is_public: isPublic })
+  }
+
+  return (
+    <Dialog open={open} onClose={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit Service: {serviceName}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit}>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="editUrl">URL</Label>
+              <Input id="editUrl" value={serviceUrl} onChange={e => setServiceUrl(e.target.value)} placeholder="https://example.com" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editType">Service Type</Label>
+              <Select value={serviceType} onValueChange={setServiceType}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {SERVICE_TYPES.map(type => (
+                    <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editDescription">Description</Label>
+              <Input id="editDescription" value={description} onChange={e => setDescription(e.target.value)} placeholder="Brief description" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editIcon">Icon</Label>
+              <Select value={icon} onValueChange={setIcon}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="default">Default</SelectItem>
+                  <SelectItem value="mail">Mail</SelectItem>
+                  <SelectItem value="vpn">VPN/Security</SelectItem>
+                  <SelectItem value="media">Media</SelectItem>
+                  <SelectItem value="cloud">Cloud</SelectItem>
+                  <SelectItem value="authentik">Identity</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Checkbox id="editIsPublic" checked={isPublic} onCheckedChange={(checked) => setIsPublic(checked === true)} />
+              <Label htmlFor="editIsPublic" className="text-sm font-normal">Show in invite emails</Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit" disabled={isLoading}>
+              {isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+              Save Changes
             </Button>
           </DialogFooter>
         </form>

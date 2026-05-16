@@ -150,11 +150,9 @@ function LogEntry({ log }) {
 export function OperationsCenter() {
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
-  const [testService, setTestService] = useState(null)
-
   const { data: health, isLoading: healthLoading, refetch: refetchHealth } = useQuery({
     queryKey: ['health'],
-    queryFn: apiClient.getSystemHealth,
+    queryFn: () => apiClient.getSystemHealth(),
     refetchInterval: 30000,
   })
 
@@ -233,7 +231,7 @@ export function OperationsCenter() {
             latency={svc.latency}
             error={svc.error}
             onTest={() => testMutation.mutate(svc.name)}
-            isTesting={testMutation.isPending && testService === svc.name}
+            isTesting={testMutation.isPending && testMutation.variables === svc.name}
           />
         ))}
       </div>
@@ -256,7 +254,7 @@ export function OperationsCenter() {
           icon={XCircle} 
           label="Failed Logins (24h)" 
           value={health?.metrics?.failedLogins24h}
-          variant={health?.metrics?.failedLogins24h > 0 ? 'error' : 'success'}
+          variant={health?.metrics?.failedLogins24h > 0 ? 'danger' : 'success'}
         />
         <MetricTile 
           icon={RotateCw} 
@@ -268,7 +266,7 @@ export function OperationsCenter() {
           icon={Server} 
           label="Response Time" 
           value={health?.responseTime ? `${health.responseTime}ms` : '-'}
-          variant={health?.responseTime > 1000 ? 'warning' : 'success'}
+          variant={health?.responseTime > 1000 ? 'danger' : 'success'}
         />
       </div>
 

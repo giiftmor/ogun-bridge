@@ -13,6 +13,7 @@ import {
   SERVICE_AUTHENTIK,
   SERVICE_SMTP,
 } from '../services/config.js'
+import { isDbConnected, reconfigurePool } from '../lib/db.js'
 
 // Import clients for testing
 import { LDAPClient } from '../services/ldapClient.js'
@@ -46,19 +47,130 @@ async function requireSetupNotComplete(req, res, next) {
   next()
 }
 
+// Middleware: return 503 if DB is not connected (applied to DB-dependent routes)
+async function requireDbOnline(req, res, next) {
+  const connected = await isDbConnected()
+  if (!connected) {
+    return res.status(503).json({
+      error: 'Database not connected',
+      message: 'Configure your database connection in the Database step first.',
+    })
+  }
+  next()
+}
+
 // GET /api/setup/status - Get setup status (public)
 setupRouter.get('/status', async (req, res) => {
   try {
+    const dbConnected = await isDbConnected()
     const status = await getSetupStatus()
-    res.json(status)
+    res.json({ ...status, db_connected: dbConnected })
   } catch (error) {
     logger.error('Failed to get setup status', { error: error.message })
     res.status(500).json({ error: 'Failed to get setup status' })
   }
 })
 
+// POST /api/setup/verify-admin - Verify super admin credentials (gate for setup wizard)
+setupRouter.post('/verify-admin', requireDbOnline, async (req, res) => {
+  try {
+    const { username, password } = req.body
+
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password required' })
+    }
+
+    const { pool } = await import('../lib/db.js')
+    const result = await pool.query(
+      `SELECT id, username, password_hash, role, active
+       FROM auth_users
+       WHERE (role = 'admin' OR role = 'super_admin')
+         AND username = $1
+         AND active = true
+       LIMIT 1`,
+      [username]
+    )
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: 'Invalid admin credentials' })
+    }
+
+    const user = result.rows[0]
+    const valid = await bcrypt.compare(password, user.password_hash)
+
+    if (!valid) {
+      return res.status(401).json({ error: 'Invalid admin credentials' })
+    }
+
+    logger.info('Admin credentials verified for setup wizard', { username, role: user.role })
+
+    res.json({ verified: true, user: { id: user.id, username: user.username, role: user.role } })
+  } catch (error) {
+    logger.error('Failed to verify admin', { error: error.message })
+    res.status(500).json({ error: 'Failed to verify admin credentials' })
+  }
+})
+
+// POST /api/setup/config/database - Test and save database configuration
+// This is the ONLY config endpoint that works without a connected DB
+setupRouter.post('/config/database', async (req, res) => {
+  try {
+    const { host, port, database, user, password } = req.body
+
+    if (!host || !user) {
+      return res.status(400).json({ error: 'Host and user are required' })
+    }
+
+    // Test the connection with provided config
+    const testResult = await testDatabaseConnection({ host, port, database, user, password })
+    
+    if (!testResult.success) {
+      return res.json({ success: false, message: testResult.message })
+    }
+
+    // Save config and reconfigure pool
+    await reconfigurePool({ host, port, database, user, password })
+
+    // Auto-create super admin from .env if it doesn't exist yet
+    try {
+      await createSuperAdminIfNeeded()
+    } catch (e) {
+      logger.warn('Super admin auto-creation after DB config failed:', e.message)
+    }
+
+    logger.info('Database reconfigured via setup wizard', { host, database, user })
+    res.json({ success: true, message: 'Database connection successful! Config saved.' })
+  } catch (error) {
+    logger.error('Failed to configure database', { error: error.message })
+    res.status(500).json({ success: false, message: error.message })
+  }
+})
+
+// Helper: test a database connection with given config
+async function testDatabaseConnection(config) {
+  const { host, port, database, user, password } = config
+  const pg = (await import('pg')).default
+  const client = new pg.Client({
+    host,
+    port: parseInt(port) || 5432,
+    database: database || 'postgres',
+    user,
+    password: password || '',
+    connectionTimeoutMillis: 5000,
+  })
+
+  try {
+    await client.connect()
+    await client.query('SELECT 1')
+    await client.end()
+    return { success: true, message: 'Database connection successful' }
+  } catch (error) {
+    return { success: false, message: error.message }
+  }
+}
+
 // POST /api/setup/admin - Create initial admin (only if no admin exists)
-setupRouter.post('/admin', requireSetupNotComplete, async (req, res) => {
+setupRouter.post('/admin', requireDbOnline, requireSetupNotComplete, async (req, res) => {
   try {
     const { username, password, email } = req.body
     
@@ -101,7 +213,7 @@ setupRouter.post('/admin', requireSetupNotComplete, async (req, res) => {
 })
 
 // GET /api/setup/config/:service - Get config for a service
-setupRouter.get('/config/:service', requireSetupNotComplete, async (req, res) => {
+setupRouter.get('/config/:service', requireDbOnline, requireSetupNotComplete, async (req, res) => {
   try {
     const { service } = req.params
     
@@ -127,7 +239,7 @@ setupRouter.get('/config/:service', requireSetupNotComplete, async (req, res) =>
 })
 
 // POST /api/setup/config/:service - Save config for a service
-setupRouter.post('/config/:service', requireSetupNotComplete, async (req, res) => {
+setupRouter.post('/config/:service', requireDbOnline, requireSetupNotComplete, async (req, res) => {
   try {
     const { service } = req.params
     const config = req.body
@@ -212,16 +324,14 @@ setupRouter.post('/test/:service', requireSetupNotComplete, async (req, res) => 
       }
       
       case 'database':
-        // DB is already connected if we're running
-        try {
-          const pool = (await import('../lib/db.js')).default
-          const client = await pool.connect()
-          await client.query('SELECT 1')
-          client.release()
-          result = { success: true, message: 'Database connection successful' }
-        } catch (dbError) {
-          result = { success: false, message: dbError.message }
-        }
+        // Test database with provided config (or fall back to current env/file config)
+        result = await testDatabaseConnection({
+          host: config.host || process.env.DB_HOST || 'localhost',
+          port: config.port || process.env.DB_PORT || '5432',
+          database: config.database || process.env.DB_NAME || 'ogun_bridge',
+          user: config.user || process.env.DB_USER || 'postgres',
+          password: config.password !== undefined ? config.password : process.env.DB_PASSWORD || '',
+        })
         break
         
       default:
@@ -236,7 +346,7 @@ setupRouter.post('/test/:service', requireSetupNotComplete, async (req, res) => 
 })
 
 // POST /api/setup/complete - Mark setup as complete
-setupRouter.post('/complete', requireSetupNotComplete, async (req, res) => {
+setupRouter.post('/complete', requireDbOnline, requireSetupNotComplete, async (req, res) => {
   try {
     // Verify admin exists
     const hasAdmin = await hasAdminUser()
@@ -256,7 +366,7 @@ setupRouter.post('/complete', requireSetupNotComplete, async (req, res) => {
 })
 
 // POST /api/setup/auto-admin - Auto-create super-admin from env var (called on startup)
-setupRouter.post('/auto-admin', async (req, res) => {
+setupRouter.post('/auto-admin', requireDbOnline, async (req, res) => {
   // This is called internally by the server on startup
   // Allow it only if no admin exists
   const hasAdmin = await hasAdminUser()

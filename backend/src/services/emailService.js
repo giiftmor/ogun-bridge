@@ -231,6 +231,7 @@ export async function sendBulkPasswordEmails(users) {
       user.email,
       user.username,
       user.name,
+      null,
       user.altEmail
     )
 

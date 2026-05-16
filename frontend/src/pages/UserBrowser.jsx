@@ -3,19 +3,21 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Search, User, UserCircle, Key, Users, Shield, Clock, Mail,
   CheckCircle, XCircle, ExternalLink, Copy, Loader2, RefreshCw,
-  Terminal, Plus, Server, Play, Cloud, Network, ArrowLeft,
+  Terminal, Plus, Server, Play, Cloud, Network, ArrowLeft, Edit3, Trash2,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { SkeletonCard, SkeletonList } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ConfirmDialog } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, ConfirmDialog } from '@/components/ui/dialog'
 import { useDebounce } from '@/hooks/useDebounce'
 import toast from 'react-hot-toast'
 import { apiClient } from '@/services/api'
+import { OnboardingWizard } from '@/components/OnboardingWizard'
 import { translateError } from '@/utils/errorTranslator'
 
 const SERVICE_ICONS = {
@@ -31,6 +33,11 @@ export function UserBrowser() {
   const [verifyResult, setVerifyResult] = useState(null)
   const [showAddService, setShowAddService] = useState(false)
   const [selectedService, setSelectedService] = useState('')
+  const [showCreateUser, setShowCreateUser] = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState(false)
+  const [editingUser, setEditingUser] = useState(false)
+  const [editName, setEditName] = useState('')
+  const [editEmail, setEditEmail] = useState('')
 
   const queryClient = useQueryClient()
   const debouncedSearch = useDebounce(searchTerm, 300)
@@ -43,7 +50,7 @@ export function UserBrowser() {
     console.log('[UserBrowser] selectedUser changed:', selectedUser?.username || selectedUser?.id, selectedUser ? '→ setting activeTab=profile' : '(cleared)')
   }, [selectedUser])
 
-  const { data: users, isLoading } = useQuery({
+  const { data: users, isLoading, error: usersError } = useQuery({
     queryKey: ['users', debouncedSearch],
     queryFn: () => apiClient.getUsers({ search: debouncedSearch }),
   })
@@ -99,6 +106,24 @@ export function UserBrowser() {
       else { toast.error(data.error || 'Failed to send invitation') }
     },
     onError: (error) => toast.error(translateError(error).message),
+  })
+
+  const createUserMutation = useMutation({
+    mutationFn: (data) => apiClient.createUser(data),
+    onSuccess: () => { toast.success('User created'); setShowCreateUser(false); queryClient.invalidateQueries(['users']) },
+    onError: (err) => toast.error(err.message),
+  })
+
+  const updateUserMutation = useMutation({
+    mutationFn: ({ id, data }) => apiClient.updateUser(id, data),
+    onSuccess: () => { toast.success('User updated'); setEditingUser(false); queryClient.invalidateQueries(['users']); queryClient.invalidateQueries(['user-profile', selectedUser?.username]) },
+    onError: (err) => toast.error(err.message),
+  })
+
+  const deleteUserMutation = useMutation({
+    mutationFn: (id) => apiClient.deleteUser(id),
+    onSuccess: () => { toast.success('User deleted'); setSelectedUser(null); queryClient.invalidateQueries(['users']) },
+    onError: (err) => toast.error(err.message),
   })
 
   const generateTempPasswordMutation = useMutation({
@@ -163,21 +188,21 @@ export function UserBrowser() {
     toast.success('Copied to clipboard')
   }
 
-  const filteredUsers = users?.filter(user => {
-    if (!searchTerm) return true
-    const q = searchTerm.toLowerCase()
-    return (
-      user.username.toLowerCase().includes(q) ||
-      user.email?.toLowerCase().includes(q) ||
-      user.name?.toLowerCase().includes(q)
-    )
-  })
-
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Users</h1>
-        <p className="text-muted-foreground mt-2">Browse and manage user profiles</p>
+        <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Users</h1>
+          <p className="text-muted-foreground mt-2">Browse and manage user profiles</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setShowOnboarding(true)}>
+            <Plus className="h-4 w-4 mr-2" />Onboard User
+          </Button>
+          <Button onClick={() => setShowCreateUser(true)}>
+            <Plus className="h-4 w-4 mr-2" />Create User
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -199,7 +224,7 @@ export function UserBrowser() {
               <div className="p-4 space-y-2"><SkeletonList items={8} /></div>
             ) : (
               <div className="max-h-[600px] overflow-y-auto">
-                {filteredUsers?.map((user) => (
+                {users?.map((user) => (
                   <button
                     key={user.id}
                     onClick={() => { console.log('[UserBrowser] onClick user:', user.username, 'id:', user.id, 'setting activeTab=profile'); setSelectedUser(user); setActiveTab('profile') }}
@@ -223,13 +248,20 @@ export function UserBrowser() {
                     </div>
                   </button>
                 ))}
-                {filteredUsers?.length === 0 && (
+                {users?.length === 0 && (
                   <div className="text-center py-8 text-muted-foreground">No users found</div>
                 )}
               </div>
             )}
           </CardContent>
         </Card>
+
+        {usersError && (
+          <div className="flex items-center gap-2 p-4 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-sm text-sm text-red-700 dark:text-red-300 md:col-span-3">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>Failed to load users: {usersError.message}</span>
+          </div>
+        )}
 
         {/* Right Panel - User Detail with Tabs */}
         <div className="md:col-span-3 space-y-6">
@@ -271,12 +303,51 @@ export function UserBrowser() {
                             <p className="text-sm text-muted-foreground font-normal">{selectedUser.username}</p>
                           </div>
                         </div>
-                        <Badge variant={selectedUser.isActive !== false ? 'default' : 'secondary'}>
-                          {selectedUser.isActive !== false ? 'Active' : 'Inactive'}
-                        </Badge>
+                        <div className="flex items-center gap-2">
+                          <Button variant="outline" size="sm" onClick={() => { setEditingUser(true); setEditName(profile?.name || selectedUser.username || ''); setEditEmail(profile?.email || '') }}>
+                            <Edit3 className="h-3.5 w-3.5 mr-1" />Edit
+                          </Button>
+                          <Badge variant={selectedUser.isActive !== false ? 'default' : 'secondary'}>
+                            {selectedUser.isActive !== false ? 'Active' : 'Inactive'}
+                          </Badge>
+                        </div>
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
+                      {editingUser ? (
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="editName">Name</Label>
+                            <Input id="editName" value={editName} onChange={e => setEditName(e.target.value)} />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="editEmail">Email</Label>
+                            <Input id="editEmail" value={editEmail} onChange={e => setEditEmail(e.target.value)} />
+                          </div>
+                          <div className="flex gap-2">
+                            <Button size="sm" onClick={() => updateUserMutation.mutate({ id: selectedUser.id, data: { name: editName, email: editEmail } })}>
+                              Save
+                            </Button>
+                            <Button variant="outline" size="sm" onClick={() => setEditingUser(false)}>Cancel</Button>
+                          </div>
+                          <div className="flex gap-2 pt-2 border-t">
+                            <Button variant="ghost" size="sm" onClick={() => setConfirmDialog({
+                              open: true, title: selectedUser.isActive !== false ? 'Deactivate User' : 'Activate User',
+                              description: `${selectedUser.isActive !== false ? 'Deactivate' : 'Activate'} ${selectedUser.username}?`,
+                              onConfirm: () => { updateUserMutation.mutate({ id: selectedUser.id, data: { is_active: selectedUser.isActive === false } }); setConfirmDialog({ open: false }) }
+                            })}>
+                              {selectedUser.isActive !== false ? 'Deactivate' : 'Activate'}
+                            </Button>
+                            <Button variant="destructive" size="sm" onClick={() => setConfirmDialog({
+                              open: true, title: 'Delete User',
+                              description: `Permanently delete ${selectedUser.username}? This cannot be undone.`,
+                              onConfirm: () => { deleteUserMutation.mutate(selectedUser.id); setConfirmDialog({ open: false }) }
+                            })}>
+                              <Trash2 className="h-3.5 w-3.5 mr-1" />Delete
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-4">
                           <DetailRow label="Username" value={profile?.username} />
@@ -303,6 +374,7 @@ export function UserBrowser() {
                           } />
                         </div>
                       </div>
+                      )}
                       {profile?.groups?.length > 0 && (
                         <div className="mt-6 pt-6 border-t">
                           <p className="text-sm font-medium mb-3">Groups</p>
@@ -611,11 +683,104 @@ export function UserBrowser() {
                 description={confirmDialog.description}
                 loading={forceResetMutation.isPending || inviteUserMutation.isPending || generateTempPasswordMutation.isPending}
               />
+
+              <CreateUserDialog
+                open={showCreateUser}
+                onClose={() => setShowCreateUser(false)}
+                onConfirm={(data) => createUserMutation.mutate(data)}
+              />
+
+              <OnboardingWizard
+                open={showOnboarding}
+                onClose={() => setShowOnboarding(false)}
+              />
             </>
           )}
         </div>
       </div>
     </div>
+  )
+}
+
+function CreateUserDialog({ open, onClose, onConfirm }) {
+  const [username, setUsername] = useState('')
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [sendInvite, setSendInvite] = useState(false)
+
+  const { data: allGroups = [] } = useQuery({
+    queryKey: ['groups-list'],
+    queryFn: () => apiClient.getGroups(),
+  })
+
+  const [selectedGroups, setSelectedGroups] = useState([])
+
+  const toggleGroup = (groupId) => {
+    setSelectedGroups(prev =>
+      prev.includes(groupId) ? prev.filter(g => g !== groupId) : [...prev, groupId]
+    )
+  }
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    if (!username.trim()) { toast.error('Username is required'); return }
+    const data = {
+      username: username.trim(),
+      name: name.trim() || username.trim(),
+      email: email.trim() || `${username.trim()}@spectres.co.za`,
+      groups: selectedGroups,
+    }
+    onConfirm(data)
+    if (sendInvite) {
+      setTimeout(() => apiClient.inviteUser(username.trim()).catch(() => {}), 500)
+    }
+    setUsername(''); setName(''); setEmail(''); setSelectedGroups([]); setSendInvite(false)
+  }
+
+  return (
+    <Dialog open={open} onClose={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Create User</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit}>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="newUsername">Username *</Label>
+              <Input id="newUsername" value={username} onChange={e => setUsername(e.target.value)} placeholder="e.g., jdoe" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="newName">Display Name</Label>
+              <Input id="newName" value={name} onChange={e => setName(e.target.value)} placeholder="John Doe" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="newEmail">Email</Label>
+              <Input id="newEmail" value={email} onChange={e => setEmail(e.target.value)} placeholder="john@example.com" />
+            </div>
+            <div className="space-y-2">
+              <Label>Groups</Label>
+              <div className="max-h-[160px] overflow-y-auto border rounded p-2 space-y-1">
+                {allGroups.map(g => (
+                  <label key={g.id} className="flex items-center gap-2 text-sm cursor-pointer p-1 hover:bg-subtle rounded">
+                    <input type="checkbox" checked={selectedGroups.includes(g.id)} onChange={() => toggleGroup(g.id)} className="rounded" />
+                    <span>{g.name}</span>
+                  </label>
+                ))}
+                {allGroups.length === 0 && <p className="text-sm text-tertiary text-center py-2">No groups available</p>}
+              </div>
+            </div>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="checkbox" checked={sendInvite} onChange={e => setSendInvite(e.target.checked)} className="rounded" />
+              <span>Send password invite email after creation</span>
+            </label>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit">Create User</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 

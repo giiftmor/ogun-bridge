@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Activity, Users, AlertCircle, CheckCircle2, Clock, RefreshCw, Zap, Timer } from 'lucide-react'
+import { Activity, Users, AlertCircle, CheckCircle2, Clock, RefreshCw, Zap, Timer, XCircle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -175,7 +175,7 @@ export function Dashboard() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {['authentik', 'ldap', 'database', 'smtp'].map(service => {
                 const svc = health.services?.[service] || health.metrics
-                const isUp = svc?.status === 'up' || svc?.status === 'healthy'
+                const isUp = svc?.status === 'up' || svc?.status === 'healthy' || svc?.connected === true
                 return (
                   <ServiceIndicator key={service} name={service} status={svc?.status} latency={svc?.latency} isUp={isUp} />
                 )
@@ -403,7 +403,7 @@ function ServiceIndicator({ name, status, latency, isUp }) {
   return (
     <div className={`p-3 border border-border rounded-sm text-center ${isUp ? 'bg-success-bg' : 'bg-danger-bg'}`}>
       <div className={`text-lg font-medium ${isUp ? 'text-success-text' : 'text-danger-text'}`}>
-        {isUp ? '\u2705' : '\u274c'}
+        {isUp ? <CheckCircle2 className="h-5 w-5" /> : <XCircle className="h-5 w-5" />}
       </div>
       <p className="text-[13px] font-medium text-primary capitalize mt-1">{name}</p>
       {latency && <p className="text-[12px] text-secondary">{latency}ms</p>}

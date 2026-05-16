@@ -69,6 +69,12 @@ export async function getAuditLogs(filters = {}) {
       paramCount++
     }
 
+    if (filters.search) {
+      query += ` AND (entity_id ILIKE $${paramCount} OR actor ILIKE $${paramCount + 1})`
+      params.push(`%${filters.search}%`, `%${filters.search}%`)
+      paramCount += 2
+    }
+
     query += ' ORDER BY timestamp DESC'
 
     if (filters.limit) {

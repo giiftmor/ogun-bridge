@@ -1,14 +1,15 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   User, Key, Users, Shield, Clock, Mail,
   CheckCircle, XCircle, ExternalLink, Copy, Loader2, RefreshCw,
-  Terminal, Search, Plus, Server, Play, Cloud, Network,
+  Terminal, Search, Plus, Server, Play, Cloud, Network, Edit3, Trash2, X,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
+import { Label } from '@/components/ui/label'
 import { SkeletonCard } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
@@ -27,6 +28,11 @@ export function UserDetail({ username: initialUsername, isOwnProfile = false }) 
   const [verifyResult, setVerifyResult] = useState(null)
   const [showAddService, setShowAddService] = useState(false)
   const [selectedService, setSelectedService] = useState('')
+  const [editingUser, setEditingUser] = useState(false)
+  const [editName, setEditName] = useState('')
+  const [editEmail, setEditEmail] = useState('')
+  const [showAddGroup, setShowAddGroup] = useState(false)
+  const [selectedGroupPk, setSelectedGroupPk] = useState('')
   const queryClient = useQueryClient()
 
   const { data: profile, isLoading } = useQuery({
@@ -85,6 +91,18 @@ export function UserDetail({ username: initialUsername, isOwnProfile = false }) 
     onError: (error) => toast.error(translateError(error).message),
   })
 
+  const updateUserMutation = useMutation({
+    mutationFn: ({ id, data }) => apiClient.updateUser(id, data),
+    onSuccess: () => { toast.success('User updated'); setEditingUser(false); queryClient.invalidateQueries(['user-profile', username]) },
+    onError: (err) => toast.error(err.message),
+  })
+
+  const deleteUserMutation = useMutation({
+    mutationFn: (id) => apiClient.deleteUser(id),
+    onSuccess: () => { toast.success('User deleted'); window.location.href = '/users' },
+    onError: (err) => toast.error(err.message),
+  })
+
   const addUserToGroupMutation = useMutation({
     mutationFn: ({ uname, groupName }) => apiClient.addUserToGroup(uname, groupName),
     onSuccess: (data) => {
@@ -95,6 +113,24 @@ export function UserDetail({ username: initialUsername, isOwnProfile = false }) 
       queryClient.invalidateQueries(['user-profile', username])
     },
     onError: (error) => toast.error(error.message),
+  })
+
+  const { data: userGroupData } = useQuery({
+    queryKey: ['user-groups-management', username],
+    queryFn: () => apiClient.getUserGroups(username),
+    enabled: !!username,
+  })
+
+  const addGroupMutation = useMutation({
+    mutationFn: ({ uname, groupPk }) => apiClient.addUserToGroupByPk(uname, groupPk),
+    onSuccess: () => { toast.success('Added to group'); setShowAddGroup(false); setSelectedGroupPk(''); queryClient.invalidateQueries(['user-groups-management', username]); queryClient.invalidateQueries(['user-profile', username]) },
+    onError: (err) => toast.error(err.message),
+  })
+
+  const removeGroupMutation = useMutation({
+    mutationFn: ({ uname, groupId }) => apiClient.removeUserFromGroupByPk(uname, groupId),
+    onSuccess: () => { toast.success('Removed from group'); queryClient.invalidateQueries(['user-groups-management', username]); queryClient.invalidateQueries(['user-profile', username]) },
+    onError: (err) => toast.error(err.message),
   })
 
   const verifyMutation = useMutation({
@@ -144,15 +180,49 @@ export function UserDetail({ username: initialUsername, isOwnProfile = false }) 
         <TabsContent value="profile" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-3">
-                <User className="h-6 w-6 text-primary" />
-                <span>{profile?.name || username}</span>
-                <Badge variant={profile?.password?.hasPassword ? 'default' : 'secondary'} className="ml-auto">
-                  {profile?.password?.hasPassword ? 'Active' : 'No Password'}
-                </Badge>
+              <CardTitle className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <User className="h-6 w-6 text-primary" />
+                  <span>{profile?.name || username}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {!isOwnProfile && !editingUser && (
+                    <>
+                      <Button variant="outline" size="sm" onClick={() => { setEditingUser(true); setEditName(profile?.name || username); setEditEmail(profile?.email || '') }}>
+                        <Edit3 className="h-3.5 w-3.5 mr-1" />Edit
+                      </Button>
+                      <Button variant="destructive" size="sm" onClick={() => setConfirmDialog({
+                        open: true, title: 'Delete User',
+                        description: `Permanently delete ${username}? This cannot be undone.`,
+                        onConfirm: () => deleteUserMutation.mutate(profile?.authentik?.pk),
+                      })}>
+                        <Trash2 className="h-3.5 w-3.5 mr-1" />Delete
+                      </Button>
+                    </>
+                  )}
+                  <Badge variant={profile?.password?.hasPassword ? 'default' : 'secondary'}>
+                    {profile?.password?.hasPassword ? 'Active' : 'No Password'}
+                  </Badge>
+                </div>
               </CardTitle>
             </CardHeader>
             <CardContent>
+              {editingUser ? (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="detailEditName">Name</Label>
+                    <Input id="detailEditName" value={editName} onChange={e => setEditName(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="detailEditEmail">Email</Label>
+                    <Input id="detailEditEmail" value={editEmail} onChange={e => setEditEmail(e.target.value)} />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => updateUserMutation.mutate({ id: profile?.authentik?.pk, data: { name: editName, email: editEmail } })}>Save</Button>
+                    <Button variant="outline" size="sm" onClick={() => setEditingUser(false)}>Cancel</Button>
+                  </div>
+                </div>
+              ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-3">
                   <DetailRow label="Username" value={profile?.username} />
@@ -177,11 +247,77 @@ export function UserDetail({ username: initialUsername, isOwnProfile = false }) 
                   } />
                 </div>
               </div>
-              {profile?.groups?.length > 0 && (
+              )}
+              {((profile?.directGroups?.length > 0) || (profile?.inheritedGroups?.length > 0)) && (
                 <div className="mt-6 pt-6 border-t">
-                  <p className="text-sm font-medium mb-3">Groups</p>
-                  <div className="flex flex-wrap gap-2">
-                    {profile.groups.map(group => <Badge key={group} variant="ghost">{group}</Badge>)}
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-sm font-medium">Group Memberships</p>
+                    {!isOwnProfile && (
+                      <Button variant="outline" size="sm" onClick={() => setShowAddGroup(true)}>
+                        <Plus className="h-3.5 w-3.5 mr-1" />Add to Group
+                      </Button>
+                    )}
+                  </div>
+                  <div className="space-y-3">
+                    {profile?.directGroups?.length > 0 && (
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1.5">Direct Groups</p>
+                        <div className="flex flex-wrap gap-2">
+                          {profile.directGroups.map(group => (
+                            <span key={group} className="inline-flex items-center gap-1">
+                              <Badge variant="secondary">{group}</Badge>
+                              {!isOwnProfile && (
+                                <button
+                                  onClick={() => {
+                                    const g = userGroupData?.userGroups?.find(ug => ug.name === group)
+                                    if (g) removeGroupMutation.mutate({ uname: username, groupId: g.pk })
+                                  }}
+                                  className="text-destructive hover:text-destructive/80 text-xs"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {profile?.inheritedGroups?.length > 0 && (
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1.5">Inherited (via parent)</p>
+                        <div className="flex flex-wrap gap-2">
+                          {profile.inheritedGroups.map(g => (
+                            <Badge key={g.pk} variant="ghost" className="border border-dashed">{g.name}</Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Add Group Dialog */}
+              {showAddGroup && (
+                <div className="mt-4 pt-4 border-t space-y-3">
+                  <p className="text-sm font-medium">Select a group to add {username} to:</p>
+                  <Select value={selectedGroupPk} onValueChange={setSelectedGroupPk}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose a group..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {userGroupData?.availableGroups?.map(g => (
+                        <SelectItem key={g.pk} value={g.pk.toString()}>{g.name}</SelectItem>
+                      ))}
+                      {(!userGroupData?.availableGroups || userGroupData.availableGroups.length === 0) && (
+                        <SelectItem value="__none__" disabled>No groups available</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => addGroupMutation.mutate({ uname: username, groupPk: parseInt(selectedGroupPk) })} disabled={!selectedGroupPk}>
+                      Add
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => { setShowAddGroup(false); setSelectedGroupPk('') }}>Cancel</Button>
                   </div>
                 </div>
               )}
@@ -334,6 +470,14 @@ export function UserDetail({ username: initialUsername, isOwnProfile = false }) 
                             <Button variant="ghost" size="sm" onClick={() => copyToClipboard(service.url)}>
                               <Copy className="h-3 w-3" />
                             </Button>
+                          </div>
+                        )}
+                        {service.groups && service.groups.length > 0 && (
+                          <div className="mt-3 pt-3 border-t">
+                            <p className="text-xs text-muted-foreground mb-1.5">Access via:</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {service.groups.map(g => <Badge key={g} variant="outline" className="text-[10px]">{g}</Badge>)}
+                            </div>
                           </div>
                         )}
                       </div>
