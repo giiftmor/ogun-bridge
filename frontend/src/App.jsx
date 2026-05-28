@@ -28,6 +28,7 @@ const CreatePassword = lazy(() => import('./pages/CreatePassword').then(m => ({ 
 const OperationsCenter = lazy(() => import('./pages/OperationsCenter').then(m => ({ default: m.OperationsCenter })))
 const SyncManager = lazy(() => import('./pages/SyncManager').then(m => ({ default: m.SyncManager })))
 const Setup = lazy(() => import('./pages/Setup').then(m => ({ default: m.Setup })))
+const RoleManagement = lazy(() => import('./pages/RoleManagement').then(m => ({ default: m.RoleManagement })))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -144,6 +145,7 @@ export function App() {
               <Route path="schema" element={<SchemaMapper />} />
               <Route path="sync-manager" element={<SyncManager />} />
               <Route path="versions" element={<VersionHistory />} />
+              <Route path="roles" element={<RoleManagement />} />
               <Route path="groups-manager" element={<Navigate to="/services" replace />} />
             </Route>
 
