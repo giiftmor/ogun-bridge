@@ -30,6 +30,7 @@ import { mailAdminRouter } from './routes/mailAdmin.js'
 import { inviteRouter } from './routes/invite.js'
 import { authRouter } from './routes/auth.js'
 import { authorizeRouter } from './routes/authorize.js'
+import { rbacRouter } from './routes/rbac.js'
 import { versionRouter } from './routes/versions.js'
 import { searchRouter } from './routes/search.js'
 import { operationsRouter } from './routes/operations.js'
@@ -168,6 +169,7 @@ function setupFullRoutes() {
   app.use('/api/invite', inviteRouter)
   app.use('/api/auth', authRouter)
   app.use('/api/authorize', authorizeRouter)
+  app.use('/api/rbac', rbacRouter)
   app.use('/api/versions', versionRouter)
   app.use('/api/search', searchRouter)
   app.use('/api/onboarding', onboardingRouter)

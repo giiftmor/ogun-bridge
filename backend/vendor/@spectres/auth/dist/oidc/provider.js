@@ -245,6 +245,7 @@ export function createProvider(options) {
           email: user.email,
           accessToken,
           role: user.role,
+          groups: user.groups,
         });
       } catch (err) {
         console.error('[OIDC] onAuthorize hook failed', err);

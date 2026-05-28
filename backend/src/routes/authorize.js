@@ -1,7 +1,6 @@
 import express from 'express'
-import { pool } from '../lib/db.js'
 import { requireAppApiKey } from '../middleware/apikey.js'
-import { resolveRoleForApp } from '../services/authorizer.js'
+import { resolveRole } from '../services/authorizer.js'
 import { logger } from '../utils/logger.js'
 
 export const authorizeRouter = express.Router()
@@ -9,52 +8,24 @@ export const authorizeRouter = express.Router()
 // ── Service-to-service endpoint (called by apps after OIDC login) ──────
 authorizeRouter.post('/', requireAppApiKey, async (req, res) => {
   try {
-    const { appSlug, user, accessToken, requiredRole } = req.body
+    const { appSlug, user, groups } = req.body
 
-    if (!user?.sub || !user?.email) {
-      return res.status(400).json({ error: 'user.sub and user.email are required' })
+    if (!user?.sub || !user?.email || !appSlug) {
+      return res.status(400).json({ error: 'appSlug, user.sub, and user.email are required' })
     }
 
-    let app = req.app // set by requireAppApiKey middleware
+    const resolved = await resolveRole(user.sub, user.email, groups || [], appSlug)
 
-    // Override app if slug doesn't match (allow slug in body too)
-    if (appSlug && appSlug !== app.slug) {
-      const appMatch = await pool.query('SELECT * FROM apps WHERE slug = $1', [appSlug])
-      if (appMatch.rows.length === 0) {
-        return res.status(404).json({ error: 'App not found' })
-      }
-      if (appMatch.rows[0].api_key !== req.headers['x-api-key']) {
-        return res.status(403).json({ error: 'API key does not match requested app' })
-      }
-      app = appMatch.rows[0]
+    if (resolved.error) {
+      return res.status(404).json(resolved)
     }
-
-    const resolved = await resolveRoleForApp(
-      app.id,
-      user.sub,
-      app.claim_name,
-      accessToken || null
-    )
-
-    let authorized = true
-    if (requiredRole) {
-      const userRoles = resolved.baseRole.toLowerCase().split(',').map(r => r.trim())
-      const required = requiredRole.toLowerCase().split(',').map(r => r.trim())
-      authorized = required.some(r => userRoles.includes(r))
-    }
-
-    // Get or create app_users id
-    const userRecord = await pool.query(
-      'SELECT id FROM app_users WHERE app_id = $1 AND oidc_sub = $2',
-      [app.id, user.sub]
-    )
-    const userId = userRecord.rows[0]?.id || null
 
     return res.json({
-      authorized,
-      userId,
-      role: resolved.baseRole,
-      businessRole: resolved.businessRole,
+      authorized: true,
+      roleDefinition: resolved.roleDefinition,
+      permissions: resolved.permissions,
+      matchedGroup: resolved.matchedGroup,
+      source: resolved.source,
     })
   } catch (error) {
     logger.error('Authorize error', { error: error.message })

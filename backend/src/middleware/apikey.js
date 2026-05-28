@@ -9,12 +9,15 @@ export async function requireAppApiKey(req, res, next) {
 
   try {
     const result = await pool.query(
-      'SELECT id, name, slug, claim_name, role_mapping FROM apps WHERE api_key = $1',
+      'SELECT id, name, slug, claim_name, role_mapping, is_active FROM apps WHERE api_key = $1',
       [apiKey]
     )
     if (result.rows.length === 0) {
       logger.warn('[SECURITY] Invalid API key attempt', { ip: req.ip, userAgent: req.headers['user-agent'] })
       return res.status(401).json({ error: 'Invalid API key' })
+    }
+    if (!result.rows[0].is_active) {
+      return res.status(403).json({ error: 'App is inactive' })
     }
 
     req.app = result.rows[0]
@@ -27,7 +30,11 @@ export async function requireAppApiKey(req, res, next) {
 
 export async function requireSuperAdmin(req, res, next) {
   const user = req.session?.user
-  if (!user || user.role !== 'super_admin') {
+  if (!user) {
+    return res.status(401).json({ error: 'Authentication required' })
+  }
+  const isSuperAdmin = user.role === 'super_admin' || user.roleDefinition?.name === 'super_admin'
+  if (!isSuperAdmin) {
     return res.status(403).json({ error: 'Super admin access required' })
   }
   next()

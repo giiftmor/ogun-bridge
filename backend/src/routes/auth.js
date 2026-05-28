@@ -21,7 +21,7 @@ authRouter.get('/login', (req, res) => {
 authRouter.get('/callback', async (req, res) => {
   try {
     await auth.callbackHandler(req, res, {
-      onAuthorize: async ({ sub, email, accessToken, role }) => {
+      onAuthorize: async ({ sub, email, accessToken, role, groups }) => {
         try {
           const apiKey = process.env.OGUN_BRIDGE_API_KEY
           if (!apiKey) return
@@ -32,8 +32,9 @@ authRouter.get('/callback', async (req, res) => {
               'X-Api-Key': apiKey,
             },
             body: JSON.stringify({
+              appSlug: 'ogun',
               user: { sub, email },
-              accessToken,
+              groups,
             }),
           })
           if (resp.ok) {
@@ -42,8 +43,9 @@ authRouter.get('/callback', async (req, res) => {
             if (current) {
               const newSession = {
                 ...current,
-                ogunRole: data.role,
-                businessRole: data.businessRole || null,
+                roleDefinition: data.roleDefinition,
+                permissions: data.permissions,
+                matchedGroup: data.matchedGroup,
               }
               session.createSession(res, newSession)
             }
@@ -82,8 +84,11 @@ authRouter.get('/me', async (req, res) => {
         id: user.id,
         username: user.username,
         email: user.email,
-        role: user.role,
+        role: userSession.roleDefinition?.name || user.role,
+        roleDefinition: userSession.roleDefinition || null,
+        permissions: userSession.permissions || {},
         groups: userSession.groups || [],
+        matchedGroup: userSession.matchedGroup || null,
       })
     }
 
