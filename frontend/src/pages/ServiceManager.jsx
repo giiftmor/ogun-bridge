@@ -89,6 +89,23 @@ export function ServiceManager() {
     onError: (error) => toast.error(error.message),
   })
 
+  const { data: rbacMappings = [] } = useQuery({
+    queryKey: ['rbac-mappings-all'],
+    queryFn: async () => {
+      const apps = await apiClient.getRbacApps()
+      const all = []
+      for (const app of apps) {
+        try {
+          const maps = await apiClient.getRbacMappings(app.slug)
+          all.push(...maps.map(m => ({ ...m, appName: app.name })))
+        } catch {
+          // app might not have mappings yet
+        }
+      }
+      return all
+    },
+  })
+
   const filteredServices = allServices.filter(s =>
     s.service_name?.toLowerCase().includes(searchQuery.toLowerCase())
   )
@@ -249,6 +266,10 @@ export function ServiceManager() {
                           <div className="flex items-center gap-2">
                             <CheckCircle className="h-4 w-4 text-green-500" />
                             <span className="font-medium">{groupName}</span>
+                            {(() => {
+                              const mapping = rbacMappings.find(m => m.authentik_group?.toLowerCase() === groupName?.toLowerCase())
+                              return mapping ? <Badge variant="default" className="text-[10px]">{mapping.role_name}</Badge> : null
+                            })()}
                           </div>
                           <Button
                             variant="ghost" size="icon"

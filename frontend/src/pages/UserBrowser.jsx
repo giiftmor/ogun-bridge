@@ -78,6 +78,11 @@ export function UserBrowser() {
     queryFn: () => apiClient.getServicesList(),
   })
 
+  const { data: rbacUsers = [] } = useQuery({
+    queryKey: ['rbac-users-ogun'],
+    queryFn: () => apiClient.getRbacUsers('ogun'),
+  })
+
   // const { data: auditLogs = [] } = useQuery({
   //   queryKey: ['user-audit', selectedUser?.username],
   //   queryFn: () => apiClient.getAuditLogs({ username: selectedUser.username, limit: 50 }),
@@ -371,6 +376,22 @@ export function UserBrowser() {
                           } />
                           <DetailRow label="Last Login" value={
                             profile?.lastLogin ? new Date(profile.lastLogin).toLocaleDateString() : 'N/A'
+                          } />
+                          <DetailRow label="Role" value={
+                            (() => {
+                              const rbacEntry = rbacUsers.find(u => u.email === profile?.email || u.oidc_sub === profile?.sub)
+                              if (!rbacEntry) return '—'
+                              return (
+                                <div className="flex items-center gap-1.5">
+                                  <Badge variant="default">{rbacEntry.role_name || 'viewer'}</Badge>
+                                  {rbacEntry.matchedGroup && (
+                                    <span className="text-[11px] text-tertiary" title={`Matched via group: ${rbacEntry.matchedGroup}`}>
+                                      via {rbacEntry.matchedGroup}
+                                    </span>
+                                  )}
+                                </div>
+                              )
+                            })()
                           } />
                         </div>
                       </div>
