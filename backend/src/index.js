@@ -29,13 +29,15 @@ import { mailRouter } from './routes/mail.js'
 import { mailAdminRouter } from './routes/mailAdmin.js'
 import { inviteRouter } from './routes/invite.js'
 import { authRouter } from './routes/auth.js'
+import { authorizeRouter } from './routes/authorize.js'
 import { versionRouter } from './routes/versions.js'
 import { searchRouter } from './routes/search.js'
 import { operationsRouter } from './routes/operations.js'
 import { onboardingRouter } from './routes/onboarding.js'
 import { setupRouter } from './routes/setup.js'
+import { adminRouter } from './routes/admin.js'
 import { setupWebSocket } from './services/websocket.js'
-import { cleanupExpiredSessions } from './middleware/auth.js'
+
 import { addLogToCache } from './services/logCache.js'
 import { startSyncService, stopSyncService } from './services/syncService.js'
 import { logger } from './utils/logger.js'
@@ -65,24 +67,6 @@ const globalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later' },
-})
-
-// Auth route rate limiter (more aggressive)
-const authLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many authentication attempts, please try again later' },
-})
-
-// Password reset rate limiter
-const passwordResetLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 3,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many password reset attempts, please try again later' },
 })
 
 // Request ID middleware
@@ -122,16 +106,8 @@ app.use((req, res, next) => {
 // Apply global rate limiter to all API routes
 app.use('/api/', globalLimiter)
 
-// Apply aggressive rate limiters to auth routes
-app.use('/api/auth/login', authLimiter)
-app.use('/api/auth/forgot-password', passwordResetLimiter)
-app.use('/api/auth/resend-reset-token', passwordResetLimiter)
-
 // WebSocket setup
 setupWebSocket(io)
-
-// Session cleanup - run every hour
-setInterval(cleanupExpiredSessions, 60 * 60 * 1000)
 
 // Error handling
 app.use((err, req, res, next) => {
@@ -174,6 +150,7 @@ function setupFullRoutes() {
     })
   })
   app.use('/api/health', healthRouter)
+  app.use('/api/setup', setupRouter)
   app.use('/api/dashboard', dashboardRouter)
   app.use('/api/users', usersRouter)
   app.use('/api/groups', groupsRouter)
@@ -190,10 +167,12 @@ function setupFullRoutes() {
   app.use('/api/mail/admin', mailAdminRouter)
   app.use('/api/invite', inviteRouter)
   app.use('/api/auth', authRouter)
+  app.use('/api/authorize', authorizeRouter)
   app.use('/api/versions', versionRouter)
   app.use('/api/search', searchRouter)
   app.use('/api/onboarding', onboardingRouter)
   app.use('/api/operations', operationsRouter)
+  app.use('/api/admin', adminRouter)
 }
 
 // Limited Routes (God-mode only - NO sync, NO auth)
@@ -297,30 +276,26 @@ async function startServer() {
     }
 
     // 4. Health check critical services (BEFORE HTTP server starts)
-    // SMTP is optional - don't fail god-mode if SMTP is down
     const { verifyEnvVars } = await import('./services/config.js')
     const health = await verifyEnvVars()
     
-    // Only DB, LDAP, Authentik are required for full mode
-    const criticalHealthy = health.db && health.ldap && health.authentik
+    const criticalHealthy = health.db && health.oidc
     
     if (!criticalHealthy) {
       logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
       logger.error('🚨 GOD-MODE ACTIVE')
       logger.error('🚨 Reasons:')
       if (!health.db) logger.error('🚨   - Database connection failed')
-      if (!health.ldap) logger.error('🚨   - LDAP connection failed')
-      if (!health.authentik) logger.error('🚨   - Authentik connection failed')
+      if (!health.oidc) logger.error('🚨   - Authentik OIDC not configured')
       logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
       logger.info('Visit /god-mode to fix configurations')
       if (!health.smtp) logger.info('ℹ️  SMTP is optional but currently unavailable')
       
-      // Start LIMITED server (frontend + /api/setup/* only)
       await startLimitedServer()
       return
     }
 
-    // 5. All critical services healthy → auto-disable god-mode
+    // 5. All critical services healthy → auto-disable setup
     logger.info('✅ All critical services healthy! Auto-completing setup...')
     if (health.smtp) {
       logger.info('✅ SMTP also available!')
@@ -350,6 +325,10 @@ function validateRequiredEnv() {
     { var: 'DB_NAME', name: 'DB_NAME' },
     { var: 'DB_USER', name: 'DB_USER' },
     { var: 'DB_PASSWORD', name: 'DB_PASSWORD' },
+    { var: 'AUTHENTIK_OIDC_ISSUER', name: 'AUTHENTIK_OIDC_ISSUER' },
+    { var: 'AUTHENTIK_CLIENT_ID', name: 'AUTHENTIK_CLIENT_ID' },
+    { var: 'AUTHENTIK_CLIENT_SECRET', name: 'AUTHENTIK_CLIENT_SECRET' },
+    { var: 'SESSION_SECRET', name: 'SESSION_SECRET' },
   ]
 
   const missing = required.filter(r => !process.env[r.var])
