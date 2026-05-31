@@ -44,7 +44,7 @@ import { startSyncService, stopSyncService } from './services/syncService.js'
 import { logger } from './utils/logger.js'
 import { initializeDatabase } from './lib/db.js'
 import { markSetupComplete, createSuperAdminIfNeeded } from './services/config.js'
-import { authenticate } from './middleware/auth.js'
+import { authenticate, cleanupExpiredSessions } from './middleware/auth.js'
 
 const app = express()
 app.set('trust proxy', 1)
@@ -213,6 +213,17 @@ function startFullServer() {
     
     await startSyncService(io)
     logger.info('Full server started - all services operational')
+
+    const SESSION_CLEANUP_INTERVAL = 60 * 60 * 1000
+    setInterval(() => {
+      cleanupExpiredSessions().catch(err => {
+        logger.error('Session cleanup failed:', err)
+      })
+    }, SESSION_CLEANUP_INTERVAL)
+
+    cleanupExpiredSessions().catch(err => {
+      logger.error('Initial session cleanup failed:', err)
+    })
   })
 }
 
