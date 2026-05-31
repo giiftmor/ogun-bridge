@@ -1,6 +1,7 @@
 import express from 'express'
 import { pool } from '../lib/db.js'
-import { requireSuperAdmin, requireAppApiKey } from '../middleware/apikey.js'
+import { requireAppApiKey } from '../middleware/apikey.js'
+import { requireSuperAdmin } from '../middleware/auth.js'
 import { resolveRole, checkPermission, getAuthentikGroups, syncUsersForApp } from '../services/authorizer.js'
 import { logger } from '../utils/logger.js'
 

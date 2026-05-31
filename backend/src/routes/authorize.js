@@ -1,31 +1,52 @@
 import express from 'express'
+import { pool } from '../lib/db.js'
 import { requireAppApiKey } from '../middleware/apikey.js'
 import { resolveRole } from '../services/authorizer.js'
 import { logger } from '../utils/logger.js'
 
+import { authenticate } from '../middleware/auth.js'
+
 export const authorizeRouter = express.Router()
 
-// ── Service-to-service endpoint (called by apps after OIDC login) ──────
 authorizeRouter.post('/', requireAppApiKey, async (req, res) => {
   try {
     const { appSlug, user, groups } = req.body
 
-    if (!user?.sub || !user?.email || !appSlug) {
-      return res.status(400).json({ error: 'appSlug, user.sub, and user.email are required' })
+    if (!user?.sub || !appSlug) {
+      return res.status(400).json({ error: 'user.sub and appSlug are required' })
     }
 
-    const resolved = await resolveRole(user.sub, user.email, groups || [], appSlug)
+    let app = req.app
+
+    if (appSlug && appSlug !== app.slug) {
+      const appMatch = await pool.query('SELECT * FROM apps WHERE slug = $1', [appSlug])
+      if (appMatch.rows.length === 0) {
+        return res.status(404).json({ error: 'App not found' })
+      }
+      if (appMatch.rows[0].api_key !== req.headers['x-api-key']) {
+        return res.status(403).json({ error: 'API key does not match requested app' })
+      }
+      app = appMatch.rows[0]
+    }
+
+    const resolved = await resolveRole(user.sub, user.email || '', groups || [], appSlug)
 
     if (resolved.error) {
-      return res.status(404).json(resolved)
+      return res.status(400).json(resolved)
     }
 
+    const userRecord = await pool.query(
+      'SELECT id FROM app_users WHERE app_id = $1 AND oidc_sub = $2',
+      [app.id, user.sub]
+    )
+    const userId = userRecord.rows[0]?.id || null
+
     return res.json({
-      authorized: true,
+      authorized: resolved.authorized,
+      userId,
       roleDefinition: resolved.roleDefinition,
-      permissions: resolved.permissions,
-      matchedGroup: resolved.matchedGroup,
-      source: resolved.source,
+      permissions: resolved.permissions || {},
+      matchedGroup: resolved.matchedGroup || null,
     })
   } catch (error) {
     logger.error('Authorize error', { error: error.message })
@@ -33,10 +54,9 @@ authorizeRouter.post('/', requireAppApiKey, async (req, res) => {
   }
 })
 
-// ── Existing GET /authorize (session-based, for Ogun-Bridge's own use) ──
-authorizeRouter.get('/', async (req, res) => {
+authorizeRouter.get('/', authenticate, async (req, res) => {
   try {
-    const user = req.session?.user
+    const user = req.user
 
     if (!user) {
       return res.status(401).json({
@@ -48,7 +68,8 @@ authorizeRouter.get('/', async (req, res) => {
     const requiredRole = req.query.required_role
     let authorized = true
     if (requiredRole) {
-      const userRoles = (user.role || '').toLowerCase().split(',').map(r => r.trim())
+      const userRole = user.roleDefinition?.name || user.role || ''
+      const userRoles = userRole.toLowerCase().split(',').map(r => r.trim()).filter(Boolean)
       const required = requiredRole.toLowerCase().split(',').map(r => r.trim())
       authorized = required.some(r => userRoles.includes(r))
     }
@@ -60,7 +81,9 @@ authorizeRouter.get('/', async (req, res) => {
         id: user.id,
         username: user.username || user.name,
         email: user.email,
-        role: user.role,
+        role: user.roleDefinition?.name || user.role,
+        roleDefinition: user.roleDefinition || null,
+        permissions: user.permissions || {},
         groups: user.groups || [],
       },
       ...(requiredRole ? { required_role: requiredRole } : {}),

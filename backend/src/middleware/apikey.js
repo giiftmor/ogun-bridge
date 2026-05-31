@@ -28,14 +28,4 @@ export async function requireAppApiKey(req, res, next) {
   }
 }
 
-export async function requireSuperAdmin(req, res, next) {
-  const user = req.session?.user
-  if (!user) {
-    return res.status(401).json({ error: 'Authentication required' })
-  }
-  const isSuperAdmin = user.role === 'super_admin' || user.roleDefinition?.name === 'super_admin'
-  if (!isSuperAdmin) {
-    return res.status(403).json({ error: 'Super admin access required' })
-  }
-  next()
-}
+

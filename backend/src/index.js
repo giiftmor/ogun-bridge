@@ -44,6 +44,7 @@ import { startSyncService, stopSyncService } from './services/syncService.js'
 import { logger } from './utils/logger.js'
 import { initializeDatabase } from './lib/db.js'
 import { markSetupComplete, createSuperAdminIfNeeded } from './services/config.js'
+import { authenticate } from './middleware/auth.js'
 
 const app = express()
 app.set('trust proxy', 1)
@@ -169,12 +170,12 @@ function setupFullRoutes() {
   app.use('/api/invite', inviteRouter)
   app.use('/api/auth', authRouter)
   app.use('/api/authorize', authorizeRouter)
-  app.use('/api/rbac', rbacRouter)
+  app.use('/api/rbac', authenticate, rbacRouter)
   app.use('/api/versions', versionRouter)
   app.use('/api/search', searchRouter)
   app.use('/api/onboarding', onboardingRouter)
   app.use('/api/operations', operationsRouter)
-  app.use('/api/admin', adminRouter)
+  app.use('/api/admin', authenticate, adminRouter)
 }
 
 // Limited Routes (God-mode only - NO sync, NO auth)
@@ -281,14 +282,14 @@ async function startServer() {
     const { verifyEnvVars } = await import('./services/config.js')
     const health = await verifyEnvVars()
     
-    const criticalHealthy = health.db && health.oidc
+    const criticalHealthy = health.db && health.authentik
     
     if (!criticalHealthy) {
       logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
       logger.error('🚨 GOD-MODE ACTIVE')
       logger.error('🚨 Reasons:')
       if (!health.db) logger.error('🚨   - Database connection failed')
-      if (!health.oidc) logger.error('🚨   - Authentik OIDC not configured')
+      if (!health.authentik) logger.error('🚨   - Authentik OIDC not configured')
       logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
       logger.info('Visit /god-mode to fix configurations')
       if (!health.smtp) logger.info('ℹ️  SMTP is optional but currently unavailable')

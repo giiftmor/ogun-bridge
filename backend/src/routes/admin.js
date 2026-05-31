@@ -1,6 +1,6 @@
 import express from 'express'
 import { pool } from '../lib/db.js'
-import { requireSuperAdmin } from '../middleware/apikey.js'
+import { requireSuperAdmin } from '../middleware/auth.js'
 import { logger } from '../utils/logger.js'
 
 export const adminRouter = express.Router()
