@@ -75,7 +75,7 @@ rbacRouter.post('/roles/:appSlug', requireSuperAdmin, async (req, res) => {
       INSERT INTO role_definitions (app_slug, name, display_name, description, base_role, is_default, updated_by)
       VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING id, name, display_name, is_default, is_active
-    `, [appSlug, name, display_name || name, description || null, base_role || 'viewer', is_default || false, req.session?.user?.username || 'system'])
+    `, [appSlug, name, display_name || name, description || null, base_role || 'viewer', is_default || false, req.user?.username || 'system'])
 
     if (is_default) {
       await pool.query('UPDATE role_definitions SET is_default = false WHERE app_slug = $1 AND id != $2', [appSlug, result.rows[0].id])
@@ -107,7 +107,7 @@ rbacRouter.put('/roles/:id', requireSuperAdmin, async (req, res) => {
           updated_by = $7
       WHERE id = $8
       RETURNING id, name, display_name, is_default, is_active
-    `, [name || null, display_name || null, description !== undefined ? description : null, base_role || null, is_default !== undefined ? is_default : null, is_active !== undefined ? is_active : null, req.session?.user?.username || 'system', id])
+    `, [name || null, display_name || null, description !== undefined ? description : null, base_role || null, is_default !== undefined ? is_default : null, is_active !== undefined ? is_active : null, req.user?.username || 'system', id])
 
     if (result.rows.length === 0) return res.status(404).json({ error: 'Role not found' })
 
@@ -219,7 +219,7 @@ rbacRouter.post('/mappings/:appSlug', requireSuperAdmin, async (req, res) => {
       INSERT INTO group_role_mappings (app_slug, authentik_group, role_definition_id, priority, is_active, updated_by)
       VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING id, authentik_group, priority, is_active
-    `, [appSlug, authentik_group, role_definition_id, priority || 0, is_active !== false, req.session?.user?.username || 'system'])
+    `, [appSlug, authentik_group, role_definition_id, priority || 0, is_active !== false, req.user?.username || 'system'])
 
     logger.info('Mapping created', { appSlug, group: authentik_group })
     return res.status(201).json(result.rows[0])
@@ -245,7 +245,7 @@ rbacRouter.put('/mappings/:id', requireSuperAdmin, async (req, res) => {
           updated_by = $5
       WHERE id = $6
       RETURNING id, authentik_group, priority, is_active
-    `, [authentik_group || null, role_definition_id || null, priority !== undefined ? priority : null, is_active !== undefined ? is_active : null, req.session?.user?.username || 'system', id])
+    `, [authentik_group || null, role_definition_id || null, priority !== undefined ? priority : null, is_active !== undefined ? is_active : null, req.user?.username || 'system', id])
 
     if (result.rows.length === 0) return res.status(404).json({ error: 'Mapping not found' })
     return res.json(result.rows[0])
