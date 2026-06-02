@@ -736,6 +736,8 @@ class ApiClient {
   }
 
   // RBAC endpoints
+  
+  async createRbacApp(data) { return this.request('/rbac/apps', { method: 'POST', body: JSON.stringify(data) }) }
   async getRbacApps() { return this.request('/rbac/apps') }
   async getRbacApp(appSlug) { return this.request(`/rbac/apps/${appSlug}`) }
   async updateRbacApp(slug, data) { return this.request(`/rbac/apps/${slug}`, { method: 'PUT', body: JSON.stringify(data) }) }

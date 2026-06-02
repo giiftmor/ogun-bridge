@@ -46,11 +46,9 @@ export function UserBrowser() {
   const debouncedSearch = useDebounce(searchTerm, 300)
 
   useEffect(() => {
-    console.log('[UserBrowser] activeTab changed:', activeTab)
   }, [activeTab])
 
   useEffect(() => {
-    console.log('[UserBrowser] selectedUser changed:', selectedUser?.username || selectedUser?.id, selectedUser ? '→ setting activeTab=profile' : '(cleared)')
   }, [selectedUser])
 
   const { data: users, isLoading, error: usersError } = useQuery({
@@ -267,7 +265,7 @@ export function UserBrowser() {
                 {users?.map((user) => (
                   <button
                     key={user.id}
-                    onClick={() => { console.log('[UserBrowser] onClick user:', user.username, 'id:', user.id, 'setting activeTab=profile'); setSelectedUser(user); setActiveTab('profile') }}
+                    onClick={() => { setSelectedUser(user); setActiveTab('profile') }}
                     className={`w-full text-left px-4 py-3 border-b last:border-b-0 hover:bg-muted/50 transition-colors ${
                       selectedUser?.id === user.id ? 'bg-muted' : ''
                     }`}

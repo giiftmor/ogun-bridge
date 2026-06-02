@@ -16,6 +16,21 @@ function LoadingSpinner() {
   return (
     <div className="flex items-center justify-center py-12">
       <RefreshCw className="h-5 w-5 text-tertiary animate-spin" />
+
+      <Dialog open={showAddApp} onClose={() => { setShowAddApp(false); setCreatedApp(null) }}>
+        <DialogHeader>
+          <DialogTitle>Register New Application</DialogTitle>
+          <DialogDescription>{createdApp ? 'App registered successfully' : 'Add a new consumer app to the RBAC system'}</DialogDescription>
+        </DialogHeader>
+        <DialogContent>
+          <CreateAppForm
+            createdApp={createdApp}
+            onSubmit={(data) => createApp.mutate(data)}
+            onCancel={() => { setShowAddApp(false); setCreatedApp(null) }}
+            loading={createApp.isPending}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -30,6 +45,7 @@ function AppsTab() {
   const [editApp, setEditApp] = useState(null)
   const [appForm, setAppForm] = useState({})
   const [showAddApp, setShowAddApp] = useState(false)
+  const [createdApp, setCreatedApp] = useState(null)
 
   const { data: apps = [], isLoading, refetch } = useQuery({
     queryKey: ['rbac-apps'],
@@ -48,6 +64,15 @@ function AppsTab() {
 
   const queryClient = useQueryClient()
 
+  const createApp = useMutation({
+    mutationFn: (data) => apiClient.createRbacApp(data),
+    onSuccess: (data) => {
+      setCreatedApp(data)
+      queryClient.invalidateQueries({ queryKey: ['rbac-apps'] })
+    },
+    onError: (e) => toast.error(e.message),
+  })
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -55,9 +80,14 @@ function AppsTab() {
           <h2 className="text-[16px] font-medium text-primary">Registered Applications</h2>
           <p className="text-[13px] text-secondary mt-0.5">Configure which apps use Ogun Bridge for authorization</p>
         </div>
-        <Button onClick={() => refetch()} variant="ghost" size="sm">
-          <RefreshCw className="h-4 w-4 mr-2" /> Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={() => setShowAddApp(true)} size="sm">
+            <Plus className="h-4 w-4 mr-2" /> Create App
+          </Button>
+          <Button onClick={() => refetch()} variant="ghost" size="sm">
+            <RefreshCw className="h-4 w-4 mr-2" /> Refresh
+          </Button>
+        </div>
       </div>
 
       {isLoading ? <LoadingSpinner /> : (
@@ -167,6 +197,94 @@ function AppsTab() {
 
 // ── Mappings Tab ──────────────────────────────────────────────────────────
 
+
+function CreateAppForm({ createdApp, onSubmit, onCancel, loading }) {
+  const [name, setName] = useState('')
+  const [slug, setSlug] = useState('')
+  const [display_name, setDisplayName] = useState('')
+  const [claim_name, setClaimName] = useState('ogun_role')
+  const [authentik_slug, setAuthentikSlug] = useState('')
+  const [access_group, setAccessGroup] = useState('')
+  const [schema_endpoint, setSchemaEndpoint] = useState('')
+
+  if (createdApp) {
+    return (
+      <div className="space-y-3 py-2">
+        <div className="p-3 bg-accent-tint/30 border border-accent/20 rounded-sm">
+          <p className="text-[13px] font-medium text-accent mb-2">App created successfully!</p>
+          <div className="space-y-1.5 text-[12px]">
+            <div>
+              <span className="text-tertiary">API Key: </span>
+              <code className="text-primary font-mono bg-subtle px-1.5 py-0.5 rounded text-[11px] break-all select-all">{createdApp.api_key}</code>
+            </div>
+            <p className="text-warning text-[11px]">Copy this key now — it won't be shown again.</p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button onClick={onCancel}>Done</Button>
+        </DialogFooter>
+      </div>
+    )
+  }
+
+  const handleSubmit = () => {
+    const data = {
+      name,
+      slug: slug || name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+      display_name: display_name || name,
+      claim_name,
+      authentik_slug: authentik_slug || slug || name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      access_group: access_group || undefined,
+      schema_endpoint: schema_endpoint || undefined,
+    }
+    onSubmit(data)
+  }
+
+  return (
+    <div className="space-y-3 py-2">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-[12px] text-secondary">Name *</label>
+          <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. My App" />
+        </div>
+        <div>
+          <label className="text-[12px] text-secondary">Slug</label>
+          <Input value={slug} onChange={e => setSlug(e.target.value)} placeholder="auto: my-app" />
+        </div>
+      </div>
+      <div>
+        <label className="text-[12px] text-secondary">Display Name</label>
+        <Input value={display_name} onChange={e => setDisplayName(e.target.value)} placeholder="e.g. My App" />
+      </div>
+      <div>
+        <label className="text-[12px] text-secondary">OIDC Claim Name *</label>
+        <Input value={claim_name} onChange={e => setClaimName(e.target.value)} placeholder="e.g. my_app_role" />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-[12px] text-secondary">Authentik Slug</label>
+          <Input value={authentik_slug} onChange={e => setAuthentikSlug(e.target.value)} placeholder="e.g. my-app" />
+        </div>
+        <div>
+          <label className="text-[12px] text-secondary">Access Group</label>
+          <Input value={access_group} onChange={e => setAccessGroup(e.target.value)} placeholder="Authentik group name" />
+        </div>
+      </div>
+      <div>
+        <label className="text-[12px] text-secondary">Schema Endpoint</label>
+        <Input value={schema_endpoint} onChange={e => setSchemaEndpoint(e.target.value)} placeholder="https://app/api/rbac/schema" />
+      </div>
+      <DialogFooter>
+        <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+        <Button disabled={!name} onClick={handleSubmit}>
+          {loading ? 'Creating...' : 'Create App'}
+        </Button>
+      </DialogFooter>
+    </div>
+  )
+}
+
+
 function MappingsTab({ appSlug, setActiveApp }) {
   const [showCreate, setShowCreate] = useState(false)
   const [filterApp, setFilterApp] = useState(appSlug || '')
@@ -242,6 +360,7 @@ function MappingsTab({ appSlug, setActiveApp }) {
                 <th className="text-left px-4 py-2.5 font-medium text-secondary">Priority</th>
                 <th className="text-left px-4 py-2.5 font-medium text-secondary">Status</th>
                 <th className="text-right px-4 py-2.5 font-medium text-secondary">Actions</th>
+                <th className="text-right px-4 py-2.5 font-medium text-secondary">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -301,15 +420,31 @@ function MappingForm({ roles, authGroups, onSubmit, onCancel, loading }) {
   const [authentik_group, setAuthentikGroup] = useState('')
   const [role_definition_id, setRoleDefinitionId] = useState('')
   const [priority, setPriority] = useState(0)
+  const [groupSearch, setGroupSearch] = useState('')
+
+  const filteredGroups = groupSearch
+    ? authGroups.filter(g => g.name.toLowerCase().includes(groupSearch.toLowerCase()))
+    : authGroups
 
   return (
     <div className="space-y-3">
       <div>
         <label className="text-[12px] text-secondary">Authentik Group</label>
-        <Select value={authentik_group} onValueChange={setAuthentikGroup}>
-          <SelectItem value="">Select group...</SelectItem>
-          {authGroups.map(g => <SelectItem key={g.name} value={g.name}>{g.name} ({g.users} users)</SelectItem>)}
+        <div className="relative mb-2">
+          <Input
+            value={groupSearch}
+            onChange={e => setGroupSearch(e.target.value)}
+            placeholder="Search groups..."
+            className="text-[12px]"
+          />
+        </div>
+        <Select value={authentik_group} onValueChange={(v) => { setAuthentikGroup(v); setGroupSearch('') }}>
+          <SelectItem value="">Select group... ({filteredGroups.length} available)</SelectItem>
+          {filteredGroups.map(g => <SelectItem key={g.name} value={g.name}>{g.name} ({g.users} users)</SelectItem>)}
         </Select>
+        {filteredGroups.length === 0 && groupSearch && (
+          <p className="text-[11px] text-tertiary mt-1">No groups matching "{groupSearch}"</p>
+        )}
       </div>
       <div>
         <label className="text-[12px] text-secondary">Role</label>
@@ -613,8 +748,16 @@ function PermissionsBuilder({ modules, currentPerms = [], onSave, onCancel, load
 
 function UsersTab({ appSlug }) {
   const [filterApp, setFilterApp] = useState(appSlug || '')
+  const [overrideUser, setOverrideUser] = useState(null)
+  const [overrideRole, setOverrideRole] = useState('')
 
   const { data: apps = [] } = useQuery({ queryKey: ['rbac-apps'], queryFn: apiClient.getRbacApps })
+
+  const { data: roles = [] } = useQuery({
+    queryKey: ['rbac-roles', filterApp || apps[0]?.slug],
+    queryFn: () => apiClient.getRbacRoles(filterApp || apps[0]?.slug),
+    enabled: !!(filterApp || apps[0]?.slug),
+  })
 
   const { data: users = [], isLoading, refetch } = useQuery({
     queryKey: ['rbac-users', filterApp || apps[0]?.slug],
@@ -624,7 +767,18 @@ function UsersTab({ appSlug }) {
 
   const syncUsers = useMutation({
     mutationFn: () => apiClient.syncRbacUsers(filterApp || apps[0]?.slug),
-    onSuccess: (data) => { toast.success(`Synced ${data.synced} users`); refetch() },
+    onSuccess: (data) => { toast.success('Synced ' + data.synced + ' users'); refetch() },
+    onError: (e) => toast.error(e.message),
+  })
+
+  const overrideMutation = useMutation({
+    mutationFn: ({ sub, role_definition_id }) => apiClient.overrideRbacUserRole(filterApp || apps[0]?.slug, sub, role_definition_id),
+    onSuccess: () => {
+      toast.success('Role override saved')
+      setOverrideUser(null)
+      setOverrideRole('')
+      refetch()
+    },
     onError: (e) => toast.error(e.message),
   })
 
@@ -680,12 +834,51 @@ function UsersTab({ appSlug }) {
                       {u.is_active ? 'Active' : 'Inactive'}
                     </Badge>
                   </td>
+                  <td className="px-4 py-2.5 text-right">
+                    <button
+                      onClick={() => { setOverrideUser(u); setOverrideRole('') }}
+                      className="text-[12px] text-accent hover:text-accent-hover"
+                    >
+                      Override Role
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+      <Dialog open={!!overrideUser} onClose={() => { setOverrideUser(null); setOverrideRole('') }}>
+        <DialogHeader>
+          <DialogTitle>Override Role for {overrideUser?.email || overrideUser?.oidc_sub}</DialogTitle>
+          <DialogDescription>Manually assign a role to this user for the current app</DialogDescription>
+        </DialogHeader>
+        <DialogContent>
+          <div className="space-y-3 py-2">
+            <div className="text-[13px] text-secondary">
+              Current role: <Badge variant="default">{overrideUser?.role_name || 'viewer'}</Badge>
+            </div>
+            <div>
+              <label className="text-[12px] text-secondary">New Role</label>
+              <Select value={overrideRole} onValueChange={setOverrideRole}>
+                <SelectItem value="">Clear override (use group mapping)</SelectItem>
+                {roles.map(r => (
+                  <SelectItem key={r.id} value={String(r.id)}>{r.display_name || r.name}</SelectItem>
+                ))}
+              </Select>
+            </div>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => { setOverrideUser(null); setOverrideRole('') }}>Cancel</Button>
+              <Button
+                onClick={() => overrideMutation.mutate({ sub: overrideUser.oidc_sub, role_definition_id: overrideRole ? parseInt(overrideRole) : null })}
+                disabled={overrideMutation.isPending}
+              >
+                {overrideMutation.isPending ? 'Saving...' : 'Save Override'}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

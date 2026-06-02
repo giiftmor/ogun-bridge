@@ -481,6 +481,41 @@ rbacRouter.get('/apps', requireSuperAdmin, async (req, res) => {
   }
 })
 
+
+
+rbacRouter.post('/apps', requireSuperAdmin, async (req, res) => {
+  try {
+    const { name, slug, display_name, claim_name, authentik_slug, access_group, schema_endpoint } = req.body
+    if (!name || !slug || !claim_name) return res.status(400).json({ error: 'name, slug, and claim_name are required' })
+
+    const crypto = require('crypto')
+    const api_key = crypto.randomBytes(24).toString('hex')
+
+    const result = await pool.query(`
+      INSERT INTO apps (name, slug, display_name, api_key, claim_name, authentik_slug, access_group, schema_endpoint, is_active)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
+      RETURNING id, name, slug, display_name, authentik_slug, access_group, schema_endpoint, is_active, api_key
+    `, [name, slug, display_name || name, api_key, claim_name, authentik_slug || null, access_group || null, schema_endpoint || null])
+
+    await createAuditLog({
+      action: 'rbac_app_created',
+      actor: req.user?.username || 'system',
+      entity_type: 'rbac_app',
+      entity_id: slug,
+      changes: { name, slug, display_name, claim_name, authentik_slug, access_group },
+      source: 'api',
+      success: true,
+    })
+
+    logger.info('App created', { slug, name })
+    return res.status(201).json(result.rows[0])
+  } catch (error) {
+    if (error.code === '23505') return res.status(409).json({ error: 'An app with this slug already exists' })
+    logger.error('Create app error', { error: error.message })
+    return res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
 rbacRouter.put('/apps/:slug', requireSuperAdmin, async (req, res) => {
   try {
     const { slug } = req.params
