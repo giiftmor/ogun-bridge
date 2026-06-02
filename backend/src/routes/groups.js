@@ -211,36 +211,43 @@ groupsRouter.get('/config', async (req, res) => {
 
 // Get group tree (hierarchy)
 groupsRouter.get('/tree', async (req, res) => {
+  let authentikGroups = []
+  let ldapTree = []
+
   try {
-    const authentikGroups = await authentikClient.getGroups()
-    const ldapTree = await ldapClient.getGroupTree()
-
-    // Build tree from Authentik parent field
-    const groupMap = new Map()
-    const rootGroups = []
-
-    for (const g of authentikGroups) {
-      groupMap.set(g.pk, { ...g, children: [] })
-    }
-
-    for (const g of authentikGroups) {
-      const node = groupMap.get(g.pk)
-      if (g.parent && groupMap.has(g.parent)) {
-        groupMap.get(g.parent).children.push(node)
-      } else if (!g.parent) {
-        rootGroups.push(node)
-      }
-    }
-
-    res.json({
-      authentik: rootGroups,
-      ldap: ldapTree,
-      timestamp: new Date().toISOString(),
-    })
+    authentikGroups = await authentikClient.getGroups()
   } catch (error) {
-    logger.error('Error fetching group tree:', error)
-    res.status(500).json({ error: error.message })
+    logger.warn('Could not fetch Authentik groups for tree:', error.message)
   }
+
+  try {
+    ldapTree = await ldapClient.getGroupTree()
+  } catch (error) {
+    logger.warn('Could not fetch LDAP group tree:', error.message)
+  }
+
+  // Build tree from Authentik parent field
+  const groupMap = new Map()
+  const rootGroups = []
+
+  for (const g of authentikGroups) {
+    groupMap.set(g.pk, { ...g, children: [] })
+  }
+
+  for (const g of authentikGroups) {
+    const node = groupMap.get(g.pk)
+    if (g.parent && groupMap.has(g.parent)) {
+      groupMap.get(g.parent).children.push(node)
+    } else if (!g.parent) {
+      rootGroups.push(node)
+    }
+  }
+
+  res.json({
+    authentik: rootGroups,
+    ldap: ldapTree,
+    timestamp: new Date().toISOString(),
+  })
 })
 
 // Force sync now with specific direction

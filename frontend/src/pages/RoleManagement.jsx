@@ -16,21 +16,6 @@ function LoadingSpinner() {
   return (
     <div className="flex items-center justify-center py-12">
       <RefreshCw className="h-5 w-5 text-tertiary animate-spin" />
-
-      <Dialog open={showAddApp} onClose={() => { setShowAddApp(false); setCreatedApp(null) }}>
-        <DialogHeader>
-          <DialogTitle>Register New Application</DialogTitle>
-          <DialogDescription>{createdApp ? 'App registered successfully' : 'Add a new consumer app to the RBAC system'}</DialogDescription>
-        </DialogHeader>
-        <DialogContent>
-          <CreateAppForm
-            createdApp={createdApp}
-            onSubmit={(data) => createApp.mutate(data)}
-            onCancel={() => { setShowAddApp(false); setCreatedApp(null) }}
-            loading={createApp.isPending}
-          />
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }
@@ -191,6 +176,21 @@ function AppsTab() {
           ))}
         </div>
       )}
+
+      <Dialog open={showAddApp} onClose={() => { setShowAddApp(false); setCreatedApp(null) }}>
+        <DialogHeader>
+          <DialogTitle>Register New Application</DialogTitle>
+          <DialogDescription>{createdApp ? 'App registered successfully' : 'Add a new consumer app to the RBAC system'}</DialogDescription>
+        </DialogHeader>
+        <DialogContent>
+          <CreateAppForm
+            createdApp={createdApp}
+            onSubmit={(data) => createApp.mutate(data)}
+            onCancel={() => { setShowAddApp(false); setCreatedApp(null) }}
+            loading={createApp.isPending}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

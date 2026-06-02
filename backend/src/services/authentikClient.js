@@ -108,13 +108,19 @@ export class AuthentikClient {
   async getGroups(params = {}) {
     const searchParams = new URLSearchParams()
     if (params.search) searchParams.set('search', params.search)
-    if (params.page_size) searchParams.set('page_size', params.page_size)
+    if (!params.page_size) searchParams.set('page_size', '200')
     if (params.ordering) searchParams.set('ordering', params.ordering)
 
-    const query = searchParams.toString()
-    const endpoint = '/api/v3/core/groups/' + (query ? '?' + query : '')
-    const data = await this.request(endpoint)
-    return data.results || []
+    const allResults = []
+    let nextEndpoint = '/api/v3/core/groups/?' + searchParams.toString()
+
+    while (nextEndpoint) {
+      const data = await this.request(nextEndpoint)
+      if (data.results) allResults.push(...data.results)
+      nextEndpoint = data.next || null
+    }
+
+    return allResults
   }
 
   async getGroup(groupId, options = {}) {
