@@ -124,36 +124,16 @@ mailRouter.post('/config', async (req, res) => {
   try {
     const { host, port, secure, requireTLS, user, password, fromName, fromAddress } = req.body
     
-    await pool.query(
-      `UPDATE mail_settings SET 
-        host = COALESCE($1, host),
-        port = COALESCE($2, port),
-        secure = COALESCE($3, secure),
-        require_tls = COALESCE($4, require_tls),
-        username = $5,
-        password = COALESCE($6, password),
-        from_name = COALESCE($7, from_name),
-        from_address = COALESCE($8, from_address),
-        updated_at = NOW()
-       WHERE id = 1`,
-      [host, port, secure, requireTLS, user || null, password || null, fromName || null, fromAddress || null]
-    )
-    
-    // Sync to service_configs table to eliminate dual-truth
-    try {
-      await setServiceConfig('smtp', {
-        host: host || undefined,
-        port: port || undefined,
-        secure: secure !== undefined ? String(secure) : undefined,
-        requireTLS: requireTLS !== undefined ? String(requireTLS) : undefined,
-        username: user || undefined,
-        password: password || undefined,
-        fromName: fromName || undefined,
-        fromAddress: fromAddress || undefined,
-      })
-    } catch (syncErr) {
-      logger.warn('Failed to sync mail config to service_configs:', syncErr.message)
-    }
+    await setServiceConfig('smtp', {
+      host: host || undefined,
+      port: port ? String(port) : undefined,
+      secure: secure !== undefined ? String(secure) : undefined,
+      requireTLS: requireTLS !== undefined ? String(requireTLS) : undefined,
+      username: user || undefined,
+      password: password || undefined,
+      fromName: fromName || undefined,
+      fromAddress: fromAddress || undefined,
+    })
 
     // Reload config
     await loadMailConfig()
