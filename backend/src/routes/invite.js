@@ -110,12 +110,12 @@ inviteRouter.post('/send/:username', async (req, res) => {
       userId = userResult.rows[0].id
       
       // Delete any existing tokens
-      await pool.query('DELETE FROM password_reset_tokens WHERE user_id = $1', [userId])
+      await pool.query('DELETE FROM password_reset_tokens WHERE username = $1', [username])
       
       // Insert new token with 7 day expiry
       await pool.query(
-        `INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, NOW() + INTERVAL '7 days')`,
-        [userId, resetToken]
+        `INSERT INTO password_reset_tokens (username, token, expires_at) VALUES ($1, $2, NOW() + INTERVAL '7 days')`,
+        [username, resetToken]
       )
     }
     
@@ -357,12 +357,12 @@ inviteRouter.post('/force-reset/:username', async (req, res) => {
       userId = userResult.rows[0].id
       
       // Delete any existing tokens for this user
-      await pool.query('DELETE FROM password_reset_tokens WHERE user_id = $1', [userId])
+      await pool.query('DELETE FROM password_reset_tokens WHERE username = $1', [username])
       
       // Insert new token
       await pool.query(
-        `INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, NOW() + INTERVAL '24 hours')`,
-        [userId, resetToken]
+        `INSERT INTO password_reset_tokens (username, token, expires_at) VALUES ($1, $2, NOW() + INTERVAL '24 hours')`,
+        [username, resetToken]
       )
     }
     

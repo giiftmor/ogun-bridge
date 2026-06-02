@@ -433,6 +433,23 @@ function GroupDetails({ group, showParent, editing, onEdit, onDelete, onStartEdi
     queryFn: () => apiClient.getGroupMembers(group.id),
   })
 
+  const { data: rbacMappings = [] } = useQuery({
+    queryKey: ['rbac-mappings-all'],
+    queryFn: async () => {
+      const apps = await apiClient.getRbacApps()
+      const all = []
+      for (const app of apps) {
+        const maps = await apiClient.getRbacMappings(app.slug)
+        for (const m of maps) {
+          if (m.authentik_group?.toLowerCase() === group.name?.toLowerCase()) {
+            all.push({ ...m, appName: app.name })
+          }
+        }
+      }
+      return all
+    },
+  })
+
   const [editName, setEditName] = useState('')
   const [editDesc, setEditDesc] = useState('')
 
@@ -496,6 +513,15 @@ function GroupDetails({ group, showParent, editing, onEdit, onDelete, onStartEdi
                 <DetailRow label="Child Groups" value={<Badge variant="secondary">{detail.childCount}</Badge>} />
               )}
               <DetailRow label="Status" value={<Badge variant={group.syncStatus === 'synced' ? 'success' : 'danger'}>{group.syncStatus}</Badge>} />
+              {rbacMappings.length > 0 && (
+                <DetailRow label="Mapped Roles" value={
+                  <div className="flex flex-wrap gap-1">
+                    {rbacMappings.map(m => (
+                      <Badge key={m.id} variant="default" className="text-[11px]">{m.appName}: {m.role_name}</Badge>
+                    ))}
+                  </div>
+                } />
+              )}
             </div>
           </div>
         )}

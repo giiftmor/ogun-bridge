@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import toast from 'react-hot-toast'
 import { apiClient } from '@/services/api'
+import { PasswordStrengthMeter } from '@/components/PasswordStrengthMeter'
 
 export function SelfServicePasswordChange() {
   const [username, setUsername] = useState('')
@@ -70,13 +71,6 @@ export function SelfServicePasswordChange() {
     }
 
     changePasswordMutation.mutate({ username, currentPassword, newPassword })
-  }
-
-  const getRequirementStatus = (requirement) => {
-    if (!newPassword) return null
-    if (!validation) return 'pending'
-    const met = !validation.errors.some(e => e.toLowerCase().includes(requirement))
-    return met ? 'met' : 'failed'
   }
 
   return (
@@ -195,13 +189,7 @@ export function SelfServicePasswordChange() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <p className="text-[13px] font-medium text-primary mb-3">Password Requirements</p>
-              <div className="space-y-2">
-                <Requirement label="Minimum 8 characters" status={getRequirementStatus('8 characters')} />
-                <Requirement label="At least one uppercase letter" status={getRequirementStatus('uppercase')} />
-                <Requirement label="At least one lowercase letter" status={getRequirementStatus('lowercase')} />
-                <Requirement label="At least one number" status={getRequirementStatus('number')} />
-              </div>
+              <PasswordStrengthMeter password={newPassword} />
             </CardContent>
           </Card>
         </div>
@@ -214,38 +202,4 @@ export function SelfServicePasswordChange() {
   )
 }
 
-function Requirement({ label, status }) {
-  if (status === null) {
-    return (
-      <div className="flex items-center gap-2 text-secondary">
-        <div className="w-4 h-4 rounded-full border-2 border-border" />
-        <span className="text-[13px]">{label}</span>
-      </div>
-    )
-  }
 
-  if (status === 'pending') {
-    return (
-      <div className="flex items-center gap-2">
-        <Loader2 className="w-4 h-4 animate-spin text-secondary" />
-        <span className="text-[13px]">{label}</span>
-      </div>
-    )
-  }
-
-  if (status === 'met') {
-    return (
-      <div className="flex items-center gap-2 text-success-text">
-        <CheckCircle className="w-4 h-4" />
-        <span className="text-[13px]">{label}</span>
-      </div>
-    )
-  }
-
-  return (
-    <div className="flex items-center gap-2 text-danger-text">
-      <XCircle className="w-4 h-4" />
-      <span className="text-[13px]">{label}</span>
-    </div>
-  )
-}

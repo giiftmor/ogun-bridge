@@ -331,3 +331,93 @@ groupServicesRouter.delete('/:id/services/:serviceId', async (req, res) => {
     res.status(500).json({ error: error.message })
   }
 })
+
+// ── Service Health Check ────────────────────────────────────────────────
+
+function isInternalUrl(url) {
+  try {
+    const parsed = new URL(url)
+    const hostname = parsed.hostname
+    // Block localhost, private IPs, and common internal hostnames
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('192.168.') || hostname.startsWith('10.') || hostname.startsWith('172.')) {
+      return true
+    }
+    return false
+  } catch {
+    return true // Invalid URLs are treated as internal (blocked)
+  }
+}
+
+groupServicesRouter.post('/health/:serviceName', async (req, res) => {
+  try {
+    const { serviceName } = req.params
+
+    // Look up service URL from DB
+    const result = await pool.query(
+      'SELECT DISTINCT service_url, service_name FROM group_services WHERE service_name = $1 AND is_active = true LIMIT 1',
+      [serviceName]
+    )
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Service not found' })
+    }
+
+    const serviceUrl = result.rows[0].service_url
+    if (!serviceUrl) {
+      return res.json({ serviceName, status: 'unknown', url: null, responseTime: null, error: 'No URL configured' })
+    }
+
+    // SSRF protection
+    if (isInternalUrl(serviceUrl)) {
+      return res.status(400).json({ error: 'Internal URLs cannot be health checked' })
+    }
+
+    const start = Date.now()
+    let status = 'offline'
+    let error = null
+    let responseTime = null
+
+    try {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 10000)
+
+      const response = await fetch(serviceUrl, {
+        method: 'HEAD',
+        signal: controller.signal,
+        redirect: 'follow',
+      })
+
+      clearTimeout(timeout)
+      responseTime = Date.now() - start
+
+      // 2xx and 3xx are considered online
+      if (response.status < 400) {
+        status = 'online'
+      } else if (response.status >= 500) {
+        status = 'error'
+        error = `HTTP ${response.status}`
+      } else {
+        status = 'online' // 4xx means the server is up, just unauthorized
+      }
+    } catch (fetchErr) {
+      responseTime = Date.now() - start
+      if (fetchErr.name === 'AbortError') {
+        error = 'Timeout after 10s'
+      } else {
+        error = fetchErr.message
+      }
+    }
+
+    res.json({
+      serviceName,
+      status,
+      url: serviceUrl,
+      responseTime,
+      error,
+      checkedAt: new Date().toISOString(),
+    })
+  } catch (err) {
+    logger.error('Service health check error', { error: err.message, serviceName: req.params.serviceName })
+    res.status(500).json({ error: 'Health check failed' })
+  }
+})

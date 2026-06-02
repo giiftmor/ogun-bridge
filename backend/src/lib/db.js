@@ -1,6 +1,7 @@
 import pg from 'pg'
 import fs from 'fs'
 import path from 'path'
+import crypto from 'crypto'
 import { fileURLToPath } from 'url'
 import { logger } from '../utils/logger.js'
 
@@ -244,6 +245,8 @@ CREATE TABLE IF NOT EXISTS user_profiles (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   last_login TIMESTAMP,
   login_count INTEGER DEFAULT 0,
+  email_invite_sent BOOLEAN DEFAULT false,
+  email_invite_sent_at TIMESTAMP,
   password_hash VARCHAR(255),
   password_method VARCHAR(50),
   password_created_at TIMESTAMP,
@@ -263,10 +266,11 @@ CREATE INDEX IF NOT EXISTS idx_user_profiles_password_status ON user_profiles(pa
 CREATE TABLE IF NOT EXISTS auth_users (
   id SERIAL PRIMARY KEY,
   username VARCHAR(255) UNIQUE NOT NULL,
-  password_hash VARCHAR(255) NOT NULL,
+  password_hash VARCHAR(255),
   email VARCHAR(255),
-  role VARCHAR(50) DEFAULT 'admin',
+  role VARCHAR(50) DEFAULT 'viewer',
   active BOOLEAN DEFAULT true,
+  oidc_id VARCHAR(255),
   last_login TIMESTAMP,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -274,6 +278,147 @@ CREATE TABLE IF NOT EXISTS auth_users (
 
 CREATE INDEX IF NOT EXISTS idx_auth_users_username ON auth_users(username);
 CREATE INDEX IF NOT EXISTS idx_auth_users_role ON auth_users(role);
+CREATE INDEX IF NOT EXISTS idx_auth_users_oidc ON auth_users(oidc_id);
+
+-- ── Auth sessions (OIDC session tokens) ─────────────────────────────────
+CREATE TABLE IF NOT EXISTS auth_sessions (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    token VARCHAR(255) UNIQUE NOT NULL,
+    ip_address VARCHAR(45),
+    user_agent TEXT,
+    expires_at TIMESTAMP NOT NULL,
+    data JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_token ON auth_sessions(token);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires ON auth_sessions(expires_at);
+
+-- ── Apps registry (service-to-service auth) ──────────────────────────────
+CREATE TABLE IF NOT EXISTS apps (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    slug VARCHAR(100) UNIQUE NOT NULL,
+    display_name VARCHAR(255),
+    api_key VARCHAR(255) UNIQUE NOT NULL,
+    claim_name VARCHAR(100) NOT NULL,
+    role_mapping JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_apps_slug ON apps(slug);
+CREATE INDEX IF NOT EXISTS idx_apps_api_key ON apps(api_key);
+
+-- ── Business roles (migrated from Spectres-Pantheon) ────────────────────
+CREATE TABLE IF NOT EXISTS business_roles (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) UNIQUE NOT NULL,
+    display_name VARCHAR(255),
+    description TEXT,
+    base_role VARCHAR(50) DEFAULT 'member',
+    modules JSONB NOT NULL DEFAULT '{}',
+    is_system BOOLEAN DEFAULT false,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ── Per-app user cache (delegated storage) ─────────────────────────────
+CREATE TABLE IF NOT EXISTS app_users (
+    id SERIAL PRIMARY KEY,
+    app_id INTEGER REFERENCES apps(id) ON DELETE CASCADE,
+    oidc_sub VARCHAR(255) NOT NULL,
+    email VARCHAR(255),
+    base_role VARCHAR(50) DEFAULT 'viewer',
+    business_role_id INTEGER REFERENCES business_roles(id),
+    last_auth TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(app_id, oidc_sub)
+);
+
+CREATE INDEX IF NOT EXISTS idx_app_users_app_sub ON app_users(app_id, oidc_sub);
+
+-- ── RBAC: Base roles (predefined, system-level) ─────────────────────────
+CREATE TABLE IF NOT EXISTS base_roles (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(50) UNIQUE NOT NULL,
+    display_name VARCHAR(255),
+    priority INTEGER DEFAULT 0,
+    is_system BOOLEAN DEFAULT false,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ── RBAC: Role definitions (per-app custom roles) ───────────────────────
+CREATE TABLE IF NOT EXISTS role_definitions (
+    id SERIAL PRIMARY KEY,
+    app_slug VARCHAR(100) REFERENCES apps(slug) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    display_name VARCHAR(255),
+    description TEXT,
+    base_role VARCHAR(50) DEFAULT 'viewer',
+    is_default BOOLEAN DEFAULT false,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_by VARCHAR(255),
+    UNIQUE(app_slug, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_role_definitions_app ON role_definitions(app_slug);
+
+-- ── RBAC: Role permissions (module-level CRUD per role) ─────────────────
+CREATE TABLE IF NOT EXISTS role_permissions (
+    id SERIAL PRIMARY KEY,
+    role_definition_id INTEGER REFERENCES role_definitions(id) ON DELETE CASCADE,
+    module_name VARCHAR(100) NOT NULL,
+    actions JSONB NOT NULL DEFAULT '[]',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(role_definition_id, module_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_role_permissions_role ON role_permissions(role_definition_id);
+
+-- ── RBAC: Group → Role mappings (Authentik groups to Ogun Bridge roles) ─
+CREATE TABLE IF NOT EXISTS group_role_mappings (
+    id SERIAL PRIMARY KEY,
+    app_slug VARCHAR(100) REFERENCES apps(slug) ON DELETE CASCADE,
+    authentik_group VARCHAR(255) NOT NULL,
+    role_definition_id INTEGER REFERENCES role_definitions(id) ON DELETE CASCADE,
+    priority INTEGER DEFAULT 0,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_by VARCHAR(255),
+    UNIQUE(app_slug, authentik_group)
+);
+
+CREATE INDEX IF NOT EXISTS idx_group_role_mappings_app ON group_role_mappings(app_slug);
+CREATE INDEX IF NOT EXISTS idx_group_role_mappings_group ON group_role_mappings(authentik_group);
+
+-- ── RBAC: App module schemas (cached, hybrid push + admin override) ─────
+CREATE TABLE IF NOT EXISTS app_schemas (
+    id SERIAL PRIMARY KEY,
+    app_slug VARCHAR(100) UNIQUE REFERENCES apps(slug) ON DELETE CASCADE,
+    modules JSONB NOT NULL DEFAULT '[]',
+    source VARCHAR(50) DEFAULT 'app_push',
+    last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ── RBAC: Add new columns to existing tables ────────────────────────────
+ALTER TABLE apps ADD COLUMN IF NOT EXISTS authentik_slug VARCHAR(100);
+ALTER TABLE apps ADD COLUMN IF NOT EXISTS access_group VARCHAR(255);
+ALTER TABLE apps ADD COLUMN IF NOT EXISTS schema_endpoint VARCHAR(255);
+ALTER TABLE apps ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+
+ALTER TABLE app_users ADD COLUMN IF NOT EXISTS role_definition_id INTEGER REFERENCES role_definitions(id);
+ALTER TABLE app_users ADD COLUMN IF NOT EXISTS permissions_cache JSONB;
+ALTER TABLE app_users ADD COLUMN IF NOT EXISTS last_sync TIMESTAMP;
+ALTER TABLE app_users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
 
 -- Legacy admin_users table (kept for backward compatibility)
 CREATE TABLE IF NOT EXISTS admin_users (
@@ -320,6 +465,10 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
   used BOOLEAN DEFAULT false
 );
 
+ALTER TABLE password_reset_tokens ADD COLUMN IF NOT EXISTS used_at TIMESTAMP;
+ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS email_invite_sent BOOLEAN DEFAULT false;
+ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS email_invite_sent_at TIMESTAMP;
+
 CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_token ON password_reset_tokens(token);
 CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_expires ON password_reset_tokens(expires_at);
 
@@ -332,12 +481,13 @@ CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_expires ON password_reset_t
     key VARCHAR(100) NOT NULL,
     value TEXT,
     is_encrypted BOOLEAN DEFAULT false,
-    last_override_at TIMESTAMP,
-    override_by VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(service, key)
   );
+
+ALTER TABLE service_configs ADD COLUMN IF NOT EXISTS last_override_at TIMESTAMP;
+ALTER TABLE service_configs ADD COLUMN IF NOT EXISTS override_by VARCHAR(255);
 
 CREATE INDEX IF NOT EXISTS idx_service_configs_service ON service_configs(service);
 CREATE INDEX IF NOT EXISTS idx_service_configs_lookup ON service_configs(service, key);
@@ -483,6 +633,60 @@ async function initializeTables() {
   try {
     await client.query(schema)
     logger.info('Database tables initialized')
+
+    // Seed base roles (only if not already seeded)
+    const existingBaseRoles = await pool.query('SELECT COUNT(*) FROM base_roles')
+    if (parseInt(existingBaseRoles.rows[0].count) === 0) {
+      await pool.query(`
+        INSERT INTO base_roles (name, display_name, priority, is_system, description) VALUES
+        ('super_admin', 'Super Admin', 120, true, 'Unrestricted access to all apps and settings'),
+        ('admin', 'Admin', 100, true, 'Administrative access with app-level restrictions'),
+        ('viewer', 'Viewer', 20, true, 'Read-only access to assigned modules')
+        ON CONFLICT (name) DO NOTHING
+      `)
+      logger.info('Seeded base roles')
+    }
+
+    // Seed default apps (only if not already seeded)
+    const existingApps = await pool.query('SELECT COUNT(*) FROM apps')
+    if (parseInt(existingApps.rows[0].count) === 0) {
+      await pool.query(`
+        INSERT INTO apps (name, slug, display_name, api_key, claim_name, authentik_slug, access_group, schema_endpoint, is_active) VALUES
+        ('Groove Payroll', 'groove', 'Groove Payroll', $1, 'groove_role', 'groove-payroll', 'groove-payroll', 'http://groove:5005/api/rbac/schema', true),
+        ('Spectres Pantheon', 'spectres', 'Spectres Pantheon', $2, 'spectre_role', 'spectres-pantheon', 'spectres-pantheon', 'http://spectres:8764/api/rbac/schema', true),
+        ('Thoth ESU Gateway', 'thoth', 'Thoth ESU Gateway', $3, 'thoth_role', 'thoth-esu-gateway', 'thoth-esu-gateway', 'http://thoth:3010/api/rbac/schema', true),
+        ('Ogun Bridge', 'ogun', 'Ogun Bridge', $4, 'ogun_role', 'ogun-bridge', 'ogun-bridge', null, true)
+        ON CONFLICT (slug) DO NOTHING
+      `, [
+        crypto.randomBytes(24).toString('hex'),
+        crypto.randomBytes(24).toString('hex'),
+        crypto.randomBytes(24).toString('hex'),
+        crypto.randomBytes(24).toString('hex'),
+      ])
+      logger.info('Seeded default apps with API keys')
+    }
+
+    // Seed default business roles
+    const existingRoles = await pool.query('SELECT COUNT(*) FROM business_roles')
+    if (parseInt(existingRoles.rows[0].count) === 0) {
+      await pool.query(`
+        INSERT INTO business_roles (name, display_name, description, base_role, modules, is_system) VALUES
+        ('developer', 'Developer', 'Software development and technical tasks', 'member',
+         '{"dashboard":true,"projects":{"view":true,"create":true,"edit":true},"tasks":{"view":true,"create":true,"edit":true},"timeTracking":true,"documents":{"view":true,"upload":true},"calendar":true,"tickets":{"view":true,"create":true,"comment":true},"clients":{"view":true},"finances":false,"reports":false,"settings":false}',
+         true),
+        ('designer', 'Designer', 'UI/UX design and creative work', 'member',
+         '{"dashboard":true,"projects":{"view":true,"create":true},"tasks":{"view":true,"create":true},"documents":{"view":true,"upload":true},"clients":{"view":true},"finances":false,"reports":false,"settings":false}',
+         true),
+        ('support_agent', 'Support Agent', 'Customer support and ticket handling', 'member',
+         '{"dashboard":true,"tasks":{"view":true,"create":true,"comment":true},"tickets":{"view":true,"create":true,"comment":true},"clients":{"view":true},"reports":true,"settings":false}',
+         true),
+        ('account_manager', 'Account Manager', 'Client account and financial management', 'member',
+         '{"dashboard":true,"projects":{"view":true},"clients":{"view":true},"finances":{"view":true,"create":true},"reports":true,"settings":false}',
+         true)
+        ON CONFLICT (name) DO NOTHING
+      `)
+      logger.info('Seeded default business roles')
+    }
   } catch (error) {
     logger.error('Failed to initialize tables', { error: error.message })
     throw error

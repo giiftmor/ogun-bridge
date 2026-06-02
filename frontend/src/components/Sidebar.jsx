@@ -24,6 +24,7 @@ const defaultNavigation = [
     items: [
       { name: 'Users', href: '/users', icon: Users },
       { name: 'Services', href: '/services', icon: Network },
+      { name: 'Roles', href: '/roles', icon: Shield },
       { name: 'Passwords', href: '/password', icon: KeyRound },
     ],
   },

@@ -21,7 +21,12 @@ import { translateError } from '@/utils/errorTranslator'
 const SERVICE_ICONS = { mail: Mail, vpn: Shield, media: Play, cloud: Cloud, key: Key }
 
 export function UserDetail({ username: initialUsername, isOwnProfile = false }) {
-  const [username] = useState(initialUsername || '')
+  const { data: currentUser, isLoading: isMeLoading } = useQuery({
+    queryKey: ['current-user'],
+    queryFn: () => apiClient.getCurrentUser(),
+    enabled: isOwnProfile && !initialUsername,
+  })
+  const username = initialUsername || currentUser?.username || ''
   const [activeTab, setActiveTab] = useState('profile')
   const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', description: '', onConfirm: null })
   const [verifyPassword, setVerifyPassword] = useState('')
@@ -156,7 +161,10 @@ export function UserDetail({ username: initialUsername, isOwnProfile = false }) 
   const serviceOptions = allServices
     .filter(s => !profile?.services?.some(ps => ps.name === s.service_name))
 
-  if (!username) return null
+  if (!username) {
+    if (isMeLoading) return <SkeletonCard />
+    return null
+  }
   if (isLoading) return <SkeletonCard />
 
   return (

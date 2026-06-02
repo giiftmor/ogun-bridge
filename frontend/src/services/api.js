@@ -66,17 +66,11 @@ class ApiClient {
   }
 
   async logout() {
-    const token = getToken()
-    if (token) {
-      try {
-        await fetch(`${API_BASE_URL}/auth/logout`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` },
-        })
-      } catch (e) {
-        console.warn('Logout request failed:', e)
-      }
-    }
+    const response = await fetch(`${API_BASE_URL}/auth/logout`, {
+      method: 'POST',
+      credentials: 'include',
+    })
+    return response
   }
 
   async getCurrentUser() {
@@ -171,6 +165,14 @@ class ApiClient {
     const response = await fetch(`${API_BASE_URL}/setup/config/${service}`)
     if (!response.ok) {
       throw new Error(`Failed to get ${service} config`)
+    }
+    return response.json()
+  }
+
+  async getSetupGodMode() {
+    const response = await fetch(`${API_BASE_URL}/setup/god-mode`)
+    if (!response.ok) {
+      throw new Error('Failed to load existing configuration')
     }
     return response.json()
   }
@@ -588,6 +590,25 @@ class ApiClient {
     })
   }
 
+  async exportUsersCSV() {
+    const response = await fetch(`${API_BASE_URL}/users/export/csv`, {
+      method: 'GET',
+      credentials: 'include',
+    })
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Export failed' }))
+      throw new Error(error.message || 'Export failed')
+    }
+    return response.blob()
+  }
+
+  async importUsersCSV(rows) {
+    return this.request('/users/import/csv', {
+      method: 'POST',
+      body: JSON.stringify({ rows }),
+    })
+  }
+
   async getUserGroups(username) {
     return this.request(`/users/${username}/groups`)
   }
@@ -638,6 +659,25 @@ class ApiClient {
   async unassignServiceFromGroup(serviceName, groupName) {
     return this.request(`/groups-manager/services/${encodeURIComponent(serviceName)}/unassign-group/${encodeURIComponent(groupName)}`, {
       method: 'DELETE',
+    })
+  }
+
+  async updateService(serviceName, data) {
+    return this.request(`/groups-manager/services/${encodeURIComponent(serviceName)}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteService(serviceName) {
+    return this.request(`/groups-manager/services/${encodeURIComponent(serviceName)}`, {
+      method: 'DELETE',
+    })
+  }
+
+  async checkServiceHealth(serviceName) {
+    return this.request(`/groups-manager/health/${encodeURIComponent(serviceName)}`, {
+      method: 'POST',
     })
   }
 
@@ -695,6 +735,27 @@ class ApiClient {
     })
   }
 
+  // RBAC endpoints
+  async getRbacApps() { return this.request('/rbac/apps') }
+  async getRbacApp(appSlug) { return this.request(`/rbac/apps/${appSlug}`) }
+  async updateRbacApp(slug, data) { return this.request(`/rbac/apps/${slug}`, { method: 'PUT', body: JSON.stringify(data) }) }
+  async getRbacRoles(appSlug) { return this.request(`/rbac/roles/${appSlug}`) }
+  async createRbacRole(appSlug, data) { return this.request(`/rbac/roles/${appSlug}`, { method: 'POST', body: JSON.stringify(data) }) }
+  async updateRbacRole(id, data) { return this.request(`/rbac/roles/${id}`, { method: 'PUT', body: JSON.stringify(data) }) }
+  async deleteRbacRole(id) { return this.request(`/rbac/roles/${id}`, { method: 'DELETE' }) }
+  async getRbacRolePermissions(id) { return this.request(`/rbac/roles/${id}/permissions`) }
+  async updateRbacRolePermissions(id, permissions) { return this.request(`/rbac/roles/${id}/permissions`, { method: 'PUT', body: JSON.stringify({ permissions }) }) }
+  async getRbacMappings(appSlug) { return this.request(`/rbac/mappings/${appSlug}`) }
+  async createRbacMapping(appSlug, data) { return this.request(`/rbac/mappings/${appSlug}`, { method: 'POST', body: JSON.stringify(data) }) }
+  async updateRbacMapping(id, data) { return this.request(`/rbac/mappings/${id}`, { method: 'PUT', body: JSON.stringify(data) }) }
+  async deleteRbacMapping(id) { return this.request(`/rbac/mappings/${id}`, { method: 'DELETE' }) }
+  async getRbacSchema(appSlug) { return this.request(`/rbac/schema/${appSlug}`) }
+  async updateRbacSchema(appSlug, modules) { return this.request(`/rbac/schema/${appSlug}`, { method: 'POST', body: JSON.stringify({ modules, source: 'admin_override' }) }) }
+  async getRbacUsers(appSlug) { return this.request(`/rbac/users/${appSlug}`) }
+  async overrideRbacUserRole(appSlug, sub, role_definition_id) { return this.request(`/rbac/users/${appSlug}/${sub}/role`, { method: 'PUT', body: JSON.stringify({ role_definition_id }) }) }
+  async syncRbacUsers(appSlug) { return this.request(`/rbac/sync/${appSlug}`, { method: 'POST' }) }
+  async getRbacAuthentikGroups() { return this.request('/rbac/authentik-groups') }
+  async getRbacBaseRoles() { return this.request('/rbac/base-roles') }
   // Version control endpoints
   async getVersionHistory(entityType, entityId, limit = 20) {
     return this.request(`/versions/history/${entityType}/${entityId}?limit=${limit}`)

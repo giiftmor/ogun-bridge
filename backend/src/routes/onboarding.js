@@ -76,10 +76,10 @@ onboardingRouter.post('/', async (req, res) => {
         }
 
         if (userResult.rows.length > 0) {
-          await pool.query('DELETE FROM password_reset_tokens WHERE user_id = $1', [userResult.rows[0].id])
+          await pool.query('DELETE FROM password_reset_tokens WHERE username = $1', [username])
           await pool.query(
-            `INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, NOW() + INTERVAL '7 days')`,
-            [userResult.rows[0].id, resetToken]
+            `INSERT INTO password_reset_tokens (username, token, expires_at) VALUES ($1, $2, NOW() + INTERVAL '7 days')`,
+            [username, resetToken]
           )
         }
 

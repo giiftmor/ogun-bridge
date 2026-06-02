@@ -8,14 +8,14 @@ export function generateToken() {
   return crypto.randomBytes(TOKEN_LENGTH).toString('hex')
 }
 
-export async function createSession(userId, ipAddress, userAgent) {
+export async function createSession(userId, ipAddress, userAgent, extraData = null) {
   const token = generateToken()
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
 
   await pool.query(
-    `INSERT INTO auth_sessions (user_id, token, ip_address, user_agent, expires_at)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [userId, token, ipAddress, userAgent, expiresAt]
+    `INSERT INTO auth_sessions (user_id, token, ip_address, user_agent, expires_at, data)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [userId, token, ipAddress, userAgent, expiresAt, extraData ? JSON.stringify(extraData) : null]
   )
 
   return token
@@ -26,7 +26,7 @@ export async function validateSession(token) {
 
   try {
     const result = await pool.query(
-      `SELECT s.id, s.user_id, s.expires_at, u.username, u.email, u.role, u.active
+      `SELECT s.id, s.user_id, s.expires_at, s.data, u.username, u.email, u.role, u.active
        FROM auth_sessions s
        JOIN auth_users u ON s.user_id = u.id
        WHERE s.token = $1 AND s.expires_at > NOW() AND u.active = true`,
@@ -73,7 +73,11 @@ export function authenticate(req, res, next) {
       id: session.user_id,
       username: session.username,
       email: session.email,
-      role: session.role
+      role: session.role,
+      roleDefinition: session.data?.roleDefinition || null,
+      permissions: session.data?.permissions || {},
+      groups: session.data?.groups || [],
+      matchedGroup: session.data?.matchedGroup || null,
     }
 
     next()
@@ -89,14 +93,51 @@ export function requireRole(...allowedRoles) {
       return res.status(401).json({ error: 'Authentication required' })
     }
 
-    if (!allowedRoles.includes(req.user.role)) {
+    const userRole = req.user.roleDefinition?.name || req.user.role
+    if (!allowedRoles.includes(userRole)) {
       logger.warn('Access denied', {
         user: req.user.username,
-        role: req.user.role,
+        role: userRole,
         required: allowedRoles,
         path: req.path
       })
       return res.status(403).json({ error: 'Insufficient permissions' })
+    }
+
+    next()
+  }
+}
+
+export function requireSuperAdmin(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Authentication required' })
+  }
+  const role = req.user.roleDefinition?.name || req.user.role
+  if (role !== 'super_admin') {
+    return res.status(403).json({ error: 'Super admin access required' })
+  }
+  next()
+}
+
+export function requireModule(module, action = null) {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Authentication required' })
+    }
+
+    const role = req.user.roleDefinition?.name || req.user.role
+    if (role === 'super_admin') {
+      return next()
+    }
+
+    const permissions = req.user.permissions || {}
+    const modulePerms = permissions[module]
+    if (!modulePerms || !Array.isArray(modulePerms) || modulePerms.length === 0) {
+      return res.status(403).json({ error: `No access to module: ${module}` })
+    }
+
+    if (action && !modulePerms.includes(action)) {
+      return res.status(403).json({ error: `No ${action} permission on ${module}` })
     }
 
     next()

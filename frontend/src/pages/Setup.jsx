@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { apiClient } from '../services/api'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { CheckCircle, Loader2 } from 'lucide-react'
+import { CheckCircle, Loader2, Zap } from 'lucide-react'
 
 const ALL_STEPS = [
   { id: 'welcome', title: 'Welcome' },
@@ -20,6 +20,7 @@ const ALL_STEPS = [
 
 export function Setup() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [currentStep, setCurrentStep] = useState(0)
   const [loading, setLoading] = useState(true)
   const [setupStatus, setSetupStatus] = useState(null)
@@ -27,9 +28,10 @@ export function Setup() {
   const [testing, setTesting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [godMode, setGodMode] = useState(false)
 
   // Filter out database step from the progress bar when DB is already connected
-  const steps = useMemo(() => {
+  const filteredSteps = useMemo(() => {
     if (setupStatus?.db_connected === false) return ALL_STEPS
     return ALL_STEPS.filter(s => s.id !== 'database')
   }, [setupStatus?.db_connected])
@@ -44,8 +46,32 @@ export function Setup() {
   useEffect(() => { checkSetupStatus() }, [])
 
   const checkSetupStatus = async () => {
-    try { const status = await apiClient.getSetupStatus(); setSetupStatus(status); if (status.setupComplete) { navigate('/login', { replace: true }); return } }
-    catch (e) { setError('Failed to check setup status: ' + e.message) }
+    const isGod = searchParams.get('god') === '1'
+    setGodMode(isGod)
+
+    try {
+      const status = await apiClient.getSetupStatus()
+      setSetupStatus(status)
+
+      if (isGod) {
+        if (!status.db_connected) {
+          setError('Database not connected. Configure via regular setup first.')
+          setLoading(false)
+          return
+        }
+        const god = await apiClient.getSetupGodMode()
+        if (god.authentik) setAuthentikForm(prev => ({ ...prev, ...god.authentik }))
+        if (god.ldap) setLdapForm(prev => ({ ...prev, ...god.ldap }))
+        if (god.smtp) setSmtpForm(prev => ({ ...prev, ...god.smtp }))
+        setLoading(false)
+        return
+      }
+
+      if (status.setupComplete) {
+        navigate('/login', { replace: true })
+        return
+      }
+    } catch (e) { setError('Failed to check setup status: ' + e.message) }
     finally { setLoading(false) }
   }
 
@@ -102,8 +128,22 @@ export function Setup() {
     finally { setTesting(false) }
   }
 
+  const handleTestOnly = async (service) => {
+    setTesting(true); setError('')
+    const config = service === 'authentik' ? authentikForm : service === 'ldap' ? ldapForm : service === 'smtp' ? smtpForm : {}
+    try {
+      const result = await apiClient.testSetupService(service, config)
+      setTestResults(prev => ({ ...prev, [service]: result }))
+      setSuccess(result.success ? `${service} connection successful!` : `Test failed: ${result.message}`)
+      setTimeout(() => setSuccess(''), 3000)
+    } catch (e) {
+      setTestResults(prev => ({ ...prev, [service]: { success: false, message: e.message } }))
+      setError(e.message)
+    } finally { setTesting(false) }
+  }
+
   const handleTestAll = async () => {
-    setTesting(true); setError(''); const services = ['database', 'authentik', 'ldap', 'smtp']; const results = {}
+    setTesting(true); setError(''); const services = godMode ? ['authentik', 'ldap', 'smtp'] : ['database', 'authentik', 'ldap', 'smtp']; const results = {}
     for (const service of services) {
       const config = service === 'authentik' ? authentikForm : service === 'ldap' ? ldapForm : service === 'smtp' ? smtpForm : {}
       try { results[service] = await apiClient.testSetupService(service, config) }
@@ -111,6 +151,10 @@ export function Setup() {
     }
     setTestResults(results); setTesting(false)
   }
+
+  const GOD_MODE_STEPS = ALL_STEPS.filter(s => s.id !== 'database' && s.id !== 'admin' && s.id !== 'welcome' && s.id !== 'complete')
+
+  const steps = godMode ? GOD_MODE_STEPS : filteredSteps
 
   const handleCompleteSetup = async () => {
     setSaving(true); setError('')
@@ -130,8 +174,17 @@ export function Setup() {
         <Card className="py-8 px-4 sm:px-10">
           <CardContent className="p-0">
             <div className="mb-8 text-center">
-              <h1 className="text-[20px] font-medium text-primary">Ogun Bridge Setup</h1>
-              <p className="text-[13px] text-secondary mt-1">Welcome! Let's configure your system step by step.</p>
+              <div className="flex items-center justify-center gap-2 mb-1">
+                <h1 className="text-[20px] font-medium text-primary">Ogun Bridge Setup</h1>
+                {godMode && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-accent/20 border border-accent/50 text-accent text-[11px] font-medium rounded-sm">
+                    <Zap className="h-3 w-3" /> GOD MODE
+                  </span>
+                )}
+              </div>
+              <p className="text-[13px] text-secondary mt-1">
+                {godMode ? 'Testing existing configuration.' : 'Welcome! Let\'s configure your system step by step.'}
+              </p>
             </div>
 
             <div className="mb-8 flex justify-between">
@@ -222,7 +275,10 @@ export function Setup() {
                   </div>
                   <div className="mt-6 flex justify-between">
                     <Button type="button" variant="ghost" onClick={handleBack}>Back</Button>
-                    <Button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save & Continue'}</Button>
+                    <div className="flex gap-2">
+                      {godMode && <Button type="button" variant="secondary" onClick={() => handleTestOnly('authentik')} disabled={testing}>Test Only</Button>}
+                      <Button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save & Continue'}</Button>
+                    </div>
                   </div>
                 </form>
               )}
@@ -246,7 +302,10 @@ export function Setup() {
                   </div>
                   <div className="mt-6 flex justify-between">
                     <Button type="button" variant="ghost" onClick={handleBack}>Back</Button>
-                    <Button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save & Continue'}</Button>
+                    <div className="flex gap-2">
+                      {godMode && <Button type="button" variant="secondary" onClick={() => handleTestOnly('ldap')} disabled={testing}>Test Only</Button>}
+                      <Button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save & Continue'}</Button>
+                    </div>
                   </div>
                 </form>
               )}
@@ -279,7 +338,10 @@ export function Setup() {
                   </div>
                   <div className="mt-6 flex justify-between">
                     <Button type="button" variant="ghost" onClick={handleBack}>Back</Button>
-                    <Button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save & Continue'}</Button>
+                    <div className="flex gap-2">
+                      {godMode && <Button type="button" variant="secondary" onClick={() => handleTestOnly('smtp')} disabled={testing}>Test Only</Button>}
+                      <Button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save & Continue'}</Button>
+                    </div>
                   </div>
                 </form>
               )}
@@ -307,13 +369,14 @@ export function Setup() {
                     <Button type="button" variant="ghost" onClick={handleBack}>Back</Button>
                     <div className="flex gap-3">
                       <Button type="button" variant="ghost" onClick={handleTestAll} disabled={testing}>{testing ? <><Loader2 className="h-4 w-4 animate-spin mr-2 inline" />Testing...</> : 'Test All'}</Button>
-                      <Button type="button" onClick={() => handleNext()}>Continue</Button>
+                      {!godMode && <Button type="button" onClick={() => handleNext()}>Continue</Button>}
+                      {godMode && <Button type="button" variant="secondary" onClick={() => navigate('/login', { replace: true })}>Back to Login</Button>}
                     </div>
                   </div>
                 </div>
               )}
 
-              {step.id === 'complete' && (
+              {step.id === 'complete' && !godMode && (
                 <div className="text-center">
                   <div className="mb-6">
                     <div className="mx-auto w-16 h-16 bg-success-bg rounded-full flex items-center justify-center">

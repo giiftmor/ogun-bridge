@@ -71,6 +71,44 @@ setupRouter.get('/status', async (req, res) => {
   }
 })
 
+// GET /api/setup/god-mode - Get existing configs for testing before changing (works even after setup complete)
+setupRouter.get('/god-mode', requireDbOnline, async (req, res) => {
+  try {
+    const dbConnected = await isDbConnected()
+    if (!dbConnected) {
+      return res.status(503).json({ error: 'Database not connected' })
+    }
+
+    const [authentik, ldap, smtp] = await Promise.all([
+      getServiceConfig('authentik').catch(() => null),
+      getServiceConfig('ldap').catch(() => null),
+      getServiceConfig('smtp').catch(() => null),
+    ])
+
+    function mask(obj) {
+      if (!obj) return null
+      const masked = { ...obj }
+      for (const [key, value] of Object.entries(masked)) {
+        if (key.toLowerCase().includes('password') || key.toLowerCase().includes('token') || key.toLowerCase().includes('secret')) {
+          masked[key] = value ? '••••••••' : ''
+        }
+      }
+      return masked
+    }
+
+    res.json({
+      god_mode: true,
+      setup_complete: await isSetupComplete(),
+      authentik: mask(authentik),
+      ldap: mask(ldap),
+      smtp: mask(smtp),
+    })
+  } catch (error) {
+    logger.error('Failed to get god-mode config', { error: error.message })
+    res.status(500).json({ error: 'Failed to load existing configuration' })
+  }
+})
+
 // POST /api/setup/verify-admin - Verify super admin credentials (gate for setup wizard)
 setupRouter.post('/verify-admin', requireDbOnline, async (req, res) => {
   try {

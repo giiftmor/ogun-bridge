@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Server, Plus, Trash2, Loader2, CheckCircle, Users, Edit3,
-  ChevronRight, ChevronDown, GitBranch,
+  ChevronRight, ChevronDown, GitBranch, Activity, XCircle,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -32,6 +32,7 @@ export function ServiceManager() {
   const [showEditService, setShowEditService] = useState(false)
   const [editServiceData, setEditServiceData] = useState({})
   const [deleteConfirm, setDeleteConfirm] = useState({ open: false, serviceName: '' })
+  const [healthStatus, setHealthStatus] = useState({})
   const queryClient = useQueryClient()
 
   const { data: allServices = [], isLoading: loadingServices } = useQuery({
@@ -87,6 +88,38 @@ export function ServiceManager() {
       queryClient.invalidateQueries(['services-list'])
     },
     onError: (error) => toast.error(error.message),
+  })
+
+  const healthCheckMutation = useMutation({
+    mutationFn: (serviceName) => apiClient.checkServiceHealth(serviceName),
+    onSuccess: (data) => {
+      setHealthStatus(prev => ({ ...prev, [data.serviceName]: data }))
+      if (data.status === 'online') {
+        toast.success(`${data.serviceName} is online (${data.responseTime}ms)`)
+      } else if (data.status === 'error') {
+        toast.error(`${data.serviceName} returned ${data.error}`)
+      } else {
+        toast.error(`${data.serviceName} is offline: ${data.error || 'No response'}`)
+      }
+    },
+    onError: (error) => toast.error(error.message),
+  })
+
+  const { data: rbacMappings = [] } = useQuery({
+    queryKey: ['rbac-mappings-all'],
+    queryFn: async () => {
+      const apps = await apiClient.getRbacApps()
+      const all = []
+      for (const app of apps) {
+        try {
+          const maps = await apiClient.getRbacMappings(app.slug)
+          all.push(...maps.map(m => ({ ...m, appName: app.name })))
+        } catch {
+          // app might not have mappings yet
+        }
+      }
+      return all
+    },
   })
 
   const filteredServices = allServices.filter(s =>
@@ -216,6 +249,47 @@ export function ServiceManager() {
                     <DetailRow label="URL" value={selectedServiceDetail?.service_url || 'N/A'} />
                     <DetailRow label="Type" value={selectedServiceDetail?.service_type} />
                     <DetailRow label="Show in invites" value={selectedServiceDetail?.is_public ? 'Yes' : 'No'} />
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-sm text-muted-foreground">Health Status:</span>
+                      <div className="flex items-center gap-2">
+                        {healthStatus[selectedServiceDetail?.service_name] ? (
+                          <>
+                            {healthStatus[selectedServiceDetail.service_name].status === 'online' && (
+                              <Badge variant="default" className="bg-green-500 hover:bg-green-600">
+                                <CheckCircle className="h-3 w-3 mr-1" /> Online {healthStatus[selectedServiceDetail.service_name].responseTime}ms
+                              </Badge>
+                            )}
+                            {healthStatus[selectedServiceDetail.service_name].status === 'error' && (
+                              <Badge variant="destructive">
+                                <XCircle className="h-3 w-3 mr-1" /> Error
+                              </Badge>
+                            )}
+                            {healthStatus[selectedServiceDetail.service_name].status === 'offline' && (
+                              <Badge variant="secondary">
+                                <XCircle className="h-3 w-3 mr-1" /> Offline
+                              </Badge>
+                            )}
+                            {healthStatus[selectedServiceDetail.service_name].status === 'unknown' && (
+                              <Badge variant="outline">No URL</Badge>
+                            )}
+                          </>
+                        ) : (
+                          <Badge variant="outline">Not checked</Badge>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => healthCheckMutation.mutate(selectedServiceDetail?.service_name)}
+                          disabled={healthCheckMutation.isPending || !selectedServiceDetail?.service_url}
+                        >
+                          {healthCheckMutation.isPending ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Activity className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -249,6 +323,10 @@ export function ServiceManager() {
                           <div className="flex items-center gap-2">
                             <CheckCircle className="h-4 w-4 text-green-500" />
                             <span className="font-medium">{groupName}</span>
+                            {(() => {
+                              const mapping = rbacMappings.find(m => m.authentik_group?.toLowerCase() === groupName?.toLowerCase())
+                              return mapping ? <Badge variant="default" className="text-[10px]">{mapping.role_name}</Badge> : null
+                            })()}
                           </div>
                           <Button
                             variant="ghost" size="icon"
