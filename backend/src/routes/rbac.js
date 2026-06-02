@@ -4,6 +4,7 @@ import { requireAppApiKey } from '../middleware/apikey.js'
 import { requireSuperAdmin } from '../middleware/auth.js'
 import { resolveRole, checkPermission, getAuthentikGroups, syncUsersForApp } from '../services/authorizer.js'
 import { logger } from '../utils/logger.js'
+import { createAuditLog } from '../services/auditService.js'
 
 export const rbacRouter = express.Router()
 
@@ -36,6 +37,16 @@ rbacRouter.post('/schema/:appSlug', requireSuperAdmin, async (req, res) => {
             last_synced = NOW(),
             updated_at = NOW()
     `, [appSlug, JSON.stringify(modules), source || 'app_push'])
+
+    await createAuditLog({
+      action: 'rbac_schema_updated',
+      actor: req.user?.username || 'system',
+      entity_type: 'rbac_schema',
+      entity_id: appSlug,
+      changes: { moduleCount: modules.length, source: source || 'app_push' },
+      source: 'api',
+      success: true,
+    })
 
     logger.info('Schema registered', { appSlug, moduleCount: modules.length })
     return res.json({ success: true })
@@ -81,6 +92,16 @@ rbacRouter.post('/roles/:appSlug', requireSuperAdmin, async (req, res) => {
       await pool.query('UPDATE role_definitions SET is_default = false WHERE app_slug = $1 AND id != $2', [appSlug, result.rows[0].id])
     }
 
+    await createAuditLog({
+      action: 'rbac_role_created',
+      actor: req.user?.username || 'system',
+      entity_type: 'rbac_role',
+      entity_id: String(result.rows[0].id),
+      changes: { appSlug, name, display_name, base_role, is_default },
+      source: 'api',
+      success: true,
+    })
+
     logger.info('Role created', { appSlug, role: name })
     return res.status(201).json(result.rows[0])
   } catch (error) {
@@ -116,6 +137,16 @@ rbacRouter.put('/roles/:id', requireSuperAdmin, async (req, res) => {
       await pool.query('UPDATE role_definitions SET is_default = false WHERE app_slug = (SELECT app_slug FROM role_definitions WHERE id = $1) AND id != $1', [id])
     }
 
+    await createAuditLog({
+      action: 'rbac_role_updated',
+      actor: req.user?.username || 'system',
+      entity_type: 'rbac_role',
+      entity_id: String(id),
+      changes: { name, display_name, description, base_role, is_default, is_active },
+      source: 'api',
+      success: true,
+    })
+
     return res.json(result.rows[0])
   } catch (error) {
     logger.error('Update role error', { error: error.message })
@@ -131,6 +162,17 @@ rbacRouter.delete('/roles/:id', requireSuperAdmin, async (req, res) => {
     if (role.rows[0].is_default) return res.status(400).json({ error: 'Cannot delete default role' })
 
     await pool.query('UPDATE role_definitions SET is_active = false WHERE id = $1', [id])
+    
+    await createAuditLog({
+      action: 'rbac_role_deactivated',
+      actor: req.user?.username || 'system',
+      entity_type: 'rbac_role',
+      entity_id: String(id),
+      changes: { is_active: false },
+      source: 'api',
+      success: true,
+    })
+
     logger.info('Role deactivated', { roleId: id })
     return res.json({ success: true })
   } catch (error) {
@@ -181,6 +223,16 @@ rbacRouter.put('/roles/:id/permissions', requireSuperAdmin, async (req, res) => 
       client.release()
     }
 
+    await createAuditLog({
+      action: 'rbac_permissions_updated',
+      actor: req.user?.username || 'system',
+      entity_type: 'rbac_role',
+      entity_id: String(id),
+      changes: { permissionCount: permissions.length, permissions },
+      source: 'api',
+      success: true,
+    })
+
     logger.info('Permissions updated', { roleDefinitionId: id, permissionCount: permissions.length })
     return res.json({ success: true })
   } catch (error) {
@@ -221,6 +273,16 @@ rbacRouter.post('/mappings/:appSlug', requireSuperAdmin, async (req, res) => {
       RETURNING id, authentik_group, priority, is_active
     `, [appSlug, authentik_group, role_definition_id, priority || 0, is_active !== false, req.user?.username || 'system'])
 
+    await createAuditLog({
+      action: 'rbac_mapping_created',
+      actor: req.user?.username || 'system',
+      entity_type: 'rbac_mapping',
+      entity_id: String(result.rows[0].id),
+      changes: { appSlug, authentik_group, role_definition_id, priority, is_active },
+      source: 'api',
+      success: true,
+    })
+
     logger.info('Mapping created', { appSlug, group: authentik_group })
     return res.status(201).json(result.rows[0])
   } catch (error) {
@@ -248,6 +310,17 @@ rbacRouter.put('/mappings/:id', requireSuperAdmin, async (req, res) => {
     `, [authentik_group || null, role_definition_id || null, priority !== undefined ? priority : null, is_active !== undefined ? is_active : null, req.user?.username || 'system', id])
 
     if (result.rows.length === 0) return res.status(404).json({ error: 'Mapping not found' })
+
+    await createAuditLog({
+      action: 'rbac_mapping_updated',
+      actor: req.user?.username || 'system',
+      entity_type: 'rbac_mapping',
+      entity_id: String(id),
+      changes: { authentik_group, role_definition_id, priority, is_active },
+      source: 'api',
+      success: true,
+    })
+
     return res.json(result.rows[0])
   } catch (error) {
     logger.error('Update mapping error', { error: error.message })
@@ -259,6 +332,17 @@ rbacRouter.delete('/mappings/:id', requireSuperAdmin, async (req, res) => {
   try {
     const { id } = req.params
     await pool.query('DELETE FROM group_role_mappings WHERE id = $1', [id])
+
+    await createAuditLog({
+      action: 'rbac_mapping_deleted',
+      actor: req.user?.username || 'system',
+      entity_type: 'rbac_mapping',
+      entity_id: String(id),
+      changes: { deleted: true },
+      source: 'api',
+      success: true,
+    })
+
     return res.json({ success: true })
   } catch (error) {
     logger.error('Delete mapping error', { error: error.message })
@@ -337,6 +421,16 @@ rbacRouter.put('/users/:appSlug/:sub/role', requireSuperAdmin, async (req, res) 
       WHERE app_id = $3 AND oidc_sub = $4
     `, [role_definition_id || null, JSON.stringify(permissionsCache), app.rows[0].id, sub])
 
+    await createAuditLog({
+      action: 'rbac_user_role_overridden',
+      actor: req.user?.username || 'system',
+      entity_type: 'rbac_user',
+      entity_id: sub,
+      changes: { appSlug, role_definition_id, permissionsCache },
+      source: 'api',
+      success: true,
+    })
+
     logger.info('User role override', { appSlug, sub, roleDefinitionId: role_definition_id })
     return res.json({ success: true })
   } catch (error) {
@@ -349,6 +443,17 @@ rbacRouter.post('/sync/:appSlug', requireSuperAdmin, async (req, res) => {
   try {
     const { appSlug } = req.params
     const result = await syncUsersForApp(appSlug)
+
+    await createAuditLog({
+      action: 'rbac_users_synced',
+      actor: req.user?.username || 'system',
+      entity_type: 'rbac_app',
+      entity_id: appSlug,
+      changes: { syncedCount: result.synced || 0 },
+      source: 'api',
+      success: true,
+    })
+
     return res.json(result)
   } catch (error) {
     logger.error('Sync users error', { error: error.message })
@@ -394,6 +499,17 @@ rbacRouter.put('/apps/:slug', requireSuperAdmin, async (req, res) => {
     `, [authentik_slug || null, access_group || null, schema_endpoint || null, is_active !== undefined ? is_active : null, display_name || null, slug])
 
     if (result.rows.length === 0) return res.status(404).json({ error: 'App not found' })
+
+    await createAuditLog({
+      action: 'rbac_app_updated',
+      actor: req.user?.username || 'system',
+      entity_type: 'rbac_app',
+      entity_id: slug,
+      changes: { authentik_slug, access_group, schema_endpoint, is_active, display_name },
+      source: 'api',
+      success: true,
+    })
+
     return res.json(result.rows[0])
   } catch (error) {
     logger.error('Update app error', { error: error.message })

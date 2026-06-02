@@ -188,7 +188,9 @@ function setupLimitedRoutes() {
       timestamp: new Date().toISOString(),
     })
   })
-  // ONLY setup routes
+  // Auth routes (admin-login + providers work even in limited mode)
+  app.use('/api/auth', authRouter)
+  // Setup routes
   app.use('/api/setup', setupRouter)
 }
 
@@ -212,6 +214,11 @@ function startFullServer() {
     }
     
     await startSyncService(io)
+    
+    // Start password expiration notification service (runs daily)
+    const { startPasswordNotificationService } = await import('./services/passwordNotificationService.js')
+    startPasswordNotificationService(24)
+    
     logger.info('Full server started - all services operational')
 
     const SESSION_CLEANUP_INTERVAL = 60 * 60 * 1000

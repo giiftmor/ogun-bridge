@@ -395,3 +395,94 @@ export async function sendPasswordResetEmail(to, username, resetToken, options =
     return { success: false, error: error.message }
   }
 }
+
+export async function sendPasswordExpirationEmail(to, username, daysRemaining, expirationDate) {
+  const config = await getMailConfig()
+  const transporter = await createTransporterFromConfig(config)
+  
+  if (!transporter) {
+    logger.warn('SMTP not configured - skipping expiration email')
+    return { success: false, error: 'SMTP not configured' }
+  }
+
+  const fromName = config.fromName || 'Spectres'
+  const fromAddress = config.fromAddress || 'noreply@spectres.co.za'
+  const appUrl = process.env.APP_URL || 'https://ogun.spectres.co.za'
+  const logoUrl = appUrl + '/spectres-logo.png'
+
+  const urgencyColor = daysRemaining <= 1 ? '#dc2626' : (daysRemaining <= 3 ? '#ea580c' : '#ca8a04')
+  const urgencyLabel = daysRemaining <= 1 ? 'URGENT' : (daysRemaining <= 3 ? 'WARNING' : 'NOTICE')
+  const formattedDate = new Date(expirationDate).toLocaleDateString('en-ZA', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  })
+
+  const htmlContent = '<!DOCTYPE html>' +
+'<html>' +
+'<head>' +
+  '<meta charset="utf-8">' +
+  '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
+'</head>' +
+'<body style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #1a1a1a; max-width: 600px; margin: 0 auto; padding: 20px; background: #f5f5f5;">' +
+  '<div style="background: #1a1a1a; padding: 25px 30px; border-radius: 10px 10px 0 0; text-align: center;">' +
+    '<img src="' + logoUrl + '" alt="Spectres" style="height: 50px; display: block; margin: 0 auto;">' +
+  '</div>' +
+  '<div style="background: #ffffff; padding: 30px; border-radius: 0 0 10px 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">' +
+    '<div style="background: ' + urgencyColor + '; color: white; padding: 12px 20px; border-radius: 6px; margin-bottom: 20px; text-align: center; font-weight: bold;">' +
+      urgencyLabel + ': Password Expires in ' + daysRemaining + ' Day' + (daysRemaining === 1 ? '' : 's') +
+    '</div>' +
+    '<p>Hello ' + escapeHtml(username) + ',</p>' +
+    '<p>Your Spectres account password will expire on <strong>' + formattedDate + '</strong>.</p>' +
+    '<p>After this date, you will be unable to access Spectres services until you reset your password.</p>' +
+    '<div style="text-align: center; margin: 30px 0;">' +
+      '<a href="' + appUrl + '/self-service-password" style="display: inline-block; background: #1a1a1a; color: white; padding: 14px 28px; text-decoration: none; border-radius: 4px; font-weight: 600;">Change Password Now</a>' +
+    '</div>' +
+    '<p style="font-size: 14px; color: #666;">' +
+      'Go to the link above and use your current password to log in. You will be prompted to create a new password.' +
+    '</p>' +
+    '<hr style="border: none; border-top: 1px solid #e0e0e0; margin: 20px 0;">' +
+    '<p style="font-size: 12px; color: #999;">' +
+      'If you need assistance, please contact your system administrator.' +
+    '</p>' +
+  '</div>' +
+  '<div style="text-align: center; padding: 20px; color: #999; font-size: 12px;">' +
+    '<p>&copy; 2026 Spectres - All rights reserved</p>' +
+  '</div>' +
+'</body>' +
+'</html>'
+
+  const textContent = urgencyLabel + ': Password Expires in ' + daysRemaining + ' Day' + (daysRemaining === 1 ? '' : 's') + '\n\n' +
+    'Hello ' + escapeHtml(username) + ',\n\n' +
+    'Your Spectres account password will expire on ' + formattedDate + '.\n\n' +
+    'After this date, you will be unable to access Spectres services until you reset your password.\n\n' +
+    'Go to: ' + appUrl + '/self-service-password\n\n' +
+    'If you need assistance, please contact your system administrator.\n'
+
+  try {
+    const info = await transporter.sendMail({
+      from: '"' + fromName + '" <' + fromAddress + '>',
+      to: to,
+      subject: urgencyLabel + ': Your Spectres Password Expires in ' + daysRemaining + ' Day' + (daysRemaining === 1 ? '' : 's'),
+      text: textContent,
+      html: htmlContent,
+    })
+
+    logger.info('Password expiration email sent', { 
+      to, 
+      messageId: info.messageId,
+      username,
+      daysRemaining
+    })
+    return { success: true, messageId: info.messageId }
+  } catch (error) {
+    logger.error('Failed to send password expiration email', {
+      error: error.message,
+      to,
+      username,
+      daysRemaining
+    })
+    return { success: false, error: error.message }
+  }
+}

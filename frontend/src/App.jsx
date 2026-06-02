@@ -22,6 +22,7 @@ const ProfileManagement = lazy(() => import('./pages/ProfileManagement').then(m 
 const ServiceManager = lazy(() => import('./pages/ServiceManager').then(m => ({ default: m.ServiceManager })))
 const VersionHistory = lazy(() => import('./pages/VersionHistory').then(m => ({ default: m.VersionHistory })))
 const Login = lazy(() => import('./pages/Login').then(m => ({ default: m.Login })))
+const AdminLogin = lazy(() => import('./pages/AdminLogin').then(m => ({ default: m.AdminLogin })))
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword').then(m => ({ default: m.ForgotPassword })))
 const ResetPassword = lazy(() => import('./pages/ResetPassword').then(m => ({ default: m.ResetPassword })))
 const CreatePassword = lazy(() => import('./pages/CreatePassword').then(m => ({ default: m.CreatePassword })))
@@ -47,7 +48,7 @@ function ProtectedRoute({ children }) {
 
   useEffect(() => {
     const checkAuth = async () => {
-      if (location.pathname === '/login') {
+      if (location.pathname === '/login' || location.pathname === '/login/admin') {
         setAuthenticated(false)
         setLoading(false)
         return
@@ -116,6 +117,7 @@ export function App() {
         <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-page"><div className="text-tertiary text-[13px]">Loading...</div></div>}>
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/login/admin" element={<AdminLogin />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password/:token" element={<ResetPassword />} />
             <Route path="/create-password" element={<CreatePassword />} />

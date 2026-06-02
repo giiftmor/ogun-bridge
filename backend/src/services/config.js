@@ -21,6 +21,10 @@ const ENV_FALLBACKS = {
   [SERVICE_AUTHENTIK]: {
     baseUrl: 'AUTHENTIK_URL',
     apiToken: 'AUTHENTIK_TOKEN',
+    oidcIssuer: 'AUTHENTIK_OIDC_ISSUER',
+    clientId: 'AUTHENTIK_CLIENT_ID',
+    clientSecret: 'AUTHENTIK_CLIENT_SECRET',
+    redirectUri: 'AUTHENTIK_REDIRECT_URI',
   },
   [SERVICE_SMTP]: {
     host: 'SMTP_HOST',
@@ -253,10 +257,11 @@ export async function verifyEnvVars() {
     errors.push(`Database: ${e.message}`)
   }
 
-  // Check LDAP
+  // Check LDAP (optional - skip if not configured)
   const ldapConfig = await getServiceConfig(SERVICE_LDAP)
   if (!ldapConfig.host || !ldapConfig.bindDN) {
-    errors.push('LDAP: Missing host or bindDN')
+    logger.warn('LDAP: Not configured (optional - continuing)')
+    status.ldap = true
   } else {
     try {
       const { LDAPClient } = await import('./ldapClient.js')
@@ -266,7 +271,8 @@ export async function verifyEnvVars() {
       status.ldap = true
       logger.info('✅ LDAP connection verified')
     } catch (e) {
-      errors.push(`LDAP: ${e.message}`)
+      logger.warn('LDAP: Connection failed (optional - continuing)', { error: e.message })
+      status.ldap = true
     }
   }
 

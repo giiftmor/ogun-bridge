@@ -1,0 +1,10 @@
+{
+  "version": 3,
+  "file": "middleware.d.ts",
+  "sourceRoot": "",
+  "sources": [
+    "../../src/session/middleware.ts"
+  ],
+  "names": [],
+  "mappings": "AAAA,OAAO,KAAK,EAAE,OAAO,EAAE,QAAQ,EAAE,MAAM,SAAS,CAAA;AAEhD,OAAO,KAAK,EAAE,QAAQ,EAAE,aAAa,EAAE,MAAM,aAAa,CAAA;AAU1D,wBAAgB,gBAAgB,CAAC,IAAI,EAAE,aAAa,QAEnD;AA8BD,wBAAgB,aAAa,CAAC,GAAG,EAAE,QAAQ,EAAE,IAAI,EAAE,QAAQ,QAa1D;AAED,wBAAgB,UAAU,CAAC,GAAG,EAAE,OAAO,GAAG,QAAQ,GAAG,IAAI,CA8BxD;AAED,wBAAgB,YAAY,CAAC,GAAG,EAAE,QAAQ,QAEzC"
+}

@@ -4,6 +4,7 @@ import {
   Search, User, UserCircle, Key, Users, Shield, Clock, Mail,
   CheckCircle, XCircle, ExternalLink, Copy, Loader2, RefreshCw,
   Terminal, Plus, Server, Play, Cloud, Network, ArrowLeft, Edit3, Trash2,
+  Download, Upload,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -38,6 +39,8 @@ export function UserBrowser() {
   const [editingUser, setEditingUser] = useState(false)
   const [editName, setEditName] = useState('')
   const [editEmail, setEditEmail] = useState('')
+  const [showImportDialog, setShowImportDialog] = useState(false)
+  const [importResults, setImportResults] = useState(null)
 
   const queryClient = useQueryClient()
   const debouncedSearch = useDebounce(searchTerm, 300)
@@ -140,6 +143,32 @@ export function UserBrowser() {
     onError: (error) => toast.error(translateError(error).message),
   })
 
+  const exportCSVMutation = useMutation({
+    mutationFn: () => apiClient.exportUsersCSV(),
+    onSuccess: (blob) => {
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `users-${new Date().toISOString().split('T')[0]}.csv`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+      toast.success('Users exported to CSV')
+    },
+    onError: (err) => toast.error(err.message),
+  })
+
+  const importCSVMutation = useMutation({
+    mutationFn: (rows) => apiClient.importUsersCSV(rows),
+    onSuccess: (data) => {
+      setImportResults(data)
+      queryClient.invalidateQueries(['users'])
+      toast.success(`Imported ${data.successful} of ${data.total} users`)
+    },
+    onError: (err) => toast.error(err.message),
+  })
+
   const addUserToGroupMutation = useMutation({
     mutationFn: async ({ username, groups }) => {
       const results = await Promise.all(
@@ -201,6 +230,12 @@ export function UserBrowser() {
           <p className="text-muted-foreground mt-2">Browse and manage user profiles</p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => exportCSVMutation.mutate()} disabled={exportCSVMutation.isPending}>
+            <Download className="h-4 w-4 mr-2" />Export
+          </Button>
+          <Button variant="outline" onClick={() => { setShowImportDialog(true); setImportResults(null) }}>
+            <Upload className="h-4 w-4 mr-2" />Import
+          </Button>
           <Button variant="outline" onClick={() => setShowOnboarding(true)}>
             <Plus className="h-4 w-4 mr-2" />Onboard User
           </Button>
@@ -715,6 +750,14 @@ export function UserBrowser() {
                 open={showOnboarding}
                 onClose={() => setShowOnboarding(false)}
               />
+
+              <ImportCSVDialog
+                open={showImportDialog}
+                onClose={() => setShowImportDialog(false)}
+                onImport={(rows) => importCSVMutation.mutate(rows)}
+                isLoading={importCSVMutation.isPending}
+                results={importResults}
+              />
             </>
           )}
         </div>
@@ -811,5 +854,104 @@ function DetailRow({ label, value }) {
       <span className="text-sm text-muted-foreground">{label}:</span>
       <span className="text-sm font-medium text-right">{value || 'N/A'}</span>
     </div>
+  )
+}
+
+function ImportCSVDialog({ open, onClose, onImport, isLoading, results }) {
+  const [csvText, setCsvText] = useState('')
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      setCsvText(event.target?.result || '')
+    }
+    reader.readAsText(file)
+  }
+
+  const parseCSV = (text) => {
+    const lines = text.trim().split('\n')
+    if (lines.length < 2) return []
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase())
+    const rows = []
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g, ''))
+      const row = {}
+      headers.forEach((h, idx) => {
+        row[h] = values[idx] || ''
+      })
+      rows.push(row)
+    }
+    return rows
+  }
+
+  const handleImport = () => {
+    const rows = parseCSV(csvText)
+    if (rows.length === 0) {
+      toast.error('No valid rows found in CSV')
+      return
+    }
+    onImport(rows)
+  }
+
+  const handleClose = () => {
+    setCsvText('')
+    onClose()
+  }
+
+  return (
+    <Dialog open={open} onClose={handleClose}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Import Users from CSV</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label>Upload CSV File</Label>
+            <Input type="file" accept=".csv" onChange={handleFileUpload} />
+            <p className="text-xs text-muted-foreground">
+              CSV must have headers: username, name, email, groups (optional), password (optional)
+            </p>
+          </div>
+
+          {csvText && (
+            <div className="space-y-2">
+              <Label>Preview</Label>
+              <div className="max-h-[200px] overflow-y-auto border rounded p-2 bg-muted text-xs font-mono whitespace-pre">
+                {csvText.split('\n').slice(0, 6).join('\n')}
+                {csvText.split('\n').length > 6 && '\n...'}
+              </div>
+            </div>
+          )}
+
+          {results && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm">
+                <CheckCircle className="h-4 w-4 text-green-500" />
+                <span>Successful: {results.successful}</span>
+                <XCircle className="h-4 w-4 text-red-500 ml-4" />
+                <span>Failed: {results.failed}</span>
+              </div>
+              {results.results?.filter(r => !r.success).length > 0 && (
+                <div className="max-h-[120px] overflow-y-auto border rounded p-2 bg-red-50 text-xs">
+                  <p className="font-medium text-red-700 mb-1">Failed rows:</p>
+                  {results.results.filter(r => !r.success).map((r, i) => (
+                    <div key={i} className="text-red-600">{r.username}: {r.error}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={handleClose}>Cancel</Button>
+          <Button onClick={handleImport} disabled={!csvText || isLoading}>
+            {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
+            Import {csvText ? parseCSV(csvText).length : 0} Users
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

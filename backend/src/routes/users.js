@@ -715,3 +715,165 @@ usersRouter.delete('/:username/groups/:groupId', async (req, res) => {
     res.status(500).json({ error: error.message })
   }
 })
+
+// ── Bulk Import / Export ──────────────────────────────────────────────────
+
+// Export users as CSV
+usersRouter.get('/export/csv', async (req, res) => {
+  try {
+    const authentikUsers = await authentikClient.getUsers()
+    const ldapUsers = await ldapClient.getUsers()
+    const ldapMap = new Map(ldapUsers.map(u => [u.uid, u]))
+
+    const rows = authentikUsers
+      .filter(u => !isServiceAccount(u))
+      .map(u => {
+        const lUser = ldapMap.get(u.username)
+        return {
+          username: u.username,
+          name: u.name || '',
+          email: u.email || '',
+          status: u.is_active ? 'active' : 'inactive',
+          groups: (u.groups || []).map(g => typeof g === 'object' ? g.name : g).join(';'),
+          ldapSynced: lUser ? 'yes' : 'no',
+        }
+      })
+
+    // CSV header
+    const headers = ['username', 'name', 'email', 'status', 'groups', 'ldap_synced']
+    const csvLines = [
+      headers.join(','),
+      ...rows.map(r =>
+        headers.map(h => {
+          const val = r[h === 'ldap_synced' ? 'ldapSynced' : h]
+          // Escape quotes and wrap in quotes if contains comma or quote
+          const str = String(val || '').replace(/"/g, '""')
+          return str.includes(',') || str.includes('"') ? `"${str}"` : str
+        }).join(',')
+      ),
+    ]
+
+    res.setHeader('Content-Type', 'text/csv')
+    res.setHeader('Content-Disposition', 'attachment; filename="users.csv"')
+    res.send(csvLines.join('\n'))
+  } catch (error) {
+    logger.error('Error exporting users to CSV:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// Import users from CSV
+usersRouter.post('/import/csv', async (req, res) => {
+  try {
+    const { rows } = req.body
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(400).json({ error: 'No rows provided' })
+    }
+
+    const results = []
+    const allGroups = await authentikClient.getGroups()
+
+    for (const row of rows) {
+      const { username, name, email, groups, password } = row
+
+      if (!username) {
+        results.push({ username: username || 'N/A', success: false, error: 'Username is required' })
+        continue
+      }
+
+      try {
+        // Check if user exists
+        const existing = await authentikClient.getUserByUsername(username)
+        if (existing) {
+          results.push({ username, success: false, error: 'User already exists' })
+          continue
+        }
+
+        // Create in Authentik
+        const aUser = await authentikClient.createUser({
+          username,
+          name: name || username,
+          email: email || `${username}@spectres.co.za`,
+        })
+
+        // Create in LDAP
+        let ldapCreated = false
+        try {
+          await ldapClient.updateUser(username, {
+            cn: name || username,
+            sn: name || username,
+            mail: email || `${username}@spectres.co.za`,
+          })
+          if (password) {
+            await ldapClient.setUserPassword(username, password)
+          }
+          ldapCreated = true
+        } catch (ldapErr) {
+          logger.warn('LDAP user creation failed during import:', ldapErr.message)
+        }
+
+        // Add to groups
+        const groupList = groups ? String(groups).split(/[;,]/).map(g => g.trim()).filter(Boolean) : []
+        const addedGroups = []
+        for (const groupName of groupList) {
+          const targetGroup = allGroups.find(g => g.name === groupName)
+          if (targetGroup) {
+            try {
+              await authentikClient.addUserToGroup(targetGroup.pk, username)
+              addedGroups.push(groupName)
+            } catch (gErr) {
+              logger.warn(`Failed to add ${username} to group ${groupName}:`, gErr.message)
+            }
+          }
+        }
+
+        // Create local auth_users record
+        const userResult = await pool.query(
+          'SELECT id FROM auth_users WHERE username = $1',
+          [username]
+        )
+        if (userResult.rows.length === 0) {
+          const bcrypt = await import('bcryptjs')
+          const hashed = password ? await bcrypt.default.hash(password, 12) : '$2a$10$placeholderfordummyuseonly'
+          await pool.query(
+            'INSERT INTO auth_users (username, password_hash, email, role, active) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (username) DO NOTHING',
+            [username, hashed, email || aUser.email, 'viewer', true]
+          )
+        }
+
+        results.push({
+          username,
+          success: true,
+          authentikId: aUser.pk,
+          ldapCreated,
+          groupsAdded: addedGroups.length,
+        })
+      } catch (err) {
+        logger.error(`Error importing user ${username}:`, err.message)
+        results.push({ username, success: false, error: err.message })
+      }
+    }
+
+    const successCount = results.filter(r => r.success).length
+
+    await createAuditLog({
+      action: 'users_bulk_imported',
+      actor: req.user?.username || 'api',
+      entity_type: 'user',
+      entity_id: 'bulk',
+      changes: { total: rows.length, success: successCount, failed: rows.length - successCount },
+      source: 'api',
+    })
+
+    res.json({
+      total: rows.length,
+      successful: successCount,
+      failed: rows.length - successCount,
+      results,
+    })
+  } catch (error) {
+    logger.error('Error importing users from CSV:', error)
+    res.status(500).json({ error: error.message })
+  }
+})

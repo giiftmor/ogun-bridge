@@ -5,13 +5,8 @@ import { apiClient } from '../services/api'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { CheckCircle, XCircle, Shield, Loader2 } from 'lucide-react'
-
-function Requirement({ label, status }) {
-  if (status === null) return <div className="flex items-center gap-2 text-secondary"><XCircle className="h-4 w-4" /><span className="text-[13px]">{label}</span></div>
-  if (status === 'pending') return <div className="flex items-center gap-2 text-[#b45309]"><XCircle className="h-4 w-4" /><span className="text-[13px]">{label}</span></div>
-  return <div className="flex items-center gap-2 text-success-text"><CheckCircle className="h-4 w-4" /><span className="text-[13px]">{label}</span></div>
-}
+import { Shield, Loader2 } from 'lucide-react'
+import { PasswordStrengthMeter } from '@/components/PasswordStrengthMeter'
 
 export function CreatePassword() {
   const { token } = useParams()
@@ -32,32 +27,21 @@ export function CreatePassword() {
     if (token) verifyToken()
   }, [token])
 
-  const getRequirementStatus = (requirement) => {
-    if (!password) return null
-    switch (requirement) {
-      case '10 characters': return password.length >= 10 ? 'met' : 'pending'
-      case 'uppercase': return /[A-Z]/.test(password) ? 'met' : 'pending'
-      case 'lowercase': return /[a-z]/.test(password) ? 'met' : 'pending'
-      case 'number': return /[0-9]/.test(password) ? 'met' : 'pending'
-      case 'special': return /[!@#$%^&*]/.test(password) ? 'met' : 'pending'
-      case 'no spaces': return !/\s/.test(password) ? 'met' : 'pending'
-      default: return null
-    }
-  }
-
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!password || !confirmPassword) { toast.error('Please enter and confirm your new password'); return }
     if (password !== confirmPassword) { toast.error('Passwords do not match'); return }
-    const reqs = [
-      { label: '10 characters', status: getRequirementStatus('10 characters') },
-      { label: 'uppercase letter', status: getRequirementStatus('uppercase') },
-      { label: 'lowercase letter', status: getRequirementStatus('lowercase') },
-      { label: 'number', status: getRequirementStatus('number') },
-      { label: 'special character (!@#$%^&*)', status: getRequirementStatus('special') },
-      { label: 'no spaces', status: getRequirementStatus('no spaces') },
-    ]
-    if (reqs.filter(r => r.status !== 'met').length > 0) { toast.error('Password does not meet all requirements'); return }
+    // Validate password strength
+    const hasLength = password.length >= 10
+    const hasUpper = /[A-Z]/.test(password)
+    const hasLower = /[a-z]/.test(password)
+    const hasNumber = /[0-9]/.test(password)
+    const hasSpecial = /[!@#$%^&*]/.test(password)
+    const hasNoSpaces = !/\s/.test(password)
+    if (!hasLength || !hasUpper || !hasLower || !hasNumber || !hasSpecial || !hasNoSpaces) {
+      toast.error('Password does not meet all requirements')
+      return
+    }
     setLoading(true)
     try { await apiClient.resetPassword(token, password); toast.success('Password created successfully!'); navigate('/login') }
     catch (err) { toast.error(err.message || 'Failed to create password') }
@@ -122,15 +106,7 @@ export function CreatePassword() {
             </div>
 
             <div className="bg-subtle border border-border rounded-sm p-4">
-              <p className="text-[13px] font-medium text-primary mb-2">Password must contain:</p>
-              <div className="grid grid-cols-2 gap-2">
-                <Requirement label="At least 10 characters" status={getRequirementStatus('10 characters')} />
-                <Requirement label="At least one uppercase letter" status={getRequirementStatus('uppercase')} />
-                <Requirement label="At least one lowercase letter" status={getRequirementStatus('lowercase')} />
-                <Requirement label="At least one number" status={getRequirementStatus('number')} />
-                <Requirement label="One special character (!@#$%^&*)" status={getRequirementStatus('special')} />
-                <Requirement label="No spaces allowed" status={getRequirementStatus('no spaces')} />
-              </div>
+              <PasswordStrengthMeter password={password} />
             </div>
 
             <Button type="submit" disabled={loading} className="w-full">

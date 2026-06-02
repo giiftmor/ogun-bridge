@@ -46,9 +46,14 @@ export const useAppStore = create((set, get) => ({
   // User State
   currentUser: null,
   setCurrentUser: (user) => set({ currentUser: user }),
-  logout: () => {
-    set({ token: null, currentUser: null })
-  },
+  logout: () => set({
+    token: null,
+    currentUser: null,
+    dashboardStats: null,
+    syncStatus: { status: 'idle', lastSync: null, progress: 0, message: '' },
+    logs: [],
+    notifications: [],
+  }),
 
   // Dashboard Stats
   dashboardStats: null,

@@ -280,6 +280,22 @@ CREATE INDEX IF NOT EXISTS idx_auth_users_username ON auth_users(username);
 CREATE INDEX IF NOT EXISTS idx_auth_users_role ON auth_users(role);
 CREATE INDEX IF NOT EXISTS idx_auth_users_oidc ON auth_users(oidc_id);
 
+-- ── Auth sessions (OIDC session tokens) ─────────────────────────────────
+CREATE TABLE IF NOT EXISTS auth_sessions (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    token VARCHAR(255) UNIQUE NOT NULL,
+    ip_address VARCHAR(45),
+    user_agent TEXT,
+    expires_at TIMESTAMP NOT NULL,
+    data JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_token ON auth_sessions(token);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires ON auth_sessions(expires_at);
+
 -- ── Apps registry (service-to-service auth) ──────────────────────────────
 CREATE TABLE IF NOT EXISTS apps (
     id SERIAL PRIMARY KEY,
