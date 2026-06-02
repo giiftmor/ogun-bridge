@@ -183,7 +183,7 @@ mailRouter.post('/test', async (req, res) => {
 
     const info = await transporter.sendMail({
       from: `"${config.fromName}" <${config.fromAddress}>`,
-      to: config.user ? config.user : undefined,
+      to: config.fromAddress ? config.fromAddress : undefined,
       subject: 'Ogun Bridge Test Email',
       text: 'This is a test email from ALSM. If you received this, your mail settings are working!',
       html: `
