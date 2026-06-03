@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogContent, DialogFooter } from '@/components/ui/dialog'
 import { apiClient } from '@/services/api'
 import { toast } from 'react-hot-toast'
+import { useAppStore } from '@/store/useAppStore'
 
 function LoadingSpinner() {
   return (
@@ -27,6 +28,7 @@ function EmptyState({ message }) {
 // ── Apps Tab ──────────────────────────────────────────────────────────────
 
 function AppsTab() {
+  const currentUser = useAppStore((s) => s.currentUser)
   const [editApp, setEditApp] = useState(null)
   const [appForm, setAppForm] = useState({})
   const [showAddApp, setShowAddApp] = useState(false)
@@ -66,9 +68,11 @@ function AppsTab() {
           <p className="text-[13px] text-secondary mt-0.5">Configure which apps use Ogun Bridge for authorization</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button onClick={() => setShowAddApp(true)} size="sm">
-            <Plus className="h-4 w-4 mr-2" /> Create App
-          </Button>
+          {currentUser?.role === 'super_admin' && (
+            <Button onClick={() => setShowAddApp(true)} size="sm">
+              <Plus className="h-4 w-4 mr-2" /> Create App
+            </Button>
+          )}
           <Button onClick={() => refetch()} variant="ghost" size="sm">
             <RefreshCw className="h-4 w-4 mr-2" /> Refresh
           </Button>

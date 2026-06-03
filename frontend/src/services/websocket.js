@@ -2,7 +2,9 @@ import { io } from 'socket.io-client'
 
 // Connect to the same host as the frontend (nginx will proxy to backend)
 // Don't use /socket.io as namespace - that's the path, not namespace
-const WS_URL = import.meta.env.VITE_WS_URL || window.location.origin
+const WS_TARGET = import.meta.env.VITE_WS_URL || window.location.origin
+const WS_URL = WS_TARGET.startsWith('/') ? window.location.origin : WS_TARGET
+const WS_PATH = WS_TARGET.startsWith('/') ? WS_TARGET : '/socket.io'
 
 class WebSocketService {
   constructor() {
@@ -14,6 +16,7 @@ class WebSocketService {
     if (this.socket?.connected) return;
 
     this.socket = io(WS_URL, {
+      path: WS_PATH,
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionDelay: 1000,
