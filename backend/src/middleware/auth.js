@@ -94,6 +94,7 @@ export function requireRole(...allowedRoles) {
     }
 
     const userRole = req.user.roleDefinition?.name || req.user.role
+    if (userRole === 'super_admin') return next()
     if (!allowedRoles.includes(userRole)) {
       logger.warn('Access denied', {
         user: req.user.username,
@@ -206,6 +207,8 @@ export function requireLDAPGroup(groupDN = SYSTEM_ADMINS_GROUP) {
     if (!req.user?.username) {
       return res.status(401).json({ error: 'Authentication required' })
     }
+
+    if (req.user.role === 'super_admin') return next()
 
     try {
       const username = req.user.username
