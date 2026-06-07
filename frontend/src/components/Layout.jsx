@@ -8,7 +8,7 @@ import { CmdPalette } from './CmdPalette'
 import { apiClient } from '@/services/api'
 
 export function Layout() {
-  const { sidebarOpen, toggleSidebar, theme, toggleTheme, logout: clearUserState } = useAppStore()
+  const { sidebarOpen, toggleSidebar, theme, toggleTheme, logout: clearUserState, currentUser } = useAppStore()
   const [moreOpen, setMoreOpen] = useState(false)
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false)
   const moreRef = useRef(null)
@@ -48,7 +48,7 @@ export function Layout() {
 
   return (
     <div className="min-h-screen bg-surface flex flex-col">
-      <Sidebar sidebarOpen={sidebarOpen} toggleSidebar={toggleSidebar} />
+      <Sidebar sidebarOpen={sidebarOpen} toggleSidebar={toggleSidebar} userRole={currentUser?.roleDefinition?.name} />
 
       <header
         className={cn(

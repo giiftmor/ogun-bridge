@@ -42,6 +42,9 @@ services:
       SMTP_FROM_ADDRESS: ${SMTP_FROM_ADDRESS:-}
       MAILSERVER_ENABLED: ${MAILSERVER_ENABLED:-true}
       MAILSERVER_DOMAIN: ${MAILSERVER_DOMAIN:-spectres.co.za}
+      RBAC_REGISTRATION_SECRET: ${RBAC_REGISTRATION_SECRET}
+      SCHEMA_DISCOVERY_INTERVAL_MINUTES: ${SCHEMA_DISCOVERY_INTERVAL_MINUTES:-5}
+      SCHEMA_DISCOVERY_ENABLED: ${SCHEMA_DISCOVERY_ENABLED:-true}
     deploy:
       resources:
         limits:
@@ -91,4 +94,4 @@ networks:
     driver: bridge
   thoth-network:
     external: true
-    name: thoth-esu-gateway_default
+    name: thoth-esu-gateway_thoth-network

@@ -11,6 +11,7 @@ import { ConfirmDialog } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import toast from 'react-hot-toast'
 import { apiClient } from '@/services/api'
+import { RequireRole } from '@/components/RequireRole'
 
 export function GroupBrowser() {
   const [searchTerm, setSearchTerm] = useState('')
@@ -139,10 +140,12 @@ export function GroupBrowser() {
                 Pending
               </FilterButton>
               <div className="border-l pl-2 ml-2 flex gap-2">
-                <Button variant="default" size="sm" onClick={() => setShowCreate(true)}>
-                  <Plus className="h-4 w-4 mr-1" />
-                  Create
-                </Button>
+                <RequireRole roles={['admin']}>
+                  <Button variant="default" size="sm" onClick={() => setShowCreate(true)}>
+                    <Plus className="h-4 w-4 mr-1" />
+                    Create
+                  </Button>
+                </RequireRole>
                 <Button
                   variant={viewMode === 'tree' ? 'default' : 'outline'}
                   size="sm"
@@ -468,14 +471,18 @@ function GroupDetails({ group, showParent, editing, onEdit, onDelete, onStartEdi
           <div className="flex items-center gap-2">
             {!editing && (
               <>
-                <Button variant="outline" size="sm" onClick={onStartEdit}>
-                  <Edit3 className="h-3.5 w-3.5 mr-1" />
-                  Edit
-                </Button>
-                <Button variant="destructive" size="sm" onClick={() => onDelete(group)}>
-                  <Trash2 className="h-3.5 w-3.5 mr-1" />
-                  Delete
-                </Button>
+                <RequireRole roles={['admin']}>
+                  <Button variant="outline" size="sm" onClick={onStartEdit}>
+                    <Edit3 className="h-3.5 w-3.5 mr-1" />
+                    Edit
+                  </Button>
+                </RequireRole>
+                <RequireRole roles={['admin']}>
+                  <Button variant="destructive" size="sm" onClick={() => onDelete(group)}>
+                    <Trash2 className="h-3.5 w-3.5 mr-1" />
+                    Delete
+                  </Button>
+                </RequireRole>
               </>
             )}
           </div>

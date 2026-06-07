@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/select'
 import toast from 'react-hot-toast'
 import { apiClient } from '@/services/api'
+import { RequireRole } from '@/components/RequireRole'
 
 const EXPIRATION_OPTIONS = [
   { value: null, label: 'No expiration' },
@@ -46,12 +47,12 @@ export function PasswordManagement() {
 
   const { data: policy } = useQuery({
     queryKey: ['password-policy'],
-    queryFn: apiClient.getPasswordPolicy,
+    queryFn: () => apiClient.getPasswordPolicy(),
   })
 
   const { data: users = [], isLoading: loadingUsers } = useQuery({
     queryKey: ['users-list'],
-    queryFn: apiClient.getUsersList,
+    queryFn: () => apiClient.getUsersList(),
   })
 
   const { data: expiration, refetch: refetchExpiration } = useQuery({
@@ -285,24 +286,26 @@ export function PasswordManagement() {
                       />
                     </div>
 
-                    <div>
-                      <label className="text-sm font-medium">Password Expiration</label>
-                      <Select 
-                        value={expirationDays?.toString() || 'null'} 
-                        onValueChange={(val) => setExpirationDays(val === 'null' ? null : parseInt(val))}
-                      >
-                        <SelectTrigger className="mt-1">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {EXPIRATION_OPTIONS.map((opt) => (
-                            <SelectItem key={opt.value ?? 'null'} value={opt.value?.toString() ?? 'null'}>
-                              {opt.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    <RequireRole roles={['admin', 'password_manager']}>
+                      <div>
+                        <label className="text-sm font-medium">Password Expiration</label>
+                        <Select 
+                          value={expirationDays?.toString() || 'null'} 
+                          onValueChange={(val) => setExpirationDays(val === 'null' ? null : parseInt(val))}
+                        >
+                          <SelectTrigger className="mt-1">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {EXPIRATION_OPTIONS.map((opt) => (
+                              <SelectItem key={opt.value ?? 'null'} value={opt.value?.toString() ?? 'null'}>
+                                {opt.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </RequireRole>
 
                     {newPassword && confirmPassword && newPassword !== confirmPassword && (
                       <div className="text-sm text-red-500 flex items-center gap-2">
@@ -325,23 +328,25 @@ export function PasswordManagement() {
                       </div>
                     )}
 
-                    <Button 
-                      type="submit" 
-                      className="w-full"
-                      disabled={syncMutation.isPending || !newPassword || !confirmPassword}
-                    >
-                      {syncMutation.isPending ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Syncing...
-                        </>
-                      ) : (
-                        <>
-                          <Shield className="h-4 w-4 mr-2" />
-                          Sync Password
-                        </>
-                      )}
-                    </Button>
+                    <RequireRole roles={['admin', 'password_manager']}>
+                      <Button 
+                        type="submit" 
+                        className="w-full"
+                        disabled={syncMutation.isPending || !newPassword || !confirmPassword}
+                      >
+                        {syncMutation.isPending ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Syncing...
+                          </>
+                        ) : (
+                          <>
+                            <Shield className="h-4 w-4 mr-2" />
+                            Sync Password
+                          </>
+                        )}
+                      </Button>
+                    </RequireRole>
                   </form>
                 </CardContent>
               </Card>

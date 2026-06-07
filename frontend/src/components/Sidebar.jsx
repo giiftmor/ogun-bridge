@@ -18,6 +18,21 @@ import {
 import { cn } from '@/utils/cn'
 import { useAppStore } from '@/store/useAppStore'
 
+const roleAccess = {
+  viewer: new Set(['Dashboard', 'Audit', 'Logs']),
+  password_manager: new Set(['Dashboard', 'Users', 'Passwords', 'Audit', 'Logs']),
+}
+
+function filterNavigation(nav, role) {
+  if (!role || role === 'admin' || role === 'super_admin') return nav
+  const allowed = roleAccess[role]
+  if (!allowed) return nav
+  return nav.map(group => ({
+    ...group,
+    items: group.items.filter(item => allowed.has(item.name)),
+  })).filter(group => group.items.length > 0)
+}
+
 const defaultNavigation = [
   {
     label: 'USER ADMINISTRATION',
@@ -127,8 +142,9 @@ function SidebarHeader({ collapsed }) {
   )
 }
 
-export function Sidebar({ sidebarOpen, toggleSidebar, navigation = defaultNavigation }) {
+export function Sidebar({ sidebarOpen, toggleSidebar, navigation, userRole }) {
   const collapsed = !sidebarOpen
+  const nav = navigation || filterNavigation(defaultNavigation, userRole)
 
   return (
     <aside
@@ -141,7 +157,7 @@ export function Sidebar({ sidebarOpen, toggleSidebar, navigation = defaultNaviga
       )}
     >
       <SidebarHeader collapsed={collapsed} />
-      <SidebarBody navigation={navigation} collapsed={collapsed} />
+      <SidebarBody navigation={nav} collapsed={collapsed} />
       <button
         onClick={toggleSidebar}
         title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}

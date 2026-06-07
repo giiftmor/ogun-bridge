@@ -30,6 +30,7 @@ const OperationsCenter = lazy(() => import('./pages/OperationsCenter').then(m =>
 const SyncManager = lazy(() => import('./pages/SyncManager').then(m => ({ default: m.SyncManager })))
 const Setup = lazy(() => import('./pages/Setup').then(m => ({ default: m.Setup })))
 const RoleManagement = lazy(() => import('./pages/RoleManagement').then(m => ({ default: m.RoleManagement })))
+const AppRoleDetail = lazy(() => import('./pages/AppRoleDetail').then(m => ({ default: m.AppRoleDetail })))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -56,8 +57,10 @@ function ProtectedRoute({ children }) {
 
       try {
         const user = await apiClient.getCurrentUser()
+        useAppStore.getState().setCurrentUser(user)
         setAuthenticated(true)
       } catch (e) {
+        useAppStore.getState().setCurrentUser(null)
         setAuthenticated(false)
       }
       setLoading(false)
@@ -148,6 +151,7 @@ export function App() {
               <Route path="sync-manager" element={<SyncManager />} />
               <Route path="versions" element={<VersionHistory />} />
               <Route path="roles" element={<RoleManagement />} />
+              <Route path="roles/:slug" element={<AppRoleDetail />} />
               <Route path="groups-manager" element={<Navigate to="/services" replace />} />
             </Route>
 

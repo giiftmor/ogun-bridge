@@ -20,6 +20,7 @@ import toast from 'react-hot-toast'
 import { apiClient } from '@/services/api'
 import { OnboardingWizard } from '@/components/OnboardingWizard'
 import { translateError } from '@/utils/errorTranslator'
+import { RequireRole } from '@/components/RequireRole'
 
 const SERVICE_ICONS = {
   mail: Mail, vpn: Shield, media: Play, cloud: Cloud, key: Key,
@@ -234,12 +235,16 @@ export function UserBrowser() {
           <Button variant="outline" onClick={() => { setShowImportDialog(true); setImportResults(null) }}>
             <Upload className="h-4 w-4 mr-2" />Import
           </Button>
-          <Button variant="outline" onClick={() => setShowOnboarding(true)}>
-            <Plus className="h-4 w-4 mr-2" />Onboard User
-          </Button>
-          <Button onClick={() => setShowCreateUser(true)}>
-            <Plus className="h-4 w-4 mr-2" />Create User
-          </Button>
+          <RequireRole roles={['admin', 'password_manager']}>
+            <Button variant="outline" onClick={() => setShowOnboarding(true)}>
+              <Plus className="h-4 w-4 mr-2" />Onboard User
+            </Button>
+          </RequireRole>
+          <RequireRole roles={['admin', 'password_manager']}>
+            <Button onClick={() => setShowCreateUser(true)}>
+              <Plus className="h-4 w-4 mr-2" />Create User
+            </Button>
+          </RequireRole>
         </div>
       </div>
 
@@ -376,13 +381,15 @@ export function UserBrowser() {
                             })}>
                               {selectedUser.isActive !== false ? 'Deactivate' : 'Activate'}
                             </Button>
-                            <Button variant="destructive" size="sm" onClick={() => setConfirmDialog({
-                              open: true, title: 'Delete User',
-                              description: `Permanently delete ${selectedUser.username}? This cannot be undone.`,
-                              onConfirm: () => { deleteUserMutation.mutate(selectedUser.id); setConfirmDialog({ open: false }) }
-                            })}>
-                              <Trash2 className="h-3.5 w-3.5 mr-1" />Delete
-                            </Button>
+                            <RequireRole roles={['admin']}>
+                              <Button variant="destructive" size="sm" onClick={() => setConfirmDialog({
+                                open: true, title: 'Delete User',
+                                description: `Permanently delete ${selectedUser.username}? This cannot be undone.`,
+                                onConfirm: () => { deleteUserMutation.mutate(selectedUser.id); setConfirmDialog({ open: false }) }
+                              })}>
+                                <Trash2 className="h-3.5 w-3.5 mr-1" />Delete
+                              </Button>
+                            </RequireRole>
                           </div>
                         </div>
                       ) : (
@@ -479,30 +486,36 @@ export function UserBrowser() {
                       )}
 
                       <div className="flex flex-wrap gap-2">
-                        <Button variant="ghost" onClick={() => setConfirmDialog({
-                          open: true, title: 'Force Password Reset',
-                          description: `Force password reset for ${selectedUser.username}?`,
-                          onConfirm: () => { forceResetMutation.mutate(selectedUser.username); setConfirmDialog({ open: false }) }
-                        })} disabled={forceResetMutation.isPending}>
-                          {forceResetMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-                          Force Reset
-                        </Button>
-                        <Button  onClick={() => setConfirmDialog({
-                          open: true, title: 'Invite User',
-                          description: `Send password creation invitation to ${profile?.altEmail || profile?.email || selectedUser.username}?`,
-                          onConfirm: () => { inviteUserMutation.mutate(selectedUser.username); setConfirmDialog({ open: false }) }
-                        })} disabled={inviteUserMutation.isPending}>
-                          {inviteUserMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Mail className="h-4 w-4 mr-2" />}
-                          Invite User
-                        </Button>
-                        <Button variant="ghost" onClick={() => setConfirmDialog({
-                          open: true, title: 'Generate Temporary Password',
-                          description: `Generate a new temp password for ${selectedUser.username}?`,
-                          onConfirm: () => { generateTempPasswordMutation.mutate(selectedUser.username); setConfirmDialog({ open: false }) }
-                        })} disabled={generateTempPasswordMutation.isPending}>
-                          {generateTempPasswordMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Terminal className="h-4 w-4 mr-2" />}
-                          Generate Temp Password
-                        </Button>
+                        <RequireRole roles={['admin', 'password_manager']}>
+                          <Button variant="ghost" onClick={() => setConfirmDialog({
+                            open: true, title: 'Force Password Reset',
+                            description: `Force password reset for ${selectedUser.username}?`,
+                            onConfirm: () => { forceResetMutation.mutate(selectedUser.username); setConfirmDialog({ open: false }) }
+                          })} disabled={forceResetMutation.isPending}>
+                            {forceResetMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                            Force Reset
+                          </Button>
+                        </RequireRole>
+                        <RequireRole roles={['admin', 'password_manager']}>
+                          <Button  onClick={() => setConfirmDialog({
+                            open: true, title: 'Invite User',
+                            description: `Send password creation invitation to ${profile?.altEmail || profile?.email || selectedUser.username}?`,
+                            onConfirm: () => { inviteUserMutation.mutate(selectedUser.username); setConfirmDialog({ open: false }) }
+                          })} disabled={inviteUserMutation.isPending}>
+                            {inviteUserMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Mail className="h-4 w-4 mr-2" />}
+                            Invite User
+                          </Button>
+                        </RequireRole>
+                        <RequireRole roles={['admin', 'password_manager']}>
+                          <Button variant="ghost" onClick={() => setConfirmDialog({
+                            open: true, title: 'Generate Temporary Password',
+                            description: `Generate a new temp password for ${selectedUser.username}?`,
+                            onConfirm: () => { generateTempPasswordMutation.mutate(selectedUser.username); setConfirmDialog({ open: false }) }
+                          })} disabled={generateTempPasswordMutation.isPending}>
+                            {generateTempPasswordMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Terminal className="h-4 w-4 mr-2" />}
+                            Generate Temp Password
+                          </Button>
+                        </RequireRole>
                       </div>
                     </CardContent>
                   </Card>

@@ -749,6 +749,7 @@ class ApiClient {
   async updateRbacRolePermissions(id, permissions) { return this.request(`/rbac/roles/${id}/permissions`, { method: 'PUT', body: JSON.stringify({ permissions }) }) }
   async getRbacMappings(appSlug) { return this.request(`/rbac/mappings/${appSlug}`) }
   async createRbacMapping(appSlug, data) { return this.request(`/rbac/mappings/${appSlug}`, { method: 'POST', body: JSON.stringify(data) }) }
+  async createRbacMappingsBulk(appSlug, data) { return this.request(`/rbac/mappings/${appSlug}/bulk`, { method: 'POST', body: JSON.stringify(data) }) }
   async updateRbacMapping(id, data) { return this.request(`/rbac/mappings/${id}`, { method: 'PUT', body: JSON.stringify(data) }) }
   async deleteRbacMapping(id) { return this.request(`/rbac/mappings/${id}`, { method: 'DELETE' }) }
   async getRbacSchema(appSlug) { return this.request(`/rbac/schema/${appSlug}`) }

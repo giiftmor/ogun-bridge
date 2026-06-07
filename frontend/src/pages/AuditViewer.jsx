@@ -35,7 +35,7 @@ export function AuditViewer() {
 
   const { data: stats } = useQuery({
     queryKey: ['audit-stats'],
-    queryFn: apiClient.getAuditStats,
+    queryFn: () => apiClient.getAuditStats(),
     refetchInterval: 60000,
   })
 

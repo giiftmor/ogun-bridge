@@ -419,6 +419,7 @@ ALTER TABLE app_users ADD COLUMN IF NOT EXISTS role_definition_id INTEGER REFERE
 ALTER TABLE app_users ADD COLUMN IF NOT EXISTS permissions_cache JSONB;
 ALTER TABLE app_users ADD COLUMN IF NOT EXISTS last_sync TIMESTAMP;
 ALTER TABLE app_users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+ALTER TABLE app_users ADD COLUMN IF NOT EXISTS is_override BOOLEAN DEFAULT false;
 
 -- Legacy admin_users table (kept for backward compatibility)
 CREATE TABLE IF NOT EXISTS admin_users (
@@ -634,6 +635,97 @@ async function initializeTables() {
     await client.query(schema)
     logger.info('Database tables initialized')
 
+    // Seed role_permissions for ogun (only if not already seeded)
+    const existingOgunPerms = await pool.query(`
+      SELECT COUNT(*) FROM role_permissions rp
+      JOIN role_definitions rd ON rd.id = rp.role_definition_id
+      WHERE rd.app_slug = 'ogun'
+    `)
+    if (parseInt(existingOgunPerms.rows[0].count) === 0) {
+      const ogunRoles = await pool.query(
+        "SELECT id, name FROM role_definitions WHERE app_slug = 'ogun'"
+      )
+      const roleMap = {}
+      for (const r of ogunRoles.rows) roleMap[r.name] = r.id
+
+      if (roleMap.admin) {
+        await pool.query(`
+          INSERT INTO role_permissions (role_definition_id, module_name, actions) VALUES
+          ($1, 'dashboard', '["read","write"]'),
+          ($1, 'password', '["read","write","manage"]'),
+          ($1, 'users', '["read","write","manage"]'),
+          ($1, 'groups', '["read","write"]'),
+          ($1, 'audit', '["read"]'),
+          ($1, 'logs', '["read"]'),
+          ($1, 'settings', '["read","write"]')
+          ON CONFLICT (role_definition_id, module_name) DO NOTHING
+        `, [roleMap.admin])
+      }
+      if (roleMap.password_manager) {
+        await pool.query(`
+          INSERT INTO role_permissions (role_definition_id, module_name, actions) VALUES
+          ($1, 'dashboard', '["read"]'),
+          ($1, 'password', '["read","write","manage"]'),
+          ($1, 'users', '["read"]'),
+          ($1, 'audit', '["read"]'),
+          ($1, 'logs', '["read"]')
+          ON CONFLICT (role_definition_id, module_name) DO NOTHING
+        `, [roleMap.password_manager])
+      }
+      if (roleMap.viewer) {
+        await pool.query(`
+          INSERT INTO role_permissions (role_definition_id, module_name, actions) VALUES
+          ($1, 'dashboard', '["read"]'),
+          ($1, 'audit', '["read"]'),
+          ($1, 'logs', '["read"]')
+          ON CONFLICT (role_definition_id, module_name) DO NOTHING
+        `, [roleMap.viewer])
+      }
+      logger.info('Seeded role_permissions for ogun')
+    }
+
+    // Seed app_schemas for all apps (only if not already seeded)
+    const existingSchemas = await pool.query('SELECT COUNT(*) FROM app_schemas')
+    if (parseInt(existingSchemas.rows[0].count) === 0) {
+      await pool.query(`
+        INSERT INTO app_schemas (app_slug, modules, source, last_synced, updated_at)
+        VALUES
+        ('ogun', $1, 'seed', NOW(), NOW()),
+        ('spectres', $2, 'seed', NOW(), NOW()),
+        ('thoth', $3, 'seed', NOW(), NOW())
+        ON CONFLICT (app_slug) DO NOTHING
+      `, [
+        JSON.stringify([
+          { name: 'dashboard', actions: ['read', 'write'], description: 'Main dashboard overview' },
+          { name: 'password', actions: ['read', 'write', 'manage'], description: 'Password management' },
+          { name: 'users', actions: ['read', 'write', 'manage'], description: 'User management' },
+          { name: 'groups', actions: ['read', 'write'], description: 'Group management' },
+          { name: 'audit', actions: ['read'], description: 'Audit log viewer' },
+          { name: 'logs', actions: ['read'], description: 'System logs viewer' },
+          { name: 'settings', actions: ['read', 'write'], description: 'Application settings' },
+        ]),
+        JSON.stringify([
+          { name: 'dashboard', actions: ['read', 'write'], description: 'Pantheon dashboard' },
+          { name: 'projects', actions: ['read', 'write', 'manage'], description: 'Project management' },
+          { name: 'tasks', actions: ['read', 'write'], description: 'Task management' },
+          { name: 'tickets', actions: ['read', 'write', 'manage'], description: 'Ticket system' },
+          { name: 'clients', actions: ['read', 'write'], description: 'Client management' },
+          { name: 'time', actions: ['read', 'write'], description: 'Time tracking' },
+          { name: 'finances', actions: ['read', 'write'], description: 'Financial records' },
+        ]),
+        JSON.stringify([
+          { name: 'dashboard', actions: ['read'], description: 'ESU gateway dashboard and statistics' },
+          { name: 'emails', actions: ['read', 'write', 'delete'], description: 'Email management (send, view, delete, relay)' },
+          { name: 'settings', actions: ['read', 'write'], description: 'Application settings, templates, API keys, password management' },
+          { name: 'config', actions: ['read', 'write'], description: 'Server configuration (mailserver, OIDC, YAML config)' },
+          { name: 'webhooks', actions: ['read', 'create', 'edit', 'delete'], description: 'Webhook management' },
+          { name: 'audits', actions: ['read', 'write', 'delete'], description: 'Audit logs and retry operations' },
+          { name: 'logs', actions: ['read'], description: 'System logs viewer' },
+        ]),
+      ])
+      logger.info('Seeded app_schemas for all apps')
+    }
+
     // Seed base roles (only if not already seeded)
     const existingBaseRoles = await pool.query('SELECT COUNT(*) FROM base_roles')
     if (parseInt(existingBaseRoles.rows[0].count) === 0) {
@@ -654,7 +746,7 @@ async function initializeTables() {
         INSERT INTO apps (name, slug, display_name, api_key, claim_name, authentik_slug, access_group, schema_endpoint, is_active) VALUES
         ('Groove Payroll', 'groove', 'Groove Payroll', $1, 'groove_role', 'groove-payroll', 'groove-payroll', 'http://groove:5005/api/rbac/schema', true),
         ('Spectres Pantheon', 'spectres', 'Spectres Pantheon', $2, 'spectre_role', 'spectres-pantheon', 'spectres-pantheon', 'http://spectres:8764/api/rbac/schema', true),
-        ('Thoth ESU Gateway', 'thoth', 'Thoth ESU Gateway', $3, 'thoth_role', 'thoth-esu-gateway', 'thoth-esu-gateway', 'http://thoth:3010/api/rbac/schema', true),
+        ('Thoth ESU Gateway', 'thoth', 'Thoth ESU Gateway', $3, 'thoth_role', 'thoth-esu-gateway', 'thoth-esu-gateway', 'http://api:3010/api/rbac/schema', true),
         ('Ogun Bridge', 'ogun', 'Ogun Bridge', $4, 'ogun_role', 'ogun-bridge', 'ogun-bridge', null, true)
         ON CONFLICT (slug) DO NOTHING
       `, [

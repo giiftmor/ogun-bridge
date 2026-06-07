@@ -1,93 +1,112 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from "vitest"
+
+const { mockLDAPSearch } = vi.hoisted(() => ({
+  mockLDAPSearch: vi.fn(),
+}))
 
 const mockPoolQuery = vi.fn()
-vi.mock('../src/lib/db.js', () => ({
+vi.mock("../src/lib/db.js", () => ({
   pool: { query: mockPoolQuery },
 }))
 
+vi.mock("../src/services/ldapClient.js", () => ({
+  LDAPClient: function () {
+    this.client = { search: mockLDAPSearch }
+    this.connect = vi.fn().mockResolvedValue()
+    this.disconnect = vi.fn().mockResolvedValue()
+  },
+}))
+
 let authenticate, optionalAuth, validateSession, createSession, deleteSession, cleanupExpiredSessions
+let requireRole, requireLDAPGroup
 
 beforeEach(async () => {
   vi.resetAllMocks()
-  const mod = await import('../src/middleware/auth.js')
+  const mod = await import("../src/middleware/auth.js")
   authenticate = mod.authenticate
   optionalAuth = mod.optionalAuth
   validateSession = mod.validateSession
   createSession = mod.createSession
   deleteSession = mod.deleteSession
   cleanupExpiredSessions = mod.cleanupExpiredSessions
+  requireRole = mod.requireRole
+  requireLDAPGroup = mod.requireLDAPGroup
 })
 
-describe('validateSession', () => {
-  it('returns null for empty token', async () => {
+function flush() {
+  return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+describe("validateSession", () => {
+  it("returns null for empty token", async () => {
     expect(await validateSession(null)).toBeNull()
-    expect(await validateSession('')).toBeNull()
+    expect(await validateSession("")).toBeNull()
   })
 
-  it('returns null when query returns empty', async () => {
+  it("returns null when query returns empty", async () => {
     mockPoolQuery.mockResolvedValue({ rows: [] })
-    expect(await validateSession('valid-token')).toBeNull()
+    expect(await validateSession("valid-token")).toBeNull()
     expect(mockPoolQuery).toHaveBeenCalledWith(
-      expect.stringContaining('SELECT'),
-      ['valid-token']
+      expect.stringContaining("SELECT"),
+      ["valid-token"],
     )
   })
 
-  it('returns session data when valid', async () => {
-    const fakeSession = { id: 1, user_id: 42, username: 'testuser', role: 'admin' }
+  it("returns session data when valid", async () => {
+    const fakeSession = { id: 1, user_id: 42, username: "testuser", role: "admin" }
     mockPoolQuery.mockResolvedValue({ rows: [fakeSession] })
-    const result = await validateSession('good-token')
+    const result = await validateSession("good-token")
     expect(result).toEqual(fakeSession)
   })
 
-  it('returns null on query error', async () => {
-    mockPoolQuery.mockRejectedValue(new Error('DB error'))
-    const result = await validateSession('token')
+  it("returns null on query error", async () => {
+    mockPoolQuery.mockRejectedValue(new Error("DB error"))
+    const result = await validateSession("token")
     expect(result).toBeNull()
   })
 })
 
-describe('createSession', () => {
-  it('inserts a session and returns a token', async () => {
+describe("createSession", () => {
+  it("inserts a session and returns a token", async () => {
     mockPoolQuery.mockResolvedValue({ rows: [] })
-    const token = await createSession(1, '127.0.0.1', 'test-agent')
+    const token = await createSession(1, "127.0.0.1", "test-agent")
     expect(token).toBeTruthy()
-    expect(typeof token).toBe('string')
+    expect(typeof token).toBe("string")
     expect(token.length).toBe(128)
     expect(mockPoolQuery).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT INTO auth_sessions'),
-      [1, token, '127.0.0.1', 'test-agent', expect.any(Date)]
+      expect.stringContaining("INSERT INTO auth_sessions"),
+      [1, token, "127.0.0.1", "test-agent", expect.any(Date), null],
     )
   })
 })
 
-describe('deleteSession', () => {
-  it('deletes by token', async () => {
+describe("deleteSession", () => {
+  it("deletes by token", async () => {
     mockPoolQuery.mockResolvedValue({ rowCount: 1 })
-    await deleteSession('token-to-delete')
+    await deleteSession("token-to-delete")
     expect(mockPoolQuery).toHaveBeenCalledWith(
-      expect.stringContaining('DELETE FROM auth_sessions'),
-      ['token-to-delete']
+      expect.stringContaining("DELETE FROM auth_sessions"),
+      ["token-to-delete"],
     )
   })
 })
 
-describe('cleanupExpiredSessions', () => {
-  it('deletes expired sessions', async () => {
+describe("cleanupExpiredSessions", () => {
+  it("deletes expired sessions", async () => {
     mockPoolQuery.mockResolvedValue({ rowCount: 5 })
     await cleanupExpiredSessions()
     expect(mockPoolQuery).toHaveBeenCalledWith(
-      expect.stringContaining('DELETE FROM auth_sessions')
+      expect.stringContaining("DELETE FROM auth_sessions"),
     )
   })
 })
 
-describe('authenticate middleware', () => {
+describe("authenticate middleware", () => {
   function makeReq(authHeader, cookieToken) {
     return {
       headers: authHeader ? { authorization: authHeader } : {},
       cookies: cookieToken ? { auth_token: cookieToken } : {},
-      path: '/api/test',
+      path: "/api/test",
     }
   }
 
@@ -97,66 +116,65 @@ describe('authenticate middleware', () => {
     return { status, json }
   }
 
-  it('returns 401 when no token provided', () => {
+  it("returns 401 when no token provided", () => {
     const req = makeReq(null, null)
     const res = makeRes()
     authenticate(req, res, vi.fn())
     expect(res.status).toHaveBeenCalledWith(401)
-    expect(res.status().json).toHaveBeenCalledWith({ error: 'Authentication required' })
+    expect(res.status().json).toHaveBeenCalledWith({ error: "Authentication required" })
   })
 
-  it('extracts token from Bearer header and calls next', async () => {
-    const req = makeReq('Bearer header-token', null)
+  it("extracts token from Bearer header and calls next", async () => {
+    const req = makeReq("Bearer header-token", null)
     const res = makeRes()
     mockPoolQuery.mockResolvedValue({
-      rows: [{ id: 1, user_id: 1, username: 'user', email: 'a@b.com', role: 'admin' }],
+      rows: [{ id: 1, user_id: 1, username: "user", email: "a@b.com", role: "admin" }],
     })
 
     await new Promise((resolve) => {
       authenticate(req, res, () => {
         expect(req.user).toBeDefined()
-        expect(req.user.username).toBe('user')
+        expect(req.user.username).toBe("user")
         resolve()
       })
     })
   })
 
-  it('extracts token from cookie and calls next', async () => {
-    const req = makeReq(null, 'cookie-token')
+  it("extracts token from cookie and calls next", async () => {
+    const req = makeReq(null, "cookie-token")
     const res = makeRes()
     mockPoolQuery.mockResolvedValue({
-      rows: [{ id: 1, user_id: 1, username: 'user', email: 'a@b.com', role: 'admin' }],
+      rows: [{ id: 1, user_id: 1, username: "user", email: "a@b.com", role: "admin" }],
     })
 
     await new Promise((resolve) => {
       authenticate(req, res, () => {
         expect(req.user).toBeDefined()
-        expect(req.user.username).toBe('user')
+        expect(req.user.username).toBe("user")
         resolve()
       })
     })
   })
 
-  it('does NOT accept token from query string', () => {
+  it("does NOT accept token from query string", () => {
     const req = {
       headers: {},
       cookies: {},
-      query: { token: 'query-token' },
-      path: '/api/test',
+      query: { token: "query-token" },
+      path: "/api/test",
     }
     const res = makeRes()
     authenticate(req, res, vi.fn())
-    // Should fail because query.token is not read
     expect(res.status).toHaveBeenCalledWith(401)
   })
 })
 
-describe('optionalAuth middleware', () => {
+describe("optionalAuth middleware", () => {
   function makeReq(authHeader, cookieToken) {
     return {
       headers: authHeader ? { authorization: authHeader } : {},
       cookies: cookieToken ? { auth_token: cookieToken } : {},
-      path: '/api/test',
+      path: "/api/test",
     }
   }
 
@@ -164,40 +182,185 @@ describe('optionalAuth middleware', () => {
     return { status: vi.fn(), json: vi.fn() }
   }
 
-  it('calls next() when no token', () => {
+  it("calls next() when no token", () => {
     const req = makeReq(null, null)
     const next = vi.fn()
     optionalAuth(req, makeRes(), next)
     expect(next).toHaveBeenCalled()
   })
 
-  it('sets req.user when valid token in cookie', async () => {
-    const req = makeReq(null, 'cookie-token')
+  it("sets req.user when valid token in cookie", async () => {
+    const req = makeReq(null, "cookie-token")
     mockPoolQuery.mockResolvedValue({
-      rows: [{ id: 1, user_id: 1, username: 'user', email: 'a@b.com', role: 'admin' }],
+      rows: [{ id: 1, user_id: 1, username: "user", email: "a@b.com", role: "admin" }],
     })
 
     await new Promise((resolve) => {
       optionalAuth(req, makeRes(), () => {
         expect(req.user).toBeDefined()
-        expect(req.user.username).toBe('user')
+        expect(req.user.username).toBe("user")
         resolve()
       })
     })
   })
 
-  it('does NOT read token from query string', async () => {
+  it("does NOT read token from query string", async () => {
     const req = {
       headers: {},
       cookies: {},
-      query: { token: 'query-token' },
-      path: '/api/test',
+      query: { token: "query-token" },
+      path: "/api/test",
     }
     const next = vi.fn()
-    // The query string token must not be read — should call next immediately
     optionalAuth(req, makeRes(), next)
     expect(next).toHaveBeenCalled()
-    // And no DB query should be made
     expect(mockPoolQuery).not.toHaveBeenCalled()
+  })
+})
+
+describe("requireRole middleware", () => {
+  function makeReq(role, roleDefinition) {
+    return {
+      user: {
+        username: "testuser",
+        role: role || "admin",
+        roleDefinition: roleDefinition || null,
+      },
+      path: "/api/test",
+    }
+  }
+
+  function makeRes() {
+    const json = vi.fn()
+    const status = vi.fn(() => ({ json }))
+    return { status, json }
+  }
+
+  it("returns 401 when no user", () => {
+    const req = { path: "/api/test" }
+    const res = makeRes()
+    const next = vi.fn()
+    requireRole("admin")(req, res, next)
+    expect(res.status).toHaveBeenCalledWith(401)
+    expect(res.status().json).toHaveBeenCalledWith({ error: "Authentication required" })
+    expect(next).not.toHaveBeenCalled()
+  })
+
+  it("returns 403 when role not in allowed list", () => {
+    const req = makeReq("viewer")
+    const res = makeRes()
+    const next = vi.fn()
+    requireRole("admin", "manager")(req, res, next)
+    expect(res.status).toHaveBeenCalledWith(403)
+    expect(res.status().json).toHaveBeenCalledWith({ error: "Insufficient permissions" })
+    expect(next).not.toHaveBeenCalled()
+  })
+
+  it("calls next when role is in allowed list", () => {
+    const req = makeReq("admin")
+    const res = makeRes()
+    const next = vi.fn()
+    requireRole("admin", "manager")(req, res, next)
+    expect(next).toHaveBeenCalled()
+    expect(res.status).not.toHaveBeenCalled()
+  })
+
+  it("bypasses role check for super_admin even if not in allowed list", () => {
+    const req = makeReq("super_admin")
+    const res = makeRes()
+    const next = vi.fn()
+    requireRole("viewer")(req, res, next)
+    expect(next).toHaveBeenCalled()
+    expect(res.status).not.toHaveBeenCalled()
+  })
+
+  it("uses roleDefinition.name when present", () => {
+    const req = makeReq("viewer", { name: "admin" })
+    const res = makeRes()
+    const next = vi.fn()
+    requireRole("admin")(req, res, next)
+    expect(next).toHaveBeenCalled()
+    expect(res.status).not.toHaveBeenCalled()
+  })
+})
+
+describe("requireLDAPGroup middleware", () => {
+  function makeReq(username, role) {
+    return {
+      user: {
+        username: username || "testuser",
+        role: role || "admin",
+      },
+      path: "/api/test",
+    }
+  }
+
+  function makeRes() {
+    const json = vi.fn()
+    const status = vi.fn(() => ({ json }))
+    return { status, json }
+  }
+
+  beforeEach(() => {
+    mockLDAPSearch.mockResolvedValue({
+      searchEntries: [{ member: ["uid=testuser,ou=people,dc=spectres,dc=co,dc=za"] }],
+    })
+  })
+
+  it("returns 401 when no username", async () => {
+    const req = { user: { role: "admin" }, path: "/api/test" }
+    const res = makeRes()
+    const next = vi.fn()
+    await requireLDAPGroup("cn=test,ou=groups,dc=spectres,dc=co,dc=za")(req, res, next)
+    await flush()
+    expect(res.status).toHaveBeenCalledWith(401)
+    expect(res.status().json).toHaveBeenCalledWith({ error: "Authentication required" })
+    expect(next).not.toHaveBeenCalled()
+  })
+
+  it("bypasses LDAP check for super_admin", async () => {
+    const req = makeReq("superadmin", "super_admin")
+    const res = makeRes()
+    const next = vi.fn()
+    await requireLDAPGroup("cn=test,ou=groups,dc=spectres,dc=co,dc=za")(req, res, next)
+    await flush()
+    expect(next).toHaveBeenCalled()
+    expect(mockLDAPSearch).not.toHaveBeenCalled()
+  })
+
+  it("returns 403 when user not in LDAP group", async () => {
+    mockLDAPSearch.mockResolvedValue({
+      searchEntries: [{ member: ["uid=otheruser,ou=people,dc=spectres,dc=co,dc=za"] }],
+    })
+    const req = makeReq("testuser", "admin")
+    const res = makeRes()
+    const next = vi.fn()
+    await requireLDAPGroup("cn=test,ou=groups,dc=spectres,dc=co,dc=za")(req, res, next)
+    await flush()
+    expect(res.status).toHaveBeenCalledWith(403)
+    expect(res.status().json).toHaveBeenCalledWith({ error: "Insufficient LDAP group membership" })
+    expect(next).not.toHaveBeenCalled()
+  })
+
+  it("returns 500 on LDAP error", async () => {
+    mockLDAPSearch.mockRejectedValue(new Error("LDAP connection refused"))
+    const req = makeReq("testuser", "admin")
+    const res = makeRes()
+    const next = vi.fn()
+    await requireLDAPGroup("cn=test,ou=groups,dc=spectres,dc=co,dc=za")(req, res, next)
+    await flush()
+    expect(res.status).toHaveBeenCalledWith(500)
+    expect(res.status().json).toHaveBeenCalledWith({ error: "Authorization check failed" })
+    expect(next).not.toHaveBeenCalled()
+  })
+
+  it("allows access when user is in LDAP group", async () => {
+    const req = makeReq("testuser", "admin")
+    const res = makeRes()
+    const next = vi.fn()
+    await requireLDAPGroup("cn=test,ou=groups,dc=spectres,dc=co,dc=za")(req, res, next)
+    await flush()
+    expect(next).toHaveBeenCalled()
+    expect(res.status).not.toHaveBeenCalled()
   })
 })

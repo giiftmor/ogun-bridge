@@ -15,6 +15,37 @@ export async function resolveRole(sub, email, groups, appSlug, preResolvedRole =
     return { error: 'App is not active', authorized: false }
   }
 
+  // Check if user has a manual override — skip group resolution if so
+  const existingUser = await pool.query(
+    'SELECT role_definition_id, permissions_cache FROM app_users WHERE app_id = $1 AND oidc_sub = $2 AND is_override = true',
+    [app.id, sub]
+  )
+  if (existingUser.rows.length > 0) {
+    const override = existingUser.rows[0]
+    const roleDef = await pool.query(
+      'SELECT id, name, display_name, base_role FROM role_definitions WHERE id = $1 AND is_active = true',
+      [override.role_definition_id]
+    )
+    if (roleDef.rows.length > 0) {
+      await pool.query(
+        'UPDATE app_users SET last_auth = NOW(), email = COALESCE($1, email) WHERE app_id = $2 AND oidc_sub = $3',
+        [email, app.id, sub]
+      )
+      const r = roleDef.rows[0]
+      return {
+        authorized: true,
+        roleDefinition: { id: r.id, name: r.name, displayName: r.display_name, baseRole: r.base_role },
+        permissions: override.permissions_cache || {},
+        source: 'override',
+      }
+    }
+    // Override role definition was deactivated — clear stale flag
+    await pool.query(
+      'UPDATE app_users SET is_override = false WHERE app_id = $1 AND oidc_sub = $2',
+      [app.id, sub]
+    )
+  }
+
   let roleDefId = null
   let roleName = 'viewer'
   let roleDisplayName = 'Viewer'
@@ -184,6 +215,45 @@ export async function checkPermission(sub, groups, appSlug, requiredModule, requ
   return { authorized: true, permissions: resolved.permissions, roleDefinition: resolved.roleDefinition }
 }
 
+export async function getUserOgunRole(username) {
+  try {
+    const result = await pool.query(`
+      SELECT rd.name AS role_name
+      FROM app_users au
+      JOIN apps a ON a.id = au.app_id
+      JOIN role_definitions rd ON rd.id = au.role_definition_id
+      WHERE a.slug = 'ogun' AND (au.email = $1 OR au.oidc_sub = $1)
+    `, [username])
+    if (result.rows.length > 0) return result.rows[0].role_name
+
+    const authUrl = process.env.AUTHENTIK_URL || 'https://auth.spectres.co.za'
+    const token = process.env.AUTHENTIK_API_TOKEN
+    if (!token) return null
+
+    const userRes = await fetch(`${authUrl}/api/v3/core/users/?search=${encodeURIComponent(username)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!userRes.ok) return null
+    const userData = await userRes.json()
+    const user = userData.results?.[0]
+    if (!user?.pk) return null
+
+    const groupsRes = await fetch(`${authUrl}/api/v3/core/users/${user.pk}/groups/`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!groupsRes.ok) return null
+    const groups = await groupsRes.json()
+    const groupNames = (groups.results || []).map(g => g.name)
+
+    if (groupNames.includes('systems_admins')) return 'admin'
+    if (groupNames.includes('password_manager')) return 'password_manager'
+    return 'viewer'
+  } catch (error) {
+    logger.warn('Failed to resolve ogun role for target user', { username, error: error.message })
+    return null
+  }
+}
+
 export async function getAuthentikGroups() {
   const authUrl = process.env.AUTHENTIK_URL || 'https://auth.spectres.co.za'
   const token = process.env.AUTHENTIK_API_TOKEN
@@ -203,7 +273,7 @@ export async function syncUsersForApp(appSlug) {
     [appSlug]
   )
   if (app.rows.length === 0) throw new Error('App not found')
-  const { id: appId, authentik_slug, access_group } = app.rows[0]
+  const { id: appId, access_group } = app.rows[0]
 
   const authUrl = process.env.AUTHENTIK_URL || 'https://auth.spectres.co.za'
   const token = process.env.AUTHENTIK_API_TOKEN
@@ -227,23 +297,43 @@ export async function syncUsersForApp(appSlug) {
   if (!membersRes.ok) throw new Error(`Failed to fetch group members: ${membersRes.status}`)
   const members = await membersRes.json()
 
-  const defaultRole = await pool.query(
-    'SELECT id FROM role_definitions WHERE app_slug = $1 AND is_default = true AND is_active = true LIMIT 1',
-    [appSlug]
-  )
-  const defaultRoleId = defaultRole.rows[0]?.id || null
-
   let synced = 0
   for (const user of members.results || []) {
     const sub = user?.pk?.toString() || user?.uuid
     if (!sub) continue
-    await pool.query(`
-      INSERT INTO app_users (app_id, oidc_sub, email, role_definition_id, last_sync, is_active)
-      VALUES ($1, $2, $3, $4, NOW(), true)
-      ON CONFLICT (app_id, oidc_sub) DO UPDATE
-        SET last_sync = NOW(), is_active = true, updated_at = NOW()
-    `, [appId, sub, user.email || '', defaultRoleId])
-    synced++
+
+    try {
+      // Skip re-resolution for manually overridden users
+      const skipOverride = await pool.query(
+        'SELECT id FROM app_users WHERE app_id = $1 AND oidc_sub = $2 AND is_override = true',
+        [appId, sub]
+      )
+      if (skipOverride.rows.length > 0) {
+        await pool.query(
+          'UPDATE app_users SET last_sync = NOW() WHERE app_id = $1 AND oidc_sub = $2',
+          [appId, sub]
+        )
+        synced++
+        continue
+      }
+
+      const groupsRes = await fetch(`${authUrl}/api/v3/core/users/${user.pk}/groups/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const userGroups = groupsRes.ok
+        ? (await groupsRes.json()).results?.map(g => g.name) || []
+        : []
+
+      await resolveRole(sub, user.email || '', userGroups, appSlug)
+
+      await pool.query(
+        'UPDATE app_users SET last_sync = NOW() WHERE app_id = $1 AND oidc_sub = $2',
+        [appId, sub]
+      )
+      synced++
+    } catch (err) {
+      logger.warn('Failed to sync user', { sub, error: err.message })
+    }
   }
 
   return { synced, total: members.results?.length || 0 }

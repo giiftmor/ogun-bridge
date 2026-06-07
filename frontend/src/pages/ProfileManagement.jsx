@@ -25,6 +25,7 @@ import { SkeletonCard } from '@/components/ui/skeleton'
 import toast from 'react-hot-toast'
 import { apiClient } from '@/services/api'
 import { translateError } from '@/utils/errorTranslator'
+import { RequireRole } from '@/components/RequireRole'
 
 export function ProfileManagement() {
   const [username, setUsername] = useState('')
@@ -363,72 +364,78 @@ export function ProfileManagement() {
                     <RefreshCw className="h-4 w-4 mr-2" />
                     Refresh Profile
                   </Button>
-                  <Button 
-                    
-                    onClick={() => {
-                      setConfirmDialog({
-                        open: true,
-                        title: 'Invite User',
-                        description: `Send password creation invitation to ${profile.altEmail || profile.email || profile.username}?`,
-                        onConfirm: () => {
-                          inviteUserMutation.mutate(profile.username)
-                          setConfirmDialog({ open: false })
-                        }
-                      })
-                    }}
-                    disabled={inviteUserMutation.isPending}
-                  >
-                    {inviteUserMutation.isPending ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Mail className="h-4 w-4 mr-2" />
-                    )}
-                    Invite User
-                  </Button>
-                  <Button 
-                    variant="ghost"
-                    onClick={() => {
-                      setConfirmDialog({
-                        open: true,
-                        title: 'Force Password Reset',
-                        description: `Force password reset for ${profile.username}? This sends a reset link they can use to create a new password.`,
-                        onConfirm: () => {
-                          forceResetMutation.mutate(profile.username)
-                          setConfirmDialog({ open: false })
-                        }
-                      })
-                    }}
-                    disabled={forceResetMutation.isPending}
-                  >
-                    {forceResetMutation.isPending ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Key className="h-4 w-4 mr-2" />
-                    )}
-                    Force Password Reset
-                  </Button>
-                  <Button 
-                    
-                    onClick={() => {
-                      setConfirmDialog({
-                        open: true,
-                        title: 'Generate Temporary Password',
-                        description: `Generate a new temporary password for ${profile.username} and email it to them? They will be prompted to change it on first login.`,
-                        onConfirm: () => {
-                          generateTempPasswordMutation.mutate(profile.username)
-                          setConfirmDialog({ open: false })
-                        }
-                      })
-                    }}
-                    disabled={generateTempPasswordMutation.isPending}
-                  >
-                    {generateTempPasswordMutation.isPending ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Terminal className="h-4 w-4 mr-2" />
-                    )}
-                    Generate Temp Password
-                  </Button>
+                  <RequireRole roles={['admin', 'password_manager']}>
+                    <Button 
+                      
+                      onClick={() => {
+                        setConfirmDialog({
+                          open: true,
+                          title: 'Invite User',
+                          description: `Send password creation invitation to ${profile.altEmail || profile.email || profile.username}?`,
+                          onConfirm: () => {
+                            inviteUserMutation.mutate(profile.username)
+                            setConfirmDialog({ open: false })
+                          }
+                        })
+                      }}
+                      disabled={inviteUserMutation.isPending}
+                    >
+                      {inviteUserMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Mail className="h-4 w-4 mr-2" />
+                      )}
+                      Invite User
+                    </Button>
+                  </RequireRole>
+                  <RequireRole roles={['admin', 'password_manager']}>
+                    <Button 
+                      variant="ghost"
+                      onClick={() => {
+                        setConfirmDialog({
+                          open: true,
+                          title: 'Force Password Reset',
+                          description: `Force password reset for ${profile.username}? This sends a reset link they can use to create a new password.`,
+                          onConfirm: () => {
+                            forceResetMutation.mutate(profile.username)
+                            setConfirmDialog({ open: false })
+                          }
+                        })
+                      }}
+                      disabled={forceResetMutation.isPending}
+                    >
+                      {forceResetMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Key className="h-4 w-4 mr-2" />
+                      )}
+                      Force Password Reset
+                    </Button>
+                  </RequireRole>
+                  <RequireRole roles={['admin', 'password_manager']}>
+                    <Button 
+                      
+                      onClick={() => {
+                        setConfirmDialog({
+                          open: true,
+                          title: 'Generate Temporary Password',
+                          description: `Generate a new temporary password for ${profile.username} and email it to them? They will be prompted to change it on first login.`,
+                          onConfirm: () => {
+                            generateTempPasswordMutation.mutate(profile.username)
+                            setConfirmDialog({ open: false })
+                          }
+                        })
+                      }}
+                      disabled={generateTempPasswordMutation.isPending}
+                    >
+                      {generateTempPasswordMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Terminal className="h-4 w-4 mr-2" />
+                      )}
+                      Generate Temp Password
+                    </Button>
+                  </RequireRole>
                   <Button 
                     variant="ghost"
                     onClick={() => window.open('https://auth.spectres.co.za', '_blank')}

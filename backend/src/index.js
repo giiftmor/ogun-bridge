@@ -30,14 +30,16 @@ import { mailAdminRouter } from './routes/mailAdmin.js'
 import { inviteRouter } from './routes/invite.js'
 import { authRouter } from './routes/auth.js'
 import { authorizeRouter } from './routes/authorize.js'
-import { rbacRouter } from './routes/rbac.js'
+import { rbacRouter, registerApp, pushAppSchema } from './routes/rbac.js'
 import { versionRouter } from './routes/versions.js'
 import { searchRouter } from './routes/search.js'
 import { operationsRouter } from './routes/operations.js'
 import { onboardingRouter } from './routes/onboarding.js'
+import { requireRegistrationSecret, requireAppApiKey } from "./middleware/apikey.js"
 import { setupRouter } from './routes/setup.js'
 import { adminRouter } from './routes/admin.js'
 import { setupWebSocket } from './services/websocket.js'
+import { startSchemaDiscoveryService, stopSchemaDiscoveryService } from './services/schemaDiscoveryService.js'
 
 import { addLogToCache } from './services/logCache.js'
 import { startSyncService, stopSyncService } from './services/syncService.js'
@@ -51,7 +53,7 @@ app.set('trust proxy', 1)
 const httpServer = createServer(app)
 const io = new Server(httpServer, {
   cors: {
-    origin: process.env.CORS_ORIGIN || 'http://localhost:3331',
+    origin: process.env.CORS_ORIGIN || 'https://ogun.spectres.co.za',
     methods: ['GET', 'POST'],
   },
 })
@@ -87,14 +89,14 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "blob:"],
       fontSrc: ["'self'"],
-      connectSrc: ["'self'", process.env.CORS_ORIGIN || 'http://localhost:3331'],
+      connectSrc: ["'self'", process.env.CORS_ORIGIN || 'https://ogun.spectres.co.za'],
       frameSrc: ["'none'"],
       objectSrc: ["'none'"],
     },
   },
 }))
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3331',
+  origin: process.env.CORS_ORIGIN || 'https://ogun.spectres.co.za',
 }))
 app.use(express.json())
 app.use(cookieParser())
@@ -123,6 +125,7 @@ app.use((err, req, res, next) => {
 const shutdown = () => {
   logger.info('Shutting down gracefully...')
   stopSyncService()
+  stopSchemaDiscoveryService()
   httpServer.close(() => {
     logger.info('Server closed')
     process.exit(0)
@@ -170,6 +173,11 @@ function setupFullRoutes() {
   app.use('/api/invite', inviteRouter)
   app.use('/api/auth', authRouter)
   app.use('/api/authorize', authorizeRouter)
+
+  // App self-registration (no session auth - uses registration secret Bearer token)
+  app.post('/api/rbac/register', requireRegistrationSecret, registerApp)
+  app.post('/api/rbac/schema/:appSlug/push', requireAppApiKey, pushAppSchema)
+
   app.use('/api/rbac', authenticate, rbacRouter)
   app.use('/api/versions', versionRouter)
   app.use('/api/search', searchRouter)
@@ -218,6 +226,7 @@ function startFullServer() {
     // Start password expiration notification service (runs daily)
     const { startPasswordNotificationService } = await import('./services/passwordNotificationService.js')
     startPasswordNotificationService(24)
+    startSchemaDiscoveryService(io)
     
     logger.info('Full server started - all services operational')
 

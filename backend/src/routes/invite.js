@@ -9,7 +9,7 @@ import { triggerWebhook, getWebhooks, createWebhook, deleteWebhook, testWebhook 
 import { ensureUserProfile, updateUserProfile } from '../services/userProfileService.js'
 import { loggingService } from '../services/loggingService.js'
 import { createAuditLog } from '../services/auditService.js'
-import { authenticate, requireLDAPGroup } from '../middleware/auth.js'
+import { authenticate, requireRole, protectPasswordOperation, requireLDAPGroup } from '../middleware/auth.js'
 import { validatePassword } from './password.js'
 
 export const inviteRouter = express.Router()
@@ -71,7 +71,7 @@ function getAccessMethod(serviceType) {
 }
 
 // Send password invite to a single user
-inviteRouter.post('/send/:username', async (req, res) => {
+inviteRouter.post('/send/:username', requireRole('admin', 'password_manager'), async (req, res) => {
   try {
     const { username } = req.params
     
@@ -309,7 +309,7 @@ export async function triggerPasswordCreatedWebhook(username, email, services) {
 }
 
 // Force password reset - generate token and send reset email
-inviteRouter.post('/force-reset/:username', async (req, res) => {
+inviteRouter.post('/force-reset/:username', requireRole('admin', 'password_manager'), protectPasswordOperation, async (req, res) => {
   try {
     const { username } = req.params
     

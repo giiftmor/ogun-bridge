@@ -2,7 +2,7 @@ import crypto from 'crypto'
 import express from 'express'
 import rateLimit from 'express-rate-limit'
 import { pool } from '../lib/db.js'
-import { validateSession, createSession, deleteSession, requireSuperAdmin } from '../middleware/auth.js'
+import { validateSession, createSession, deleteSession, requireSuperAdmin, requireRole, protectPasswordOperation } from '../middleware/auth.js'
 import { resolveRole } from '../services/authorizer.js'
 import { getServiceConfig } from '../services/config.js'
 import { logger } from '../utils/logger.js'
@@ -329,6 +329,47 @@ authRouter.post('/trigger-expiration-notifications', requireSuperAdmin, async (r
   } catch (error) {
     logger.error('Trigger expiration notifications error', { error: error.message })
     res.status(500).json({ error: 'Failed to trigger notifications' })
+  }
+})
+
+// ── Generate temporary password (admin / password_manager) ──────────────
+
+authRouter.post('/generate-temp-password', requireRole('admin', 'password_manager'), protectPasswordOperation, async (req, res) => {
+  try {
+    const { username } = req.body
+    if (!username) return res.status(400).json({ error: 'username is required' })
+
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%^&*'
+    let tempPassword = ''
+    for (let i = 0; i < 16; i++) {
+      tempPassword += chars.charAt(Math.floor(Math.random() * chars.length))
+    }
+
+    const ldapOk = await ldapClient.setUserPassword(username, tempPassword)
+    if (!ldapOk) return res.status(500).json({ error: 'Failed to set password in LDAP' })
+
+    const akUser = await authentikClient.getUserByUsername(username)
+    if (akUser) {
+      await authentikClient.setPassword(akUser.pk, tempPassword).catch(err => {
+        logger.warn('Authentik password set failed during temp generation', { username, error: err.message })
+      })
+    }
+
+    await createAuditLog({
+      action: 'password_temp_generated',
+      actor: req.user?.username || 'system',
+      entity_type: 'user',
+      entity_id: username,
+      changes: { generatedBy: req.user?.username },
+      source: 'api',
+      success: true,
+    })
+
+    logger.info('Temporary password generated', { by: req.user?.username, for: username })
+    res.json({ success: true, username, tempPassword })
+  } catch (error) {
+    logger.error('Generate temp password error', { error: error.message })
+    res.status(500).json({ error: 'Failed to generate temporary password' })
   }
 })
 

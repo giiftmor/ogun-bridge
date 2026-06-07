@@ -1,6 +1,7 @@
 import crypto from 'crypto'
 import { pool } from '../lib/db.js'
 import { logger } from '../utils/logger.js'
+import { getUserOgunRole } from '../services/authorizer.js'
 
 const TOKEN_LENGTH = 64
 
@@ -200,6 +201,33 @@ function asyncMiddleware(fn) {
   return (req, res, next) => {
     Promise.resolve(fn(req, res, next)).catch(next)
   }
+}
+
+export function protectPasswordOperation(req, res, next) {
+  const targetUsername = req.params.username || req.body.username
+  if (!targetUsername) return next()
+
+  if (!req.user) return res.status(401).json({ error: 'Authentication required' })
+
+  const requesterRole = req.user.roleDefinition?.name || req.user.role
+  if (requesterRole === 'super_admin' || requesterRole === 'admin') return next()
+
+  if (requesterRole === 'password_manager') {
+    getUserOgunRole(targetUsername).then(targetRole => {
+      if (targetRole === 'admin' || targetRole === 'super_admin') {
+        logger.warn('Password operation blocked: password_manager targeting admin', {
+          requester: req.user.username,
+          target: targetUsername,
+          targetRole,
+        })
+        return res.status(403).json({ error: 'Cannot perform password operations on admin users' })
+      }
+      next()
+    }).catch(() => next())
+    return
+  }
+
+  next()
 }
 
 export function requireLDAPGroup(groupDN = SYSTEM_ADMINS_GROUP) {

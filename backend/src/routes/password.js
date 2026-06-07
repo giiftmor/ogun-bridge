@@ -6,7 +6,7 @@ import { loggingService } from '../services/loggingService.js'
 import { addLogToCache } from '../services/logCache.js'
 import { createAuditLog, getAuditLogs } from '../services/auditService.js'
 import { ensureUserProfile, updateUserProfile, getUserProfile } from '../services/userProfileService.js'
-import { authenticate, requireRole } from '../middleware/auth.js'
+import { authenticate, requireRole, protectPasswordOperation } from '../middleware/auth.js'
 
 export const passwordRouter = express.Router()
 
@@ -91,8 +91,8 @@ passwordRouter.get('/history/:username', async (req, res) => {
 })
 
 // Main sync endpoint - set password in LDAP + Authentik
-// Requires admin role (local database role, not LDAP group)
-passwordRouter.post('/sync/:username', requireRole('admin'), async (req, res) => {
+// Requires admin or password_manager role
+passwordRouter.post('/sync/:username', requireRole('admin', 'password_manager'), protectPasswordOperation, async (req, res) => {
   try {
     const { username } = req.params
     const { password, expirationDays } = req.body
@@ -346,8 +346,8 @@ passwordRouter.get('/expiration/:username', async (req, res) => {
   }
 })
 
-// Set password expiration (admin only)
-passwordRouter.post('/expiration/:username', async (req, res) => {
+// Set password expiration (admin or password_manager only)
+passwordRouter.post('/expiration/:username', requireRole('admin', 'password_manager'), protectPasswordOperation, async (req, res) => {
   try {
     const { username } = req.params
     const { expirationDays } = req.body
