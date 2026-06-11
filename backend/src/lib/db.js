@@ -2,6 +2,7 @@ import pg from 'pg'
 import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
+import bcrypt from 'bcryptjs'
 import { fileURLToPath } from 'url'
 import { logger } from '../utils/logger.js'
 
@@ -655,6 +656,7 @@ async function initializeTables() {
           ($1, 'password', '["read","write","manage"]'),
           ($1, 'users', '["read","write","manage"]'),
           ($1, 'groups', '["read","write"]'),
+          ($1, 'rbac', '["read","write"]'),
           ($1, 'audit', '["read"]'),
           ($1, 'logs', '["read"]'),
           ($1, 'settings', '["read","write"]')
@@ -700,6 +702,7 @@ async function initializeTables() {
           { name: 'password', actions: ['read', 'write', 'manage'], description: 'Password management' },
           { name: 'users', actions: ['read', 'write', 'manage'], description: 'User management' },
           { name: 'groups', actions: ['read', 'write'], description: 'Group management' },
+          { name: 'rbac', actions: ['read', 'write'], description: 'RBAC and app management' },
           { name: 'audit', actions: ['read'], description: 'Audit log viewer' },
           { name: 'logs', actions: ['read'], description: 'System logs viewer' },
           { name: 'settings', actions: ['read', 'write'], description: 'Application settings' },
@@ -778,6 +781,49 @@ async function initializeTables() {
         ON CONFLICT (name) DO NOTHING
       `)
       logger.info('Seeded default business roles')
+    }
+
+    // Add rbac module to existing Ogun admin role_permissions if missing
+    const ogunRbacExists = await pool.query(`
+      SELECT 1 FROM role_permissions rp
+      JOIN role_definitions rd ON rd.id = rp.role_definition_id
+      WHERE rd.app_slug = 'ogun' AND rd.name = 'admin' AND rp.module_name = 'rbac'
+    `)
+    if (ogunRbacExists.rows.length === 0) {
+      await pool.query(`
+        INSERT INTO role_permissions (role_definition_id, module_name, actions)
+        SELECT id, 'rbac', '["read","write"]'
+        FROM role_definitions
+        WHERE app_slug = 'ogun' AND name = 'admin'
+        ON CONFLICT (role_definition_id, module_name) DO NOTHING
+      `)
+      logger.info('Added rbac module to existing Ogun admin role')
+    }
+
+    // Add rbac module to existing Ogun app_schema if missing
+    const existingOgunSchema = await pool.query(
+      "SELECT modules FROM app_schemas WHERE app_slug = 'ogun'"
+    )
+    if (existingOgunSchema.rows.length > 0) {
+      const modules = existingOgunSchema.rows[0].modules
+      if (Array.isArray(modules) && !modules.some(m => m.name === 'rbac')) {
+        modules.push({ name: 'rbac', actions: ['read', 'write'], description: 'RBAC and app management' })
+        await pool.query(
+          "UPDATE app_schemas SET modules = $1, updated_at = NOW() WHERE app_slug = 'ogun'",
+          [JSON.stringify(modules)]
+        )
+        logger.info('Added rbac module to existing Ogun app_schema')
+      }
+    }
+
+    // Migrate plaintext API keys to bcrypt hashes
+    const unhashed = await pool.query("SELECT id, api_key FROM apps WHERE api_key NOT LIKE '$2%'")
+    if (unhashed.rows.length > 0) {
+      for (const row of unhashed.rows) {
+        const hashed = await bcrypt.hash(row.api_key, 12)
+        await pool.query('UPDATE apps SET api_key = $1 WHERE id = $2', [hashed, row.id])
+      }
+      logger.info(`Hashed ${unhashed.rows.length} plaintext API keys`)
     }
   } catch (error) {
     logger.error('Failed to initialize tables', { error: error.message })

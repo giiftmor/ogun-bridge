@@ -6,6 +6,7 @@ import { loggingService } from '../services/loggingService.js'
 import { addLogToCache } from '../services/logCache.js'
 import { createAuditLog, getAuditLogs } from '../services/auditService.js'
 import { ensureUserProfile, updateUserProfile, getUserProfile } from '../services/userProfileService.js'
+import { AppError } from '../utils/AppError.js'
 import { authenticate, requireRole, protectPasswordOperation } from '../middleware/auth.js'
 
 export const passwordRouter = express.Router()
@@ -85,8 +86,11 @@ passwordRouter.get('/history/:username', async (req, res) => {
     
     res.json(history)
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error getting password history:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to get password history', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -127,7 +131,7 @@ passwordRouter.post('/sync/:username', requireRole('admin', 'password_manager'),
         success: false,
         error_message: 'Failed to set password in LDAP',
       })
-      return res.status(500).json({ error: 'Failed to set password in LDAP' })
+      throw new AppError('DEPENDENCY_FAILURE', 'Failed to set password in LDAP')
     }
     
     addLogToCache({
@@ -213,13 +217,22 @@ passwordRouter.post('/sync/:username', requireRole('admin', 'password_manager'),
       authentik: authentikResult,
     })
   } catch (error) {
+    if (error instanceof AppError) {
+      addLogToCache({
+        timestamp: new Date().toISOString(),
+        level: 'error',
+        message: `[PASSWORD-SYNC] Error: ${error.message}`,
+        context: { error: error.message }
+      })
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     addLogToCache({
       timestamp: new Date().toISOString(),
       level: 'error',
       message: `[PASSWORD-SYNC] Error: ${error.message}`,
       context: { error: error.message }
     })
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to sync password', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -255,7 +268,7 @@ passwordRouter.post('/change', async (req, res) => {
         success: false,
         error_message: 'Current password is incorrect',
       })
-      return res.status(401).json({ error: 'Current password is incorrect' })
+      throw new AppError('UNAUTHORIZED', 'Current password is incorrect')
     }
     
     // Validate new password using shared validation
@@ -278,7 +291,7 @@ passwordRouter.post('/change', async (req, res) => {
         success: false,
         error_message: 'Failed to set password in LDAP',
       })
-      return res.status(500).json({ error: 'Failed to set new password in LDAP' })
+      throw new AppError('DEPENDENCY_FAILURE', 'Failed to set new password in LDAP')
     }
     
     // Update in Authentik
@@ -318,13 +331,22 @@ passwordRouter.post('/change', async (req, res) => {
       message: 'Password changed successfully',
     })
   } catch (error) {
+    if (error instanceof AppError) {
+      addLogToCache({
+        timestamp: new Date().toISOString(),
+        level: 'error',
+        message: `[PASSWORD-CHANGE] Error: ${error.message}`,
+        context: { error: error.message }
+      })
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     addLogToCache({
       timestamp: new Date().toISOString(),
       level: 'error',
       message: `[PASSWORD-CHANGE] Error: ${error.message}`,
       context: { error: error.message }
     })
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to change password', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -341,8 +363,11 @@ passwordRouter.get('/expiration/:username', async (req, res) => {
       expires: expiration ? new Date(expiration) > new Date() : null,
     })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error getting password expiration:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to get password expiration', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -360,9 +385,9 @@ passwordRouter.post('/expiration/:username', requireRole('admin', 'password_mana
     const result = await ldapClient.setPasswordExpiration(username, expirationDate)
     
     if (!result) {
-      return res.status(500).json({ error: 'Failed to set password expiration' })
+      throw new AppError('DEPENDENCY_FAILURE', 'Failed to set password expiration')
     }
-    
+
     await createAuditLog({
       action: 'password_expiration_set',
       actor: 'api',
@@ -372,14 +397,17 @@ passwordRouter.post('/expiration/:username', requireRole('admin', 'password_mana
       source: 'api',
       success: true,
     })
-    
+
     res.json({
       success: true,
       username,
       expiration: expirationDate,
     })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error setting password expiration:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to set password expiration', code: 'INTERNAL_ERROR', status: 500 })
   }
 })

@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ogun Bridge — Auth/AuthZ Architecture</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --orange: #d87620;
+    --purple: #bc8cff;
+    --cyan: #39d2c0;
+    --font: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 0;
+  }
+  .container { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+  /* Header */
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 2rem 0 1.5rem;
+    margin-bottom: 2rem;
+  }
+  header h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; }
+  header h1 span { color: var(--accent); }
+  header .subtitle { color: var(--muted); font-size: 0.95rem; margin-top: 0.3rem; }
+  header .tags { margin-top: 0.8rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .tag {
+    display: inline-block;
+    padding: 0.15rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .tag.high { border-color: var(--red); color: var(--red); }
+  .tag.med  { border-color: var(--yellow); color: var(--yellow); }
+  .tag.low  { border-color: var(--green); color: var(--green); }
+  .tag.feature { border-color: var(--purple); color: var(--purple); }
+  .tag.gap { border-color: var(--orange); color: var(--orange); }
+
+  /* TOC */
+  .toc {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.2rem 1.5rem;
+    margin-bottom: 2rem;
+  }
+  .toc h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 0.8rem; }
+  .toc ol { list-style: none; counter-reset: item; }
+  .toc ol li { counter-increment: item; margin: 0.25rem 0; }
+  .toc ol li::before { content: counters(item, ".") " "; color: var(--accent); font-weight: 600; margin-right: 0.4rem; }
+  .toc ol li a { color: var(--text); text-decoration: none; font-size: 0.9rem; }
+  .toc ol li a:hover { color: var(--accent); }
+
+  /* Sections */
+  section { margin-bottom: 2.5rem; }
+  h2 {
+    font-size: 1.4rem;
+    font-weight: 600;
+    margin: 2rem 0 1rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--border);
+    letter-spacing: -0.01em;
+  }
+  h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 1.5rem 0 0.6rem;
+    color: var(--accent);
+  }
+  h4 { font-size: 0.95rem; font-weight: 600; margin: 1rem 0 0.4rem; }
+  p { margin: 0.5rem 0; color: var(--text); }
+  .muted { color: var(--muted); font-size: 0.9rem; }
+
+  /* Diagrams */
+  .diagram {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.2rem;
+    margin: 1rem 0;
+    overflow-x: auto;
+    font-family: var(--font);
+    font-size: 0.8rem;
+    line-height: 1.5;
+    white-space: pre;
+    color: var(--cyan);
+  }
+  .diagram .hl { color: var(--yellow); }
+  .diagram .dim { color: var(--muted); }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.8rem 0;
+    font-size: 0.85rem;
+  }
+  th, td {
+    text-align: left;
+    padding: 0.5rem 0.7rem;
+    border: 1px solid var(--border);
+  }
+  th { background: var(--surface); font-weight: 600; color: var(--muted); text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.03em; }
+  td { color: var(--text); }
+  tr:hover td { background: rgba(88,166,255,0.04); }
+
+  /* Gap cards */
+  .gap-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.2rem;
+    margin: 0.6rem 0;
+    border-left: 3px solid var(--border);
+  }
+  .gap-card.high     { border-left-color: var(--red); }
+  .gap-card.medium   { border-left-color: var(--yellow); }
+  .gap-card.low      { border-left-color: var(--green); }
+  .gap-card .num     { font-weight: 700; font-size: 0.8rem; color: var(--muted); }
+  .gap-card .title   { font-weight: 600; }
+  .gap-card .loc     { font-family: var(--font); font-size: 0.8rem; color: var(--muted); }
+  .gap-card .impact  { font-size: 0.85rem; color: var(--muted); margin-top: 0.3rem; }
+  .gap-card .severity {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    margin-right: 0.5rem;
+  }
+  .severity.high   { background: rgba(248,81,73,0.15); color: var(--red); }
+  .severity.medium { background: rgba(210,153,34,0.15); color: var(--yellow); }
+  .severity.low    { background: rgba(63,185,80,0.15); color: var(--green); }
+
+  /* Code */
+  code {
+    font-family: var(--font);
+    font-size: 0.8rem;
+    background: rgba(88,166,255,0.08);
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    color: var(--cyan);
+  }
+  pre code {
+    display: block;
+    background: var(--surface);
+    padding: 0.8rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow-x: auto;
+    line-height: 1.5;
+  }
+
+  /* Lists */
+  ul, ol { margin: 0.4rem 0 0.4rem 1.5rem; }
+  li { margin: 0.2rem 0; }
+
+  /* Footer */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 1.5rem 0;
+    margin-top: 3rem;
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .container { padding: 1rem; }
+    header h1 { font-size: 1.4rem; }
+    table { font-size: 0.75rem; }
+  }
+
+  /* Badge */
+  .badge {
+    display: inline-block;
+    padding: 0.1rem 0.45rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+  }
+  .badge.yes { background: rgba(63,185,80,0.15); color: var(--green); }
+  .badge.no  { background: rgba(248,81,73,0.15); color: var(--red); }
+  .badge.warn { background: rgba(210,153,34,0.15); color: var(--yellow); }
+
+  /* Arrow flow */
+  .flow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3rem;
+    font-family: var(--font);
+    font-size: 0.8rem;
+    margin: 0.5rem 0;
+  }
+  .flow .step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.3rem 0.6rem;
+  }
+  .flow .arrow { color: var(--muted); }
+  .flow .result { color: var(--green); }
+
+  .flow-v {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    font-family: var(--font);
+    font-size: 0.78rem;
+    margin: 0.5rem 0;
+    padding: 0.5rem 0;
+  }
+  .flow-v .row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.2rem 0;
+  }
+  .flow-v .indent { padding-left: 2rem; }
+  .flow-v .indent2 { padding-left: 4rem; }
+  .flow-v .check { color: var(--green); }
+  .flow-v .cross { color: var(--red); }
+  .flow-v .branch { color: var(--muted); }
+  .flow-v .label { color: var(--muted); min-width: 6rem; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <h1>ogun bridge — <span>auth / authZ architecture</span></h1>
+  <div class="subtitle">Complete authentication and authorization flow analysis across Authentik, Ogun Bridge, Spectres Pantheon, Groove Payroll, and Thoth ESU Gateway</div>
+  <div class="tags">
+    <span class="tag feature">architecture</span>
+    <span class="tag gap">10 gaps</span>
+    <span class="tag high">5 high</span>
+    <span class="tag med">5 medium</span>
+    <span class="tag low">4 low</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#overview">System Overview</a></li>
+    <li><a href="#auth-flows">Authentication Flows</a>
+      <ol>
+        <li><a href="#flow-ui">Ogun Bridge UI Login (OIDC)</a></li>
+        <li><a href="#flow-consumer">Consumer App Authorization</a></li>
+      </ol>
+    </li>
+    <li><a href="#resolution">Authorization Resolution Chain</a></li>
+    <li><a href="#middleware">Middleware Stack</a></li>
+    <li><a href="#consumer">Consumer App Integrations</a></li>
+    <li><a href="#tables">Database Schema (RBAC)</a></li>
+    <li><a href="#ogun-rbac">Ogun Bridge's Own RBAC</a></li>
+    <li><a href="#gaps">Gaps &amp; Weaknesses</a></li>
+    <li><a href="#fixes">Recommended Fixes</a></li>
+    <li><a href="#refs">File Reference Map</a></li>
+  </ol>
+</nav>
+
+<section id="overview">
+  <h2>1. System Overview</h2>
+  <p>Ogun Bridge is a centralized identity management and authorization hub. It mediates authentication and authorization between <strong>Authentik</strong> (the SSO/IdP), <strong>389 Directory Server</strong> (LDAP user store), and consuming applications (Spectres Pantheon, Groove Payroll, Thoth ESU Gateway).</p>
+
+  <div class="diagram">
+                     ┌──────────────────────────────────────────────────────┐
+                     │                     Authentik                         │
+                     │             (SSO IdP + RBAC Authority)                │
+                     │                                                       │
+                     │  Groups: systems_admins, password_manager,            │
+                     │          ogun-bridge, spectres-pantheon,              │
+                     │          groove-payroll, thoth-esu-gateway            │
+                     │                                                       │
+                     │  Custom Scope: <span class="hl">"ogun"</span> → Ogun Bridge Scope                 │
+                     │    Expression: group membership → role                │
+                     └────────┬──────────┬────────────┬──────────────────────┘
+                              │          │            │
+              <span class="dim">OIDC Login</span>      │          │            │ <span class="dim">API (service-to-service)</span>
+                              │          │            │
+   ┌──────────────────────────┤          │            ├──────────────────────────┐
+   │                          │          │            │                          │
+   ▼                          ▼          │            ▼                          ▼
+┌─────────────┐   ┌──────────────────┐   │   ┌──────────────────┐   ┌────────────────────┐
+│  <span class="hl">Browser</span>      │   │  <span class="hl">Ogun Bridge</span>     │   │   │  <span class="hl">Spectres</span>         │   │  <span class="hl">Thoth ESU</span>       │
+│  (React UI)  │──▶│  Backend         │   │   │  Pantheon        │   │  Gateway           │
+│  :3331       │   │  :3333           │   │   │  :8764           │   │  :3010             │
+└─────────────┘   │                  │   │   └──────────────────┘   └────────────────────┘
+                  │  Routes:         │   │   ┌──────────────────┐
+                  │  /auth/*         │   │   │  <span class="hl">Groove Payroll</span> │
+                  │  /api/authorize  │◀──┘   │  :8888           │
+                  │  /api/rbac/*     │       └──────────────────┘
+                  │  /api/password/* │
+                  │  /api/users/*    │
+                  │  /api/sync/*     │
+                  └────────┬─────────┘
+                           │
+                    ┌──────┴──────┐
+                    │  PostgreSQL │
+                    │  (state)    │
+                    └─────────────┘</div>
+</section>
+
+<section id="auth-flows">
+  <h2>2. Authentication Flows</h2>
+
+  <h3 id="flow-ui">2A. Ogun Bridge UI Login (OIDC)</h3>
+  <p>The primary user-facing authentication path. Users log in via Authentik's OIDC provider, which returns a custom <code>ogun</code> claim containing their pre-resolved role.</p>
+
+  <div class="diagram">
+Browser                     Authentik                    Ogun Backend
+  │                            │                            │
+  │  GET /auth/login           │                            │
+  │───────────────────────────▶│                            │
+  │  ← generate state, PKCE   │                            │
+  │  ← Set cookies (10 min)   │                            │
+  │                            │                            │
+  │  302 Redirect to Authentik │                            │
+  │───────────────────────────▶│                            │
+  │                            │                            │
+  │  User authenticates       │                            │
+  │  (password, WebAuthn, etc)│                            │
+  │                            │                            │
+  │  302 Redirect to /callback │                            │
+  │◀───────────────────────────│                            │
+  │                            │                            │
+  │  GET /auth/callback?code=  │                            │
+  │────────────────────────────────────────────────────────▶│
+  │                            │                            │
+  │                            │  POST /token (code+PKCE)  │
+  │                            │◀───────────────────────────│
+  │                            │  → id_token, access_token  │
+  │                            │───────────────────────────▶│
+  │                            │                            │
+  │                            │  GET /userinfo             │
+  │                            │  (access_token)            │
+  │                            │◀───────────────────────────│
+  │                            │  → { sub, email, groups,   │
+  │                            │      ogun: { hasAccess,    │
+  │                            │              role, groups }}│
+  │                            │───────────────────────────▶│
+  │                            │                            │
+  │  ← Set auth_token cookie   │                            │
+  │  (httpOnly, secure, 7d)    │                            │
+  │◀────────────────────────────────────────────────────────│</div>
+
+  <h4>Step-by-step:</h4>
+  <table>
+    <tr><th>Step</th><th>File:Line</th><th>Action</th><th>Issue</th></tr>
+    <tr><td>1</td><td><code>auth.js:53-63</code></td><td>Generate state + PKCE, redirect to Authentik</td><td class="badge yes">OK</td></tr>
+    <tr><td>2</td><td><code>auth.js:78-86</code></td><td>Validate state cookie, verify PKCE code</td><td class="badge yes">OK</td></tr>
+    <tr><td>3</td><td><code>auth.js:89-108</code></td><td>Exchange code for tokens</td><td class="badge warn">ID token <strong>never verified</strong> (no JWT sig check)</td></tr>
+    <tr><td>4</td><td><code>auth.js:110-124</code></td><td>Fetch userinfo, extract <code>ogun</code> claim</td><td class="badge yes">OK</td></tr>
+    <tr><td>5</td><td><code>auth.js:137-139</code></td><td>Gate on <code>ogunClaim.hasAccess</code></td><td class="badge yes">OK</td></tr>
+    <tr><td>6</td><td><code>auth.js:143-164</code></td><td>Lookup/create <code>auth_users</code> entry</td><td class="badge warn"><code>role='member'</code> creates dual tracking</td></tr>
+    <tr><td>7</td><td><code>auth.js:167</code></td><td><code>resolveRole(sub, email, groups, 'ogun', role)</code></td><td class="badge yes">OK</td></tr>
+    <tr><td>8</td><td><code>auth.js:177-178</code></td><td>Create 7-day session, set cookie</td><td class="badge warn">No token rotation</td></tr>
+  </table>
+
+  <h3 id="flow-consumer">2B. Consumer App Authorization</h3>
+  <p>Service-to-service auth. Consumer apps pass their own Authentik-resolved user identity to Ogun Bridge for role resolution via a static API key.</p>
+
+  <div class="diagram">
+Consumer App                    Ogun Backend               Authentik
+  │                                │                          │
+  │  <span class="dim">User logs in via their own</span>    │                          │
+  │  <span class="dim">Authentik OIDC client</span>         │                          │
+  │  → gets { sub, email, groups } │                          │
+  │                                │                          │
+  │  POST /api/authorize           │                          │
+  │  <span class="hl">X-Api-Key: &lt;static key&gt;</span>      │                          │
+  │  { appSlug, user: { sub,      │                          │
+  │    email }, groups: [...] }   │                          │
+  │──────────────────────────────▶│                          │
+  │                                │                          │
+  │  requireAppApiKey middleware   │                          │
+  │  → validates key in apps table │                          │
+  │  → cross-checks appSlug match  │                          │
+  │                                │                          │
+  │  resolveRole()                 │                          │
+  │  → check is_override           │                          │
+  │  → check group_role_mappings   │                          │
+  │  → fall back to default/viewer │                          │
+  │                                │                          │
+  │  ← { authorized,               │                          │
+  │      roleDefinition,           │                          │
+  │      permissions }             │                          │
+  │◀──────────────────────────────│                          │
+  │                                │                          │
+  │  <span class="dim">Stores in own session</span>         │                          │</div>
+
+  <table>
+    <tr><th>Endpoint</th><th>Auth</th><th>File:Line</th><th>Purpose</th></tr>
+    <tr><td><code>POST /api/authorize</code></td><td><code>X-Api-Key</code></td><td><code>authorize.js:11-55</code></td><td>Consumer app entry — resolve role for a user</td></tr>
+    <tr><td><code>POST /api/rbac/resolve</code></td><td><code>X-Api-Key</code></td><td><code>rbac.js:549-561</code></td><td>Alternative resolve (flat params, no <code>user</code> wrapper)</td></tr>
+    <tr><td><code>GET /api/rbac/check</code></td><td><code>X-Api-Key</code></td><td><code>rbac.js:563-574</code></td><td>Granular module/action check</td></tr>
+    <tr><td><code>POST /api/rbac/schema/:slug/push</code></td><td><code>X-Api-Key</code></td><td><code>rbac.js:81-115</code></td><td>Consumer app pushes module schema</td></tr>
+    <tr><td><code>POST /api/rbac/register</code></td><td>Registration secret</td><td><code>rbac.js:44-78</code></td><td>App self-registration (one-time API key)</td></tr>
+  </table>
+</section>
+
+<section id="resolution">
+  <h2>3. Authorization Resolution Chain</h2>
+  <p>The core <code>resolveRole()</code> function (<code>authorizer.js:4-158</code>) resolves a user's role for a given app. Resolution priority:</p>
+
+  <div class="flow-v">
+    <div class="row"><span class="label">Step 1</span><span>App lookup by slug</span><span class="branch">→</span><span class="cross">MISSING</span><span class="check">→ { authorized: false }</span></div>
+    <div class="row"><span class="label">Step 2</span><span>Manual override check <code>(is_override)</code></span><span class="branch">→</span><span class="check">MATCH</span><span class="check">→ return override role</span></div>
+    <div class="row indent"><span class="dim">app_users.is_override = true → skip all group-mapping</span></div>
+    <div class="row"><span class="label">Step 3</span><span>Pre-resolved role from Authentik</span><span class="branch">→</span><span class="check">MATCH</span><span class="check">→ look up by name, return</span></div>
+    <div class="row indent"><span class="dim">Only 'admin' | 'password_manager' | 'viewer' accepted</span></div>
+    <div class="row indent"><span class="dim">⚠ Used ONLY for Ogun's own OIDC login (ogunClaim.role)</span></div>
+    <div class="row"><span class="label">Step 4</span><span>Access group membership check</span><span class="branch">→</span><span class="cross">NOT MEMBER</span><span class="cross">→ { authorized: false }</span></div>
+    <div class="row indent"><span class="dim">Must be in app's Authentik access_group to proceed</span></div>
+    <div class="row"><span class="label">Step 5</span><span>Group → role mapping resolution</span><span class="branch">→</span><span class="check">MATCH</span><span class="check">→ highest priority wins</span></div>
+    <div class="row indent"><span class="dim">Queries group_role_mappings ordered by priority DESC</span></div>
+    <div class="row indent"><span class="dim">First case-insensitive match wins</span></div>
+    <div class="row"><span class="label">Step 6</span><span>Default role fallback</span><span class="branch">→</span><span class="check">ALWAYS</span><span class="check">→ { authorized: true }</span></div>
+    <div class="row indent"><span class="dim">is_default role or viewer base role</span></div>
+    <div class="row indent"><span class="dim">⚠ System NEVER denies a user — worst case is viewer</span></div>
+  </div>
+
+  <h4>Resolution Priority Table</h4>
+  <table>
+    <tr><th>Priority</th><th>Source</th><th>Code Path</th><th>Used By</th></tr>
+    <tr><td>1 (Highest)</td><td><code>app_users.is_override = true</code></td><td><code>authorizer.js:19-47</code></td><td>Manual admin override via UI</td></tr>
+    <tr><td>2</td><td>Authentik <code>ogun.role</code> claim</td><td><code>authorizer.js:55-68</code></td><td>Ogun Bridge OIDC login only</td></tr>
+    <tr><td>3</td><td><code>group_role_mappings</code> table</td><td><code>authorizer.js:69-116</code></td><td>Consumer apps (POST /authorize)</td></tr>
+    <tr><td>4 (Lowest)</td><td>Default role / <code>viewer</code> base</td><td><code>authorizer.js:119-138</code></td><td>Fallback for unmapped users</td></tr>
+  </table>
+</section>
+
+<section id="middleware">
+  <h2>4. Middleware Stack</h2>
+  <p>Every API request flows through a middleware chain. The order matters:</p>
+
+  <div class="diagram">
+Request → rate-limit(100/min) → helmet(CSP) → authenticate → route
+                                                      │
+                                                ┌─────┴──────┐
+                                                │  Guards     │
+                                                │             │
+                                     requireRole('admin')     │
+                                     requireModule('users')   │
+                                     requireSuperAdmin()      │
+                                     requireAppApiKey()       │
+                                     requireLDAPGroup()       │</div>
+
+  <table>
+    <tr><th>Middleware</th><th>File:Line</th><th>What it checks</th><th>Bypass</th><th>Audit Log?</th></tr>
+    <tr><td><code>authenticate</code></td><td><code>auth.js:60-89</code></td><td>Cookie → <code>validateSession</code> → <code>req.user</code></td><td class="badge no">Blocks if invalid</td><td class="badge no">N/A</td></tr>
+    <tr><td><code>optionalAuth</code></td><td><code>auth.js:149-170</code></td><td>Same but doesn't block</td><td class="badge yes">Proceeds without user</td><td class="badge no">N/A</td></tr>
+    <tr><td><code>requireRole(...)</code></td><td><code>auth.js:91-111</code></td><td><code>req.user.roleDefinition.name</code></td><td class="badge yes"><code>super_admin</code> passes</td><td class="badge no">❌</td></tr>
+    <tr><td><code>requireSuperAdmin</code></td><td><code>auth.js:113-122</code></td><td><code>req.user.role === 'super_admin'</code></td><td class="badge no">None</td><td class="badge no">❌</td></tr>
+    <tr><td><code>requireModule()</code></td><td><code>auth.js:124-147</code></td><td><code>req.user.permissions[module]</code></td><td class="badge yes"><code>super_admin</code> passes</td><td class="badge no">❌</td></tr>
+    <tr><td><code>requireAppApiKey</code></td><td><code>apikey.js:19-44</code></td><td><code>X-Api-Key</code> vs <code>apps.api_key</code></td><td class="badge no">Blocks if invalid</td><td class="badge no">N/A</td></tr>
+    <tr><td><code>requireLDAPGroup()</code></td><td><code>auth.js:233-273</code></td><td>LDAP group membership</td><td class="badge yes"><code>super_admin</code> bypasses</td><td class="badge no">❌</td></tr>
+    <tr><td><code>protectPasswordOperation</code></td><td><code>auth.js:206-231</code></td><td>Target user is not admin when caller is password_manager</td><td class="badge yes"><code>admin</code> passes</td><td class="badge no">❌</td></tr>
+  </table>
+
+  <h4>Middleware Anti-Patterns</h4>
+  <table>
+    <tr><th>Issue</th><th>File:Line</th><th>Detail</th></tr>
+    <tr><td><code>.then()</code> pattern</td><td><code>auth.js:68-88</code></td><td><code>authenticate</code> uses <code>.then()</code> not <code>await</code> — synchronous wrapper around async. An exception before the promise throws outside Express's error handler.</td></tr>
+    <tr><td><code>.then()</code> race</td><td><code>auth.js:206-228</code></td><td><code>protectPasswordOperation</code> calls <code>next()</code> before <code>getUserOgunRole</code> resolves. Response can be sent before async check completes.</td></tr>
+    <tr><td>No audit logging</td><td><code>auth.js:101,119,138</code></td><td>All authorization middleware returns 403 silently — no audit trail for denied access.</td></tr>
+    <tr><td>LDAP per-request</td><td><code>auth.js:233-273</code></td><td><code>requireLDAPGroup</code> opens/closes LDAP connection on every call — no pooling.</td></tr>
+  </table>
+</section>
+
+<section id="consumer">
+  <h2>5. Consumer App Integrations</h2>
+
+  <table>
+    <tr><th>App</th><th>Slug</th><th>Access Group</th><th>Role Claim</th><th>Auth Method</th><th>Port</th></tr>
+    <tr><td><strong>Ogun Bridge</strong> (itself)</td><td><code>ogun</code></td><td><code>ogun-bridge</code></td><td><code>ogun</code> (Authentik scope)</td><td>OIDC + session</td><td>3333</td></tr>
+    <tr><td><strong>Spectres Pantheon</strong></td><td><code>spectres</code></td><td><code>spectres-pantheon</code></td><td>N/A</td><td><code>X-Api-Key</code></td><td>8764</td></tr>
+    <tr><td><strong>Groove Payroll</strong></td><td><code>groove</code></td><td><code>groove-payroll</code></td><td>N/A</td><td><code>X-Api-Key</code></td><td>8888</td></tr>
+    <tr><td><strong>Thoth ESU Gateway</strong></td><td><code>thoth</code></td><td><code>thoth-esu-gateway</code></td><td>N/A</td><td><code>X-Api-Key</code></td><td>3010</td></tr>
+  </table>
+
+  <h4>Consumer App Auth Flow</h4>
+  <ol>
+    <li>User logs into consumer app via the app's own Authentik OIDC client</li>
+    <li>Consumer app's "onAuthorize" hook fires with <code>{ sub, email, groups }</code></li>
+    <li>Consumer app calls <code>POST /api/authorize</code> with its static <code>X-Api-Key</code></li>
+    <li>Ogun Bridge validates the API key, calls <code>resolveRole()</code></li>
+    <li>Returns <code>{ authorized, roleDefinition, permissions }</code></li>
+    <li>Consumer app stores result in its own session</li>
+    <li><strong>No push mechanism:</strong> Role changes are not propagated to consumer apps. They only take effect when the consumer app's session expires.</li>
+  </ol>
+
+  <h4>API Key Storage</h4>
+  <div class="gap-card high">
+    <div class="title">API keys stored in plaintext</div>
+    <div class="loc"><code>db.js:305</code> — <code>api_key VARCHAR(255) UNIQUE NOT NULL</code></div>
+    <div class="impact">DB compromise exposes all service-to-service credentials. No hashing, no rotation mechanism.</div>
+  </div>
+
+  <h4>Consumer App Endpoint Summary</h4>
+  <table>
+    <tr><th>Endpoint</th><th>Auth</th><th>Request</th><th>Response</th></tr>
+    <tr><td><code>POST /api/authorize</code></td><td><code>X-Api-Key</code></td><td><code>{ appSlug, user: { sub, email }, groups }</code></td><td><code>{ authorized, userId, roleDefinition, permissions, matchedGroup }</code></td></tr>
+    <tr><td><code>GET /api/rbac/check</code></td><td><code>X-Api-Key</code></td><td><code>?appSlug=&amp;sub=&amp;module=&amp;action=</code></td><td><code>{ authorized, permissions, roleDefinition }</code></td></tr>
+    <tr><td><code>POST /api/rbac/schema/:slug/push</code></td><td><code>X-Api-Key</code></td><td><code>{ modules: [...] }</code></td><td><code>{ success }</code></td></tr>
+  </table>
+</section>
+
+<section id="tables">
+  <h2>6. Database Schema (RBAC Tables)</h2>
+
+  <table>
+    <tr><th>Table</th><th>Column</th><th>Type</th><th>Notes</th></tr>
+    <tr><td rowspan="8"><code>apps</code></td><td><code>id</code></td><td>SERIAL PK</td><td></td></tr>
+    <tr><td><code>slug</code></td><td>VARCHAR UNIQUE</td><td>App identifier (ogun, spectres, groove, thoth)</td></tr>
+    <tr><td><code>name</code></td><td>VARCHAR</td><td>Display name</td></tr>
+    <tr><td><code>claim_name</code></td><td>VARCHAR</td><td><span class="badge warn">DEAD COLUMN</span> — seeded but never read</td></tr>
+    <tr><td><code>authentik_slug</code></td><td>VARCHAR</td><td>Used for Authentik API group lookups</td></tr>
+    <tr><td><code>access_group</code></td><td>VARCHAR</td><td>Required group for app access</td></tr>
+    <tr><td><code>api_key</code></td><td>VARCHAR</td><td><span class="badge no">PLAINTEXT</span> — stored and returned as-is</td></tr>
+    <tr><td><code>schema_endpoint</code></td><td>VARCHAR</td><td>Used by schema discovery service</td></tr>
+    <tr><td rowspan="5"><code>role_definitions</code></td><td><code>id</code></td><td>SERIAL PK</td><td></td></tr>
+    <tr><td><code>app_slug</code></td><td>FK → apps</td><td></td></tr>
+    <tr><td><code>name</code></td><td>VARCHAR</td><td>e.g. admin, password_manager, viewer</td></tr>
+    <tr><td><code>base_role</code></td><td>FK → base_roles</td><td>super_admin, admin, viewer</td></tr>
+    <tr><td><code>is_default</code></td><td>BOOLEAN</td><td>Used as fallback when no group mapping matches</td></tr>
+    <tr><td rowspan="4"><code>group_role_mappings</code></td><td><code>id</code></td><td>SERIAL PK</td><td></td></tr>
+    <tr><td><code>app_slug</code></td><td>FK → apps</td><td></td></tr>
+    <tr><td><code>authentik_group</code></td><td>VARCHAR</td><td>Group name in Authentik</td></tr>
+    <tr><td><code>priority</code></td><td>INTEGER</td><td>Higher = checked first</td></tr>
+    <tr><td rowspan="4"><code>app_users</code></td><td><code>app_id + oidc_sub</code></td><td>COMPOSITE PK</td><td></td></tr>
+    <tr><td><code>role_definition_id</code></td><td>FK → role_definitions</td><td></td></tr>
+    <tr><td><code>permissions_cache</code></td><td>JSONB</td><td>Cached module→actions at resolution time</td></tr>
+    <tr><td><code>is_override</code></td><td>BOOLEAN</td><td>If true, resolveRole skips group-mapping</td></tr>
+  </table>
+</section>
+
+<section id="ogun-rbac">
+  <h2>7. Ogun Bridge's Own RBAC</h2>
+  <p>Ogun Bridge uses Authentik as its RBAC authority — not its own <code>group_role_mappings</code> table. The custom Authentik scope <strong>"Ogun Bridge Scope"</strong> runs a Python expression on every authentication request:</p>
+
+  <pre><code>all_groups = [g.name.lower() for g in request.user.all_groups()]
+group_set = set(all_groups)
+if 'ogun-bridge' not in group_set:
+    return {'ogun': {'hasAccess': False, 'role': 'none', 'groups': list(group_set)}}
+role = 'viewer'
+if 'systems_admins' in group_set:
+    role = 'admin'
+elif 'password_manager' in group_set:
+    role = 'password_manager'
+return {'ogun': {'hasAccess': True, 'role': role, 'groups': list(group_set)}}</code></pre>
+
+  <p>This means:</p>
+  <table>
+    <tr><th>Authentik Group</th><th>Role Assigned</th><th>RBAC Capabilities</th></tr>
+    <tr><td><code>systems_admins</code> (in <code>ogun-bridge</code>)</td><td><strong>admin</strong></td><td>Full access: users R/W, settings R/W, password manage</td></tr>
+    <tr><td><code>password_manager</code> (in <code>ogun-bridge</code>)</td><td><strong>password_manager</strong></td><td>Password R/W/manage, users R-only, dashboard R-only</td></tr>
+    <tr><td>In <code>ogun-bridge</code> only</td><td><strong>viewer</strong></td><td>Read-only: dashboard, logs, audit</td></tr>
+    <tr><td>Not in <code>ogun-bridge</code></td><td><strong>denied</strong></td><td>No access (<code>hasAccess: false</code>)</td></tr>
+  </table>
+
+  <div class="gap-card medium">
+    <div class="title">DB group_role_mappings exist as fallback but are unused during OIDC login</div>
+    <div class="loc"><code>authorizer.js:55-68</code></div>
+    <div class="impact">The <code>ogun.role</code> claim short-circuits resolution at step 3, skipping the DB mappings entirely. Three mapping records for ogun exist in the DB (<code>systems_admins→admin</code>, <code>password_manager→password_mgr</code>, <code>ogun-bridge→viewer</code>) but they only activate if Authentik stops sending the <code>ogun</code> claim.</div>
+  </div>
+</section>
+
+<section id="gaps">
+  <h2>8. Gaps &amp; Weaknesses</h2>
+
+  <h3>HIGH Severity</h3>
+
+  <div class="gap-card high">
+    <div class="severity high">HIGH</div>
+    <span class="num">H1</span>
+    <span class="title">6 RBAC endpoints have no authentication</span>
+    <div class="loc"><code>rbac.js:119,167,377,665,842,854</code></div>
+    <div class="impact">Any unauthenticated request can enumerate all apps, role definitions, group→role mappings, module schemas, Authentik groups, and base roles. This exposes the entire RBAC structure to anyone who can reach port 3333.</div>
+  </div>
+
+  <div class="gap-card high">
+    <div class="severity high">HIGH</div>
+    <span class="num">H2</span>
+    <span class="title">ID token never cryptographically verified</span>
+    <div class="loc"><code>auth.js:108</code></div>
+    <div class="impact">The <code>id_token</code> JWT is received from Authentik but never validated. No signature verification, no <code>aud</code>/<code>iss</code>/<code>exp</code> checks. While HTTPS protects transport, a compromised Authentik or TLS failure could forge identities. The system trusts the userinfo response entirely.</div>
+  </div>
+
+  <div class="gap-card high">
+    <div class="severity high">HIGH</div>
+    <span class="num">H3</span>
+    <span class="title">API keys stored in plaintext</span>
+    <div class="loc"><code>db.js:305</code></div>
+    <div class="impact">Consumer app API keys are stored as plaintext VARCHAR in the <code>apps</code> table. No hashing, no rotation mechanism, no key expiry. A DB breach exposes all service-to-service authentication credentials.</div>
+  </div>
+
+  <div class="gap-card high">
+    <div class="severity high">HIGH</div>
+    <span class="num">H4</span>
+    <span class="title">Consumer apps self-report user groups</span>
+    <div class="loc"><code>authorize.js:13</code></div>
+    <div class="impact">The <code>groups</code> array is passed by the consumer app in the request body. Ogun Bridge has no independent verification that the user actually belongs to those Authentik groups. A compromised consumer app could inflate a user's privileges.</div>
+  </div>
+
+  <div class="gap-card high">
+    <div class="severity high">HIGH</div>
+    <span class="num">H5</span>
+    <span class="title">No role change push mechanism</span>
+    <div class="impact">When an admin changes a user's role (override or group mapping change), there is no webhook, pub/sub, or event system to notify consumer apps. Role changes only take effect when the consumer app's session expires or the user re-authenticates. This creates a window where a user retains outdated permissions.</div>
+  </div>
+
+  <h3>MEDIUM Severity</h3>
+
+  <div class="gap-card medium">
+    <div class="severity medium">MED</div>
+    <span class="num">M1</span>
+    <span class="title">Default fallback always returns <code>authorized: true</code></span>
+    <div class="loc"><code>authorizer.js:132-138</code></div>
+    <div class="impact">If no group mapping matches and no default role exists, the system falls back to the <code>viewer</code> base role. An unknown user with no group memberships still gets <code>viewer</code> access to every app. The system never truly denies access.</div>
+  </div>
+
+  <div class="gap-card medium">
+    <div class="severity medium">MED</div>
+    <span class="num">M2</span>
+    <span class="title"><code>preResolvedRole</code> accepts only 3 hardcoded values</span>
+    <div class="loc"><code>authorizer.js:55</code></div>
+    <div class="impact">Only <code>'admin'</code>, <code>'password_manager'</code>, and <code>'viewer'</code> are accepted as pre-resolved roles. If Authentik sends a different role name (e.g., a custom per-app role), it's silently ignored and falls through to group-mapping resolution.</div>
+  </div>
+
+  <div class="gap-card medium">
+    <div class="severity medium">MED</div>
+    <span class="num">M3</span>
+    <span class="title"><code>syncUsersForApp</code> makes N+1 API calls to Authentik</span>
+    <div class="loc"><code>authorizer.js:270-340</code></div>
+    <div class="impact">The sync function fetches all group members, then for each member makes a separate API call to fetch their groups. No pagination handling. For large apps (e.g., 100+ users), this creates 100+ sequential API calls.</div>
+  </div>
+
+  <div class="gap-card medium">
+    <div class="severity medium">MED</div>
+    <span class="num">M4</span>
+    <span class="title"><code>authenticate</code> uses <code>.then()</code> not <code>await</code></span>
+    <div class="loc"><code>auth.js:60-89</code></div>
+    <div class="impact">The authenticate middleware wraps an async operation in a synchronous function. If an exception is thrown before the <code>.then()</code> executes, it falls outside Express's error handler and crashes the request.</div>
+  </div>
+
+  <div class="gap-card medium">
+    <div class="severity medium">MED</div>
+    <span class="num">M5</span>
+    <span class="title"><code>protectPasswordOperation</code> has race condition</span>
+    <div class="loc"><code>auth.js:206-228</code></div>
+    <div class="impact">The function calls <code>getUserOgunRole</code> via <code>.then()</code> but calls <code>next()</code> before it resolves. The response can be sent before the async access check completes. For password_manager users targeting admins, the check might not execute.</div>
+  </div>
+
+  <div class="gap-card medium">
+    <div class="severity medium">MED</div>
+    <span class="num">M6</span>
+    <span class="title">No audit logging for denied access</span>
+    <div class="loc"><code>auth.js:101,119,138</code></div>
+    <div class="impact"><code>requireRole</code>, <code>requireSuperAdmin</code>, and <code>requireModule</code> all return 403 with generic messages but write nothing to the audit log. There is no way to investigate who tried to access what and was denied.</div>
+  </div>
+
+  <div class="gap-card medium">
+    <div class="severity medium">MED</div>
+    <span class="num">M7</span>
+    <span class="title"><code>claim_name</code> column is dead — seeded but never read</span>
+    <div class="loc"><code>db.js:307</code></div>
+    <div class="impact">The <code>claim_name</code> column on the <code>apps</code> table is configured for all 4 apps in seed data (ogun_role, spectre_role, groove_role, thoth_role) but is never referenced anywhere in the application code. This was intended for per-app Authentik OIDC custom claim resolution but was never implemented.</div>
+  </div>
+
+  <h3>LOW Severity</h3>
+
+  <div class="gap-card low">
+    <div class="severity low">LOW</div>
+    <span class="num">L1</span>
+    <span class="title">Dual role tracking: <code>auth_users.role</code> vs <code>roleDefinition.name</code></span>
+    <div class="loc"><code>auth.js:159</code></div>
+    <div class="impact">New OIDC users are created with <code>auth_users.role = 'member'</code>, but RBAC middleware uses <code>req.user.roleDefinition.name</code>. The <code>member</code> value is never checked by any authorization gate.</div>
+  </div>
+
+  <div class="gap-card low">
+    <div class="severity low">LOW</div>
+    <span class="num">L2</span>
+    <span class="title">No session token rotation</span>
+    <div class="loc"><code>auth.js:177</code></div>
+    <div class="impact">Session tokens are static 128-char hex values valid for 7 days. No refresh mechanism or token rotation on use. A leaked token remains valid for its full lifespan.</div>
+  </div>
+
+  <div class="gap-card low">
+    <div class="severity low">LOW</div>
+    <span class="num">L3</span>
+    <span class="title">Schema discovery depends on Docker internal hostnames</span>
+    <div class="loc"><code>db.js:752-756</code></div>
+    <div class="impact">Seed schema endpoints point to Docker hostnames (<code>groove:5005</code>, <code>spectres:8764</code>, <code>api:3010</code>). These may not resolve from the Ogun Bridge container if the networks aren't configured correctly, causing silent auto-discovery failures.</div>
+  </div>
+
+  <div class="gap-card low">
+    <div class="severity low">LOW</div>
+    <span class="num">L4</span>
+    <span class="title">No per-app rate limiting on <code>/api/authorize</code></span>
+    <div class="impact">Only global rate limiting (100 req/min) applies. A misbehaving or compromised consumer app could exhaust the global rate limit, affecting all apps and the UI.</div>
+  </div>
+</section>
+
+<section id="fixes">
+  <h2>9. Recommended Fixes (Priority Order)</h2>
+
+  <table>
+    <tr><th>Priority</th><th>Fix</th><th>Addresses</th><th>Effort</th></tr>
+    <tr>
+      <td><span class="badge no">P1</span></td>
+      <td>Add <code>optionalAuth</code> or <code>requireAuth</code> to all 6 unprotected RBAC read endpoints (<code>GET /apps</code>, <code>GET /schema/:slug</code>, <code>GET /roles/:slug</code>, <code>GET /mappings/:slug</code>, <code>GET /authentik-groups</code>, <code>GET /base-roles</code>)</td>
+      <td>H1</td>
+      <td>Small</td>
+    </tr>
+    <tr>
+      <td><span class="badge no">P2</span></td>
+      <td>Implement JWT ID token validation — verify <code>aud</code> (client_id), <code>iss</code> (issuer), <code>exp</code> (expiration), and RS256 signature using Authentik's JWKS endpoint</td>
+      <td>H2</td>
+      <td>Medium</td>
+    </tr>
+    <tr>
+      <td><span class="badge no">P3</span></td>
+      <td>Hash API keys at rest (bcrypt or SHA-256 with per-key salt), add rotation endpoint, add key metadata (created, last_used, expires_at)</td>
+      <td>H3</td>
+      <td>Medium</td>
+    </tr>
+    <tr>
+      <td><span class="badge no">P4</span></td>
+      <td>Add webhook mechanism: configurable URL per app that Ogun calls on role change events (override updated, mapping changed, sync completed)</td>
+      <td>H5</td>
+      <td>Large</td>
+    </tr>
+    <tr>
+      <td><span class="badge warn">P5</span></td>
+      <td>Add audit logging to all 4 authorization middleware denial paths (<code>requireRole</code>, <code>requireSuperAdmin</code>, <code>requireModule</code>, <code>requireLDAPGroup</code>)</td>
+      <td>M6</td>
+      <td>Small</td>
+    </tr>
+    <tr>
+      <td><span class="badge warn">P6</span></td>
+      <td>Add Authentik group verification in <code>POST /api/authorize</code> — fetch user's groups from Authentik API and compare against the groups passed by the consumer app</td>
+      <td>H4</td>
+      <td>Medium</td>
+    </tr>
+    <tr>
+      <td><span class="badge warn">P7</span></td>
+      <td>Implement pagination + batch group fetch in <code>syncUsersForApp</code>. Fetch all group→user→group relationships in bulk instead of N+1 sequential calls.</td>
+      <td>M3</td>
+      <td>Medium</td>
+    </tr>
+    <tr>
+      <td><span class="badge yes">P8</span></td>
+      <td>Remove or implement the <code>claim_name</code> column on <code>apps</code> table. Either wire it into the Authentik scope resolution or drop it.</td>
+      <td>M7</td>
+      <td>Small</td>
+    </tr>
+    <tr>
+      <td><span class="badge yes">P9</span></td>
+      <td>Convert <code>.then()</code> patterns to <code>async/await</code> in <code>authenticate</code> and <code>protectPasswordOperation</code> middleware</td>
+      <td>M4, M5</td>
+      <td>Small</td>
+    </tr>
+    <tr>
+      <td><span class="badge yes">P10</span></td>
+      <td>Remove the <code>auth_users.role = 'member'</code> dead branch or align it with RBAC roleDefinition</td>
+      <td>L1</td>
+      <td>Trivial</td>
+    </tr>
+  </table>
+</section>
+
+<section id="refs">
+  <h2>10. File Reference Map</h2>
+
+  <table>
+    <tr><th>File</th><th>Lines</th><th>Component</th></tr>
+    <tr><td><code>backend/src/routes/auth.js</code></td><td>53-63</td><td>OIDC login redirect (state + PKCE generation)</td></tr>
+    <tr><td><code>backend/src/routes/auth.js</code></td><td>65-185</td><td>OIDC callback (token exchange, userinfo, role resolution, session creation)</td></tr>
+    <tr><td><code>backend/src/routes/auth.js</code></td><td>206-285</td><td>Admin login (env-var credential check)</td></tr>
+    <tr><td><code>backend/src/routes/auth.js</code></td><td>287-320</td><td>Logout (SSO end-session vs admin direct)</td></tr>
+    <tr><td><code>backend/src/routes/auth.js</code></td><td>337-374</td><td>Generate temp password</td></tr>
+    <tr><td><code>backend/src/routes/auth.js</code></td><td>376-403</td><td>GET /me — hydrate session for React UI</td></tr>
+    <tr><td><code>backend/src/middleware/auth.js</code></td><td>12-23</td><td><code>createSession</code> — 64-byte random token, 7-day expiry</td></tr>
+    <tr><td><code>backend/src/middleware/auth.js</code></td><td>25-42</td><td><code>validateSession</code> — SQL join + expiry + active check</td></tr>
+    <tr><td><code>backend/src/middleware/auth.js</code></td><td>60-89</td><td><code>authenticate</code> middleware — cookie/header → session → <code>req.user</code></td></tr>
+    <tr><td><code>backend/src/middleware/auth.js</code></td><td>91-111</td><td><code>requireRole</code> — checks <code>req.user.roleDefinition.name</code></td></tr>
+    <tr><td><code>backend/src/middleware/auth.js</code></td><td>113-122</td><td><code>requireSuperAdmin</code></td></tr>
+    <tr><td><code>backend/src/middleware/auth.js</code></td><td>124-147</td><td><code>requireModule(module, action?)</code></td></tr>
+    <tr><td><code>backend/src/middleware/auth.js</code></td><td>149-170</td><td><code>optionalAuth</code> — same as authenticate but non-blocking</td></tr>
+    <tr><td><code>backend/src/middleware/auth.js</code></td><td>206-231</td><td><code>protectPasswordOperation</code></td></tr>
+    <tr><td><code>backend/src/middleware/apikey.js</code></td><td>04-17</td><td><code>requireRegistrationSecret</code></td></tr>
+    <tr><td><code>backend/src/middleware/apikey.js</code></td><td>19-44</td><td><code>requireAppApiKey</code> — validates <code>X-Api-Key</code></td></tr>
+    <tr><td><code>backend/src/routes/authorize.js</code></td><td>11-55</td><td>POST /api/authorize — consumer app entry point</td></tr>
+    <tr><td><code>backend/src/routes/authorize.js</code></td><td>57-95</td><td>GET /api/authorize — session check (Ogun UI only)</td></tr>
+    <tr><td><code>backend/src/routes/rbac.js</code></td><td>44-78</td><td>POST /api/rbac/register — app self-registration</td></tr>
+    <tr><td><code>backend/src/routes/rbac.js</code></td><td>81-115</td><td>POST /api/rbac/schema/:slug/push — module schema push</td></tr>
+    <tr><td><code>backend/src/routes/rbac.js</code></td><td>167-302</td><td>Role definition CRUD</td></tr>
+    <tr><td><code>backend/src/routes/rbac.js</code></td><td>306-373</td><td>Permission CRUD (with cache update)</td></tr>
+    <tr><td><code>backend/src/routes/rbac.js</code></td><td>377-545</td><td>Group→role mapping CRUD</td></tr>
+    <tr><td><code>backend/src/routes/rbac.js</code></td><td>549-561</td><td>POST /api/rbac/resolve — alternative resolve</td></tr>
+    <tr><td><code>backend/src/routes/rbac.js</code></td><td>563-574</td><td>GET /api/rbac/check — granular permission check</td></tr>
+    <tr><td><code>backend/src/routes/rbac.js</code></td><td>597-639</td><td>PUT /users/:slug/:sub/role — user role override</td></tr>
+    <tr><td><code>backend/src/routes/rbac.js</code></td><td>641-661</td><td>POST /sync/:appSlug — Authentik group sync</td></tr>
+    <tr><td><code>backend/src/routes/rbac.js</code></td><td>665-801</td><td>App management (list, create, update)</td></tr>
+    <tr><td><code>backend/src/services/authorizer.js</code></td><td>04-158</td><td><code>resolveRole</code> — core role resolution engine</td></tr>
+    <tr><td><code>backend/src/services/authorizer.js</code></td><td>160-171</td><td><code>getPermissionsForRole</code> — fetch module→actions</td></tr>
+    <tr><td><code>backend/src/services/authorizer.js</code></td><td>173-188</td><td><code>upsertAppUser</code> — cache resolved role in DB</td></tr>
+    <tr><td><code>backend/src/services/authorizer.js</code></td><td>190-216</td><td><code>checkPermission</code> — granular module/action check</td></tr>
+    <tr><td><code>backend/src/services/authorizer.js</code></td><td>218-255</td><td><code>getUserOgunRole</code> — Ogun role for a user (used by protectPasswordOperation)</td></tr>
+    <tr><td><code>backend/src/services/authorizer.js</code></td><td>270-340</td><td><code>syncUsersForApp</code> — bulk sync app users from Authentik</td></tr>
+    <tr><td><code>backend/src/services/syncService.js</code></td><td>848-869</td><td>RBAC sync step (every 6th cycle = ~30 min)</td></tr>
+    <tr><td><code>backend/src/services/schemaDiscoveryService.js</code></td><td>1-113</td><td>Schema auto-discovery (polls consumer apps)</td></tr>
+    <tr><td><code>backend/src/lib/db.js</code></td><td>300-313</td><td><code>apps</code> table schema</td></tr>
+    <tr><td><code>backend/src/lib/db.js</code></td><td>329-358</td><td>RBAC tables: <code>role_definitions</code>, <code>role_permissions</code>, <code>group_role_mappings</code>, <code>app_users</code>, <code>app_schemas</code></td></tr>
+    <tr><td><code>backend/src/lib/db.js</code></td><td>412-422</td><td>RBAC v2 migration columns</td></tr>
+    <tr><td><code>backend/src/lib/db.js</code></td><td>687-758</td><td>Seed data: 4 apps, 12 roles, 4 schemas</td></tr>
+  </table>
+</section>
+
+<footer>
+  Ogun Bridge — Auth/AuthZ Architecture &bull; Generated from codebase analysis &bull; 2026-06-07
+</footer>
+
+</div>
+</body>
+</html>

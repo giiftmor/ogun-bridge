@@ -5,6 +5,7 @@ import { getSyncState } from '../services/syncService.js'
 import { getChanges } from '../services/changeDetector.js'
 import { logger } from '../utils/logger.js'
 import { authenticate } from '../middleware/auth.js'
+import { AppError } from '../utils/AppError.js'
 
 export const dashboardRouter = express.Router()
 
@@ -37,8 +38,11 @@ dashboardRouter.get('/stats', async (req, res) => {
       syncConfig: syncState.config,
     })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error fetching dashboard stats:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to fetch dashboard stats', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 

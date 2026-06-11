@@ -9,8 +9,10 @@ import { logger } from '../utils/logger.js'
 import { ldapClient } from '../services/ldapClient.js'
 import { authentikClient } from '../services/authentikClient.js'
 import { validatePassword } from './password.js'
+import { verifyIdToken } from '../services/jwtVerifier.js'
 import { sendPasswordResetEmail } from '../services/emailService.js'
 import { createAuditLog } from '../services/auditService.js'
+import { AppError } from '../utils/AppError.js'
 
 const adminLoginLogger = { 
   info: (msg, meta) => logger.info(`[admin-login] ${msg}`, meta),
@@ -56,9 +58,12 @@ authRouter.get('/login', (req, res) => {
   const codeChallenge = crypto.createHash('sha256')
     .update(codeVerifier)
     .digest('base64url')
-  res.cookie('oauth_state', state, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 600000 })
-  res.cookie('oauth_verifier', codeVerifier, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 600000 })
-  const redirectUrl = `${process.env.AUTHENTIK_URL}/application/o/authorize/?client_id=${process.env.AUTHENTIK_CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.AUTHENTIK_REDIRECT_URI)}&response_type=code&scope=openid email profile ogun&state=${state}&code_challenge_method=S256&code_challenge=${codeChallenge}`
+  const nonce = crypto.randomBytes(32).toString('base64url')
+  const cookieOpts = { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 600000 }
+  res.cookie('oauth_state', state, cookieOpts)
+  res.cookie('oauth_verifier', codeVerifier, cookieOpts)
+  res.cookie('oauth_nonce', nonce, cookieOpts)
+  const redirectUrl = `${process.env.AUTHENTIK_URL}/application/o/authorize/?client_id=${process.env.AUTHENTIK_CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.AUTHENTIK_REDIRECT_URI)}&response_type=code&scope=openid email profile ogun&state=${state}&nonce=${nonce}&code_challenge_method=S256&code_challenge=${codeChallenge}`
   res.redirect(redirectUrl)
 })
 
@@ -72,11 +77,13 @@ authRouter.get('/callback', async (req, res) => {
       }
       res.clearCookie('oauth_state')
       res.clearCookie('oauth_verifier')
+      res.clearCookie('oauth_nonce')
       return res.redirect('/login?logged_out=true')
     }
 
     const savedState = req.cookies.oauth_state
     const savedVerifier = req.cookies.oauth_verifier
+    const savedNonce = req.cookies.oauth_nonce
 
     if (state !== savedState) {
       return res.redirect('/login?error=state_mismatch')
@@ -84,6 +91,7 @@ authRouter.get('/callback', async (req, res) => {
 
     res.clearCookie('oauth_state')
     res.clearCookie('oauth_verifier')
+    res.clearCookie('oauth_nonce')
 
     logger.info('OIDC callback: exchanging code')
     const tokenRes = await fetch(`${process.env.AUTHENTIK_URL}/application/o/token/`, {
@@ -106,32 +114,51 @@ authRouter.get('/callback', async (req, res) => {
     }
 
     const tokens = await tokenRes.json()
-    logger.info('OIDC callback: fetching userinfo')
-    const userinfoRes = await fetch(`${process.env.AUTHENTIK_URL}/application/o/userinfo/`, {
-      headers: { Authorization: `Bearer ${tokens.access_token}` },
-    })
 
-    if (!userinfoRes.ok) {
-      logger.error('Userinfo failed', { status: userinfoRes.status })
-      return res.redirect('/login?error=userinfo_failed')
+    let idTokenClaims = null
+    if (tokens.id_token) {
+      const verification = await verifyIdToken(tokens.id_token, { nonce: savedNonce || undefined })
+      if (verification.valid) {
+        idTokenClaims = verification.payload
+        logger.info('OIDC callback: id_token verified', { sub: idTokenClaims.sub, iss: idTokenClaims.iss })
+      } else {
+        logger.warn('OIDC callback: id_token verification failed, falling back to userinfo', { error: verification.error })
+      }
+    } else {
+      logger.warn('OIDC callback: no id_token received, skipping verification')
     }
 
-    const userinfo = await userinfoRes.json()
-    const sub = userinfo.sub
-    const email = userinfo.email || `${sub}@spectres.co.za`
-    const name = userinfo.name || sub
-    const groups = userinfo.groups || []
-    const ogunClaim = userinfo.ogun
+    let claims = null
+    if (idTokenClaims) {
+      claims = idTokenClaims
+    } else {
+      logger.info('OIDC callback: fetching userinfo for claims')
+      const userinfoRes = await fetch(`${process.env.AUTHENTIK_URL}/application/o/userinfo/`, {
+        headers: { Authorization: `Bearer ${tokens.access_token}` },
+      })
 
-    logger.info('OIDC userinfo raw', {
+      if (!userinfoRes.ok) {
+        logger.error('Userinfo failed', { status: userinfoRes.status })
+        return res.redirect('/login?error=userinfo_failed')
+      }
+
+      claims = await userinfoRes.json()
+    }
+
+    const sub = claims.sub
+    const email = claims.email || `${claims.sub}@spectres.co.za`
+    const name = claims.name || claims.preferred_username || claims.sub
+    const groups = claims.groups || []
+    const ogunClaim = claims.ogun
+
+    logger.info('OIDC callback: claims extracted', {
       sub,
       email,
       name,
-      allKeys: Object.keys(userinfo),
+      claimsSource: idTokenClaims ? 'id_token' : 'userinfo',
+      allKeys: Object.keys(claims),
       groups,
-      rawGroups: JSON.stringify(userinfo.groups),
-      rawOgun: JSON.stringify(userinfo.ogun),
-      ogunClaim,
+      ogunClaimKeys: ogunClaim ? Object.keys(ogunClaim) : null,
     })
 
     if (!ogunClaim || !ogunClaim.hasAccess) {
@@ -177,6 +204,18 @@ authRouter.get('/callback', async (req, res) => {
     const sessionToken = await createSession(userId, getClientIp(req), req.headers['user-agent'], sessionData)
     res.cookie('auth_token', sessionToken, { httpOnly: true, secure: true, path: '/', maxAge: 7 * 24 * 60 * 60 * 1000, sameSite: 'lax' })
 
+    // Dedicated id_token cookie (30-day TTL) so SSO logout works even if the
+    // app session (DB row) has expired. Read from this cookie at logout.
+    if (tokens.id_token) {
+      res.cookie('ogun_id_token', tokens.id_token, {
+        httpOnly: true,
+        secure: true,
+        path: '/',
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+        sameSite: 'lax',
+      })
+    }
+
     res.redirect('/')
   } catch (error) {
     logger.error('OIDC callback error', { error: error.message, stack: error.stack })
@@ -198,8 +237,11 @@ authRouter.get('/public/providers', async (req, res) => {
       ],
     })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Failed to get providers', { error: error.message })
-    res.status(500).json({ error: 'Failed to get providers' })
+    res.status(500).json({ error: 'Failed to get providers', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -207,13 +249,13 @@ authRouter.post('/admin-login', adminLoginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body || {}
     if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password required' })
+      throw new AppError('VALIDATION_ERROR', 'Email and password required')
     }
 
     const enabled = process.env.SUPER_ADMIN_LOGIN_ENABLED !== 'false'
     if (!enabled) {
       adminLoginLogger.warn('[SECURITY] Admin login disabled by config', { email })
-      return res.status(404).json({ error: 'Not found' })
+      throw new AppError('NOT_FOUND', 'Not found')
     }
 
     const adminUser = process.env.SUPER_ADMIN_USER || ''
@@ -221,7 +263,7 @@ authRouter.post('/admin-login', adminLoginLimiter, async (req, res) => {
 
     if (!adminUser || !adminPass) {
       adminLoginLogger.warn('[SECURITY] Admin login not configured (missing env vars)')
-      return res.status(404).json({ error: 'Not found' })
+      throw new AppError('NOT_FOUND', 'Not found')
     }
 
     const ip = getClientIp(req)
@@ -229,7 +271,7 @@ authRouter.post('/admin-login', adminLoginLimiter, async (req, res) => {
 
     if (email !== adminUser || password !== adminPass) {
       adminLoginLogger.warn('[SECURITY] Failed admin login attempt', { email, ip, ua })
-      return res.status(401).json({ error: 'Invalid credentials' })
+      throw new AppError('UNAUTHORIZED', 'Invalid credentials')
     }
 
     adminLoginLogger.info('[SECURITY] Admin login successful', { email, ip, ua })
@@ -279,8 +321,11 @@ authRouter.post('/admin-login', adminLoginLimiter, async (req, res) => {
 
     res.json({ success: true, redirect: '/' })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     adminLoginLogger.error('Admin login error', { error: error.message })
-    res.status(500).json({ error: 'Login failed' })
+    res.status(500).json({ error: 'Login failed', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -290,32 +335,42 @@ authRouter.post('/logout', async (req, res) => {
                   req.cookies?.auth_token
 
     let loginType = 'admin'
-    let session = null
+    // Read id_token from dedicated cookie first (30-day TTL outlives app session), fall back to DB
+    let idToken = req.cookies?.ogun_id_token || null
     if (token) {
-      session = await validateSession(token)
-      if (session?.data?.sub) loginType = 'sso'
+      const session = await validateSession(token)
+      if (session?.data?.sub) {
+        loginType = 'sso'
+        idToken ||= session.data.idToken || null
+      }
       await deleteSession(token)
     }
     res.clearCookie('auth_token')
+    res.clearCookie('ogun_id_token')
 
     if (loginType === 'sso') {
       const issuer = (process.env.AUTHENTIK_OIDC_ISSUER || '').replace(/\/+$/, '')
-      const redirectUri = encodeURIComponent(
-        process.env.AUTHENTIK_REDIRECT_URI || 'https://ogun.spectres.co.za/auth/callback'
-      )
-      const clientId = encodeURIComponent(process.env.AUTHENTIK_CLIENT_ID || '')
-      
-      // id_token_hint omitted: the token's iss (http://) mismatches the HTTPS end-session
-      // endpoint, causing Authentik to reject the request. client_id is sufficient.
-      const logoutUrl = `${issuer}/end-session/?client_id=${clientId}&post_logout_redirect_uri=${redirectUri}`
+        .replace(/^http:\/\//, 'https://')
+      const params = new URLSearchParams({
+        client_id: process.env.AUTHENTIK_CLIENT_ID || '',
+        post_logout_redirect_uri:
+          process.env.AUTHENTIK_REDIRECT_URI || 'https://ogun.spectres.co.za/auth/callback',
+      })
+      if (idToken) {
+        params.set('id_token_hint', idToken)
+      }
+      const logoutUrl = `${issuer}/end-session/?${params.toString()}`
       
       return res.json({ success: true, loginType, logoutUrl })
     }
 
     res.json({ success: true, loginType, logoutUrl: null })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Logout error', { error: error.message })
-    res.status(500).json({ error: 'Logout failed' })
+    res.status(500).json({ error: 'Logout failed', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -327,8 +382,11 @@ authRouter.post('/trigger-expiration-notifications', requireSuperAdmin, async (r
     const result = await triggerPasswordNotificationCheck()
     return res.json({ success: true, ...result })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Trigger expiration notifications error', { error: error.message })
-    res.status(500).json({ error: 'Failed to trigger notifications' })
+    res.status(500).json({ error: 'Failed to trigger notifications', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -337,7 +395,7 @@ authRouter.post('/trigger-expiration-notifications', requireSuperAdmin, async (r
 authRouter.post('/generate-temp-password', requireRole('admin', 'password_manager'), protectPasswordOperation, async (req, res) => {
   try {
     const { username } = req.body
-    if (!username) return res.status(400).json({ error: 'username is required' })
+    if (!username) throw new AppError('VALIDATION_ERROR', 'username is required')
 
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%^&*'
     let tempPassword = ''
@@ -346,7 +404,7 @@ authRouter.post('/generate-temp-password', requireRole('admin', 'password_manage
     }
 
     const ldapOk = await ldapClient.setUserPassword(username, tempPassword)
-    if (!ldapOk) return res.status(500).json({ error: 'Failed to set password in LDAP' })
+    if (!ldapOk) throw new AppError('DEPENDENCY_FAILURE', 'Failed to set password in LDAP')
 
     const akUser = await authentikClient.getUserByUsername(username)
     if (akUser) {
@@ -368,8 +426,11 @@ authRouter.post('/generate-temp-password', requireRole('admin', 'password_manage
     logger.info('Temporary password generated', { by: req.user?.username, for: username })
     res.json({ success: true, username, tempPassword })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Generate temp password error', { error: error.message })
-    res.status(500).json({ error: 'Failed to generate temporary password' })
+    res.status(500).json({ error: 'Failed to generate temporary password', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -378,12 +439,12 @@ authRouter.get('/me', async (req, res) => {
     const token = req.headers.authorization?.replace('Bearer ', '') ||
                   req.cookies?.auth_token
     if (!token) {
-      return res.status(401).json({ error: 'Not authenticated' })
+      throw new AppError('UNAUTHORIZED', 'Not authenticated')
     }
 
     const sessionData = await validateSession(token)
     if (!sessionData) {
-      return res.status(401).json({ error: 'Invalid or expired session' })
+      throw new AppError('SESSION_EXPIRED', 'Invalid or expired session')
     }
 
     return res.json({
@@ -397,8 +458,11 @@ authRouter.get('/me', async (req, res) => {
       matchedGroup: sessionData.data?.matchedGroup || null,
     })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Get current user error', { error: error.message })
-    res.status(500).json({ error: 'Failed to get user info' })
+    res.status(500).json({ error: 'Failed to get user info', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -415,21 +479,24 @@ authRouter.get('/verify-reset-token/:token', async (req, res) => {
     )
 
     if (result.rows.length === 0) {
-      return res.status(400).json({ error: 'Invalid token' })
+      throw new AppError('VALIDATION_ERROR', 'Invalid token')
     }
 
     const row = result.rows[0]
     if (row.used) {
-      return res.status(400).json({ error: 'Token already used' })
+      throw new AppError('VALIDATION_ERROR', 'Token already used')
     }
     if (new Date(row.expires_at) < new Date()) {
-      return res.status(400).json({ error: 'Token expired' })
+      throw new AppError('VALIDATION_ERROR', 'Token expired')
     }
 
     res.json({ valid: true, username: row.username })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Verify reset token error', { error: error.message })
-    res.status(500).json({ error: 'Failed to verify token' })
+    res.status(500).json({ error: 'Failed to verify token', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -440,12 +507,12 @@ authRouter.post('/reset-password', async (req, res) => {
     const { token, newPassword } = req.body
 
     if (!token || !newPassword) {
-      return res.status(400).json({ error: 'Token and new password are required' })
+      throw new AppError('VALIDATION_ERROR', 'Token and new password are required')
     }
 
     const validation = validatePassword(newPassword)
     if (!validation.valid) {
-      return res.status(400).json({ error: 'Password does not meet requirements', details: validation.errors })
+      throw new AppError('VALIDATION_ERROR', 'Password does not meet requirements')
     }
 
     const tokenResult = await pool.query(
@@ -456,15 +523,15 @@ authRouter.post('/reset-password', async (req, res) => {
     )
 
     if (tokenResult.rows.length === 0) {
-      return res.status(400).json({ error: 'Invalid token' })
+      throw new AppError('VALIDATION_ERROR', 'Invalid token')
     }
 
     const row = tokenResult.rows[0]
     if (row.used) {
-      return res.status(400).json({ error: 'Token already used' })
+      throw new AppError('VALIDATION_ERROR', 'Token already used')
     }
     if (new Date(row.expires_at) < new Date()) {
-      return res.status(400).json({ error: 'Token expired' })
+      throw new AppError('VALIDATION_ERROR', 'Token expired')
     }
 
     const username = row.username
@@ -472,7 +539,7 @@ authRouter.post('/reset-password', async (req, res) => {
     // Update LDAP password
     const ldapOk = await ldapClient.setUserPassword(username, newPassword)
     if (!ldapOk) {
-      return res.status(500).json({ error: 'Failed to update LDAP password' })
+      throw new AppError('DEPENDENCY_FAILURE', 'Failed to update LDAP password')
     }
 
     // Update Authentik password
@@ -511,8 +578,11 @@ authRouter.post('/reset-password', async (req, res) => {
 
     res.json({ success: true, message: 'Password updated successfully' })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Reset password error', { error: error.message })
-    res.status(500).json({ error: 'Failed to reset password' })
+    res.status(500).json({ error: 'Failed to reset password', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -564,22 +634,22 @@ authRouter.post('/change-password', async (req, res) => {
   try {
     const token = req.headers.authorization?.replace('Bearer ', '') || req.cookies?.auth_token
     if (!token) {
-      return res.status(401).json({ error: 'Not authenticated' })
+      throw new AppError('UNAUTHORIZED', 'Not authenticated')
     }
 
     const sessionData = await validateSession(token)
     if (!sessionData) {
-      return res.status(401).json({ error: 'Invalid session' })
+      throw new AppError('SESSION_EXPIRED', 'Invalid session')
     }
 
     const { currentPassword, newPassword } = req.body
     if (!currentPassword || !newPassword) {
-      return res.status(400).json({ error: 'Current and new password are required' })
+      throw new AppError('VALIDATION_ERROR', 'Current and new password are required')
     }
 
     const validation = validatePassword(newPassword)
     if (!validation.valid) {
-      return res.status(400).json({ error: 'Password does not meet requirements', details: validation.errors })
+      throw new AppError('VALIDATION_ERROR', 'Password does not meet requirements')
     }
 
     const username = sessionData.username
@@ -587,13 +657,13 @@ authRouter.post('/change-password', async (req, res) => {
     // Verify current password against LDAP
     const valid = await ldapClient.verifyPassword(username, currentPassword)
     if (!valid) {
-      return res.status(401).json({ error: 'Current password is incorrect' })
+      throw new AppError('UNAUTHORIZED', 'Current password is incorrect')
     }
 
     // Update LDAP password
     const ldapOk = await ldapClient.setUserPassword(username, newPassword)
     if (!ldapOk) {
-      return res.status(500).json({ error: 'Failed to update password' })
+      throw new AppError('DEPENDENCY_FAILURE', 'Failed to update password')
     }
 
     // Update Authentik password
@@ -616,8 +686,11 @@ authRouter.post('/change-password', async (req, res) => {
 
     res.json({ success: true, message: 'Password changed successfully' })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Change password error', { error: error.message })
-    res.status(500).json({ error: 'Failed to change password' })
+    res.status(500).json({ error: 'Failed to change password', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 

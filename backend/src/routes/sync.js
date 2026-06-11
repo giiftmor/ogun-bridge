@@ -2,6 +2,7 @@ import express from 'express'
 import { getSyncState, startSyncService, stopSyncService, triggerManualSync, getDashboardData, getGlobalDirection, setGlobalDirection } from '../services/syncService.js'
 import { authenticate } from '../middleware/auth.js'
 import { logger } from '../utils/logger.js'
+import { AppError } from '../utils/AppError.js'
 import { authentikClient } from '../services/authentikClient.js'
 import { ldapClient } from '../services/ldapClient.js'
 
@@ -52,7 +53,7 @@ syncRouter.post('/preview', async (req, res) => {
     
     const validDirections = ['authentik-to-ldap', 'ldap-to-authentik', 'bidirectional']
     if (direction && !validDirections.includes(direction)) {
-      return res.status(400).json({ error: 'Invalid sync direction' })
+      throw new AppError('VALIDATION_ERROR', 'Invalid sync direction')
     }
     
     const authentikGroups = await authentikClient.getGroups()
@@ -67,7 +68,7 @@ syncRouter.post('/preview', async (req, res) => {
       const lGroup = ldapGroups.find(g => g.cn === group_name)
       
       if (!aGroup && !lGroup) {
-        return res.status(404).json({ error: 'Group not found in either system' })
+        throw new AppError('NOT_FOUND', 'Group not found in either system')
       }
       
       if (direction === 'authentik-to-ldap' || direction === 'bidirectional') {
@@ -147,8 +148,11 @@ syncRouter.post('/preview', async (req, res) => {
     
     res.json({ success: true, changes, summary, direction: direction || 'all' })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error previewing sync:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to preview sync', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -158,8 +162,11 @@ syncRouter.get('/dashboard', async (req, res) => {
     const data = await getDashboardData()
     res.json(data)
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error fetching dashboard data:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to fetch dashboard data', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -169,7 +176,11 @@ syncRouter.get('/config', async (req, res) => {
     const direction = await getGlobalDirection()
     res.json({ globalDirection: direction })
   } catch (error) {
-    res.status(500).json({ error: error.message })
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
+    logger.error('Error fetching sync config:', error)
+    res.status(500).json({ error: 'Failed to fetch sync config', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -180,7 +191,11 @@ syncRouter.put('/config', async (req, res) => {
     const result = await setGlobalDirection(direction)
     res.json(result)
   } catch (error) {
-    res.status(400).json({ error: error.message })
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
+    logger.error('Error updating sync config:', error)
+    res.status(500).json({ error: 'Failed to update sync config', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 

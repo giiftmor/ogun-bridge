@@ -3,6 +3,7 @@ import { ldapClient } from '../services/ldapClient.js'
 import { authentikClient } from '../services/authentikClient.js'
 import { logger } from '../utils/logger.js'
 import { authenticate, requireRole } from '../middleware/auth.js'
+import { AppError } from '../utils/AppError.js'
 
 export const testRouter = express.Router()
 
@@ -21,8 +22,11 @@ testRouter.get('/ldap-password/:username', async (req, res) => {
       message: password ? 'Got password' : 'Could not retrieve password'
     })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error getting LDAP password:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to get LDAP password', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -32,7 +36,7 @@ testRouter.post('/set-password/:username', async (req, res) => {
     const { password } = req.body
     
     if (!password) {
-      return res.status(400).json({ error: 'Password is required' })
+      throw new AppError('VALIDATION_ERROR', 'Password is required')
     }
     
     logger.info(`[PASSWORD-SYNC] Setting password for user: ${username}`)
@@ -41,7 +45,7 @@ testRouter.post('/set-password/:username', async (req, res) => {
     const ldapResult = await ldapClient.setUserPassword(username, password)
     
     if (!ldapResult) {
-      return res.status(500).json({ error: 'Failed to set password in LDAP' })
+      throw new AppError('INTERNAL_ERROR', 'Failed to set password in LDAP')
     }
     
     logger.info(`[PASSWORD-SYNC] Password set in LDAP for: ${username}`)
@@ -72,8 +76,11 @@ testRouter.post('/set-password/:username', async (req, res) => {
       message: 'Password set in LDAP' + (authentikResult === 'success' ? ' and Authentik' : '')
     })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('[PASSWORD-SYNC] Error:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to set password', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -84,7 +91,7 @@ testRouter.post('/verify-ldap-password/:username', async (req, res) => {
     const { password } = req.body
     
     if (!password) {
-      return res.status(400).json({ error: 'Password is required' })
+      throw new AppError('VALIDATION_ERROR', 'Password is required')
     }
     
     const isValid = await ldapClient.verifyPassword(username, password)
@@ -95,7 +102,10 @@ testRouter.post('/verify-ldap-password/:username', async (req, res) => {
       message: isValid ? 'Password is valid' : 'Password is invalid'
     })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error verifying LDAP password:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to verify LDAP password', code: 'INTERNAL_ERROR', status: 500 })
   }
 })

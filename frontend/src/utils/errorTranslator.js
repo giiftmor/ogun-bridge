@@ -145,4 +145,23 @@ export function useErrorToast(toast) {
   }
 }
 
+const ALERT_ERROR_MESSAGES = {
+  VALIDATION_ERROR: { title: 'Validation Error', variant: 'warning' },
+  UNAUTHORIZED: { title: 'Please log in again', variant: 'danger' },
+  SESSION_EXPIRED: { title: 'Session expired', variant: 'danger' },
+  ACCESS_DENIED: { title: 'Access denied', variant: 'danger' },
+  OGUN_ACCESS_DENIED: { title: 'Access denied by Ogun', variant: 'danger' },
+  NOT_FOUND: { title: 'Not found', variant: 'warning' },
+  CONFLICT: { title: 'Conflict', variant: 'warning' },
+  RATE_LIMITED: { title: 'Too many requests', variant: 'warning' },
+  DEPENDENCY_FAILURE: { title: 'Service temporarily unavailable', variant: 'danger' },
+  INTERNAL_ERROR: { title: 'Something went wrong', variant: 'danger' },
+  NETWORK_ERROR: { title: 'Network error', variant: 'danger' },
+  NETWORK_TIMEOUT: { title: 'Request timed out', variant: 'danger' },
+}
+
+export function getErrorAlertProps(code) {
+  return ALERT_ERROR_MESSAGES[code] || { title: 'Error', variant: 'danger' }
+}
+
 export default translateError

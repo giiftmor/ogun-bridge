@@ -3,6 +3,7 @@ import { authenticate } from '../middleware/auth.js'
 import { pool } from '../lib/db.js'
 import { logger } from '../utils/logger.js'
 import { authentikClient } from '../services/authentikClient.js'
+import { AppError } from '../utils/AppError.js'
 
 export const schemaRouter = express.Router()
 
@@ -15,8 +16,11 @@ schemaRouter.get('/mappings', async (req, res) => {
     )
     res.json(result.rows)
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Failed to get field mappings:', error)
-    res.status(500).json({ error: 'Failed to get field mappings' })
+    res.status(500).json({ error: 'Failed to get field mappings', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -24,7 +28,7 @@ schemaRouter.put('/mappings', async (req, res) => {
   try {
     const mappings = req.body
     if (!Array.isArray(mappings)) {
-      return res.status(400).json({ error: 'Body must be an array of mappings' })
+      throw new AppError('VALIDATION_ERROR', 'Body must be an array of mappings')
     }
 
     const client = await pool.connect()
@@ -34,9 +38,7 @@ schemaRouter.put('/mappings', async (req, res) => {
       for (const mapping of mappings) {
         if (!mapping.authentik_field || !mapping.ldap_attribute) {
           await client.query('ROLLBACK')
-          return res.status(400).json({
-            error: 'Each mapping must have authentik_field and ldap_attribute',
-          })
+          throw new AppError('VALIDATION_ERROR', 'Each mapping must have authentik_field and ldap_attribute')
         }
 
         await client.query(
@@ -71,8 +73,11 @@ schemaRouter.put('/mappings', async (req, res) => {
       client.release()
     }
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Failed to update field mappings:', error)
-    res.status(500).json({ error: 'Failed to update field mappings' })
+    res.status(500).json({ error: 'Failed to update field mappings', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -80,7 +85,7 @@ schemaRouter.post('/test', async (req, res) => {
   try {
     const { userId, mappings } = req.body
     if (!userId) {
-      return res.status(400).json({ error: 'userId is required' })
+      throw new AppError('VALIDATION_ERROR', 'userId is required')
     }
 
     let aUser
@@ -90,7 +95,7 @@ schemaRouter.post('/test', async (req, res) => {
         ? await authentikClient.getUser(userId)
         : await authentikClient.getUserByUsername(userId)
     } catch (e) {
-      return res.status(404).json({ error: 'User not found in Authentik: ' + e.message })
+      throw new AppError('NOT_FOUND', 'User not found in Authentik: ' + e.message)
     }
 
     const ldapResult = {}
@@ -142,8 +147,11 @@ schemaRouter.post('/test', async (req, res) => {
       validations,
     })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Failed to test mapping:', error)
-    res.status(500).json({ error: 'Failed to test mapping: ' + error.message })
+    res.status(500).json({ error: 'Failed to test mapping', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -151,9 +159,7 @@ schemaRouter.post('/validate', async (req, res) => {
   try {
     const { mapping } = req.body
     if (!mapping || !mapping.authentik_field || !mapping.ldap_attribute) {
-      return res.status(400).json({
-        error: 'Mapping must have authentik_field and ldap_attribute',
-      })
+      throw new AppError('VALIDATION_ERROR', 'Mapping must have authentik_field and ldap_attribute')
     }
 
     const existing = await pool.query(
@@ -169,7 +175,10 @@ schemaRouter.post('/validate', async (req, res) => {
         : null,
     })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Failed to validate mapping:', error)
-    res.status(500).json({ error: 'Failed to validate mapping' })
+    res.status(500).json({ error: 'Failed to validate mapping', code: 'INTERNAL_ERROR', status: 500 })
   }
 })

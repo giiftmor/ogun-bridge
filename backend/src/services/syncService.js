@@ -9,6 +9,8 @@ import { addLogToCache } from './logCache.js'
 import { createSnapshot } from './versionService.js'
 import { authentikClient } from './authentikClient.js'
 import { alertService } from './alertService.js'
+import { syncUsersForApp } from './authorizer.js'
+import { notifyAppSync } from './roleWebhook.js'
 
 // Password hashing using bcrypt (production) or fallback for temp passwords
 async function hashPasswordBcrypt(password) {
@@ -57,6 +59,7 @@ const syncState = {
   interval: null,
   ldapClient: null,
   isConnected: false,
+  rbacCycleCounter: 0,
 }
 
 // Get config from environment variables
@@ -90,6 +93,10 @@ function getConfig() {
       createUsers: process.env.SYNC_CREATE_USERS !== 'false',
       updateUsers: process.env.SYNC_UPDATE_USERS !== 'false',
       deleteUsers: process.env.SYNC_DELETE_USERS === 'true',
+    },
+    rbac: {
+      syncEnabled: process.env.SYNC_RBAC_ENABLED !== 'false',
+      intervalCycles: parseInt(process.env.RBAC_SYNC_INTERVAL_CYCLES || '6'),
     },
   }
 }
@@ -841,6 +848,27 @@ async function runSyncCycle(io, force = false) {
         message: `Sync completed: ${created} created, ${updated} updated, ${deleted} deleted, ${errors} errors`,
         context: { created, updated, deleted, errors, duration },
       })
+    }
+
+    // ─── RBAC App User Sync ───────────────────────────────────────────────────
+    if (config.rbac.syncEnabled) {
+      syncState.rbacCycleCounter++
+      if (syncState.rbacCycleCounter >= config.rbac.intervalCycles) {
+        syncState.rbacCycleCounter = 0
+        try {
+          const apps = await pool.query(
+            'SELECT slug, name FROM apps WHERE is_active = true ORDER BY slug'
+          )
+          for (const app of apps.rows) {
+            broadcastLog(io, 'info', `RBAC sync: starting ${app.name} (${app.slug})`)
+            const result = await syncUsersForApp(app.slug)
+            broadcastLog(io, 'info', `RBAC sync: ${app.name} done`, result)
+            notifyAppSync(app.slug, result)
+          }
+        } catch (rbacErr) {
+          broadcastLog(io, 'error', 'RBAC sync failed', { error: rbacErr.message })
+        }
+      }
     }
 
   } catch (error) {

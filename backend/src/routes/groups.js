@@ -3,14 +3,15 @@ import { pool } from '../lib/db.js'
 import { authentikClient } from '../services/authentikClient.js'
 import { ldapClient } from '../services/ldapClient.js'
 import { logger } from '../utils/logger.js'
-import { authenticate } from '../middleware/auth.js'
+import { authenticate, requireModule } from '../middleware/auth.js'
+import { AppError } from '../utils/AppError.js'
 import { detectGroupChanges } from '../services/changeDetector.js'
 
 export const groupsRouter = express.Router()
 
 groupsRouter.use(authenticate)
 
-groupsRouter.get('/', async (req, res) => {
+groupsRouter.get('/', requireModule('groups', 'read'), async (req, res) => {
   try {
     const { search, status, source, limit } = req.query
     
@@ -74,12 +75,15 @@ groupsRouter.get('/', async (req, res) => {
     
     res.json(filtered)
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error fetching groups:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to fetch groups', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 // Get group tree (hierarchy)
-groupsRouter.get('/tree', async (req, res) => {
+groupsRouter.get('/tree', requireModule('groups', 'read'), async (req, res) => {
   let authentikGroups = []
   let ldapTree = []
 
@@ -119,7 +123,7 @@ groupsRouter.get('/tree', async (req, res) => {
   })
 })
 
-groupsRouter.get('/:id/compare', async (req, res) => {
+groupsRouter.get('/:id/compare', requireModule('groups', 'read'), async (req, res) => {
   try {
     const aGroup = await authentikClient.getGroup(req.params.id)
     const lGroup = await ldapClient.getGroup(aGroup.name)
@@ -149,13 +153,16 @@ groupsRouter.get('/:id/compare', async (req, res) => {
       differences,
     })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error comparing group:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to compare group', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
 // Get group details with sync config
-groupsRouter.get('/:id', async (req, res) => {
+groupsRouter.get('/:id', requireModule('groups', 'read'), async (req, res) => {
   try {
     const { id } = req.params
     
@@ -201,13 +208,16 @@ groupsRouter.get('/:id', async (req, res) => {
       ldap_exists: !!lGroup,
     })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error fetching group:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to fetch group details', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
 // Trigger group sync
-groupsRouter.post('/sync', async (req, res) => {
+groupsRouter.post('/sync', requireModule('groups', 'write'), async (req, res) => {
   try {
     const { direction, group_name } = req.body
     
@@ -223,7 +233,7 @@ groupsRouter.post('/sync', async (req, res) => {
       if (aGroup && lGroup) {
         result = await detectGroupChanges([aGroup], [lGroup])
       } else {
-        return res.status(404).json({ error: 'Group not found in both systems' })
+        throw new AppError('NOT_FOUND', 'Group not found in both systems')
       }
     } else {
       result = await detectGroupChanges(authentikGroups, ldapGroups)
@@ -231,33 +241,39 @@ groupsRouter.post('/sync', async (req, res) => {
     
     res.json({ success: true, ...result })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error triggering group sync:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to trigger group sync', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
 // Get all group sync configs
-groupsRouter.get('/config', async (req, res) => {
+groupsRouter.get('/config', requireModule('groups', 'read'), async (req, res) => {
   try {
     const client = await pool.connect()
     const result = await client.query('SELECT * FROM group_sync_config ORDER BY group_name')
     client.release()
     res.json(result.rows)
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error fetching group sync configs:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to fetch sync configs', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
 
 // Force sync now with specific direction
-groupsRouter.post('/sync-now', async (req, res) => {
+groupsRouter.post('/sync-now', requireModule('groups', 'write'), async (req, res) => {
   try {
     const { direction, group_name } = req.body
     
     const validDirections = ['authentik-to-ldap', 'ldap-to-authentik', 'bidirectional']
     if (direction && !validDirections.includes(direction)) {
-      return res.status(400).json({ error: 'Invalid direction' })
+      throw new AppError('VALIDATION_ERROR', 'Invalid direction')
     }
 
     const authentikGroups = await authentikClient.getGroups()
@@ -328,20 +344,23 @@ groupsRouter.post('/sync-now', async (req, res) => {
       results
     })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error during sync-now:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to perform sync', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
 // Update sync direction for a group
-groupsRouter.patch('/:id/sync-direction', async (req, res) => {
+groupsRouter.patch('/:id/sync-direction', requireModule('groups', 'write'), async (req, res) => {
   try {
     const { id } = req.params
     const { sync_direction } = req.body
 
     const validDirections = ['authentik-to-ldap', 'ldap-to-authentik', 'bidirectional']
     if (!validDirections.includes(sync_direction)) {
-      return res.status(400).json({ error: 'Invalid sync direction' })
+      throw new AppError('VALIDATION_ERROR', 'Invalid sync direction')
     }
 
     const aGroup = await authentikClient.getGroup(id)
@@ -359,13 +378,16 @@ groupsRouter.patch('/:id/sync-direction', async (req, res) => {
 
     res.json({ success: true, group_name: aGroup.name, sync_direction })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error updating sync direction:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to update sync direction', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
 // Get group members from both systems
-groupsRouter.get('/:id/members', async (req, res) => {
+groupsRouter.get('/:id/members', requireModule('groups', 'read'), async (req, res) => {
   try {
     const { id } = req.params
     
@@ -423,7 +445,10 @@ groupsRouter.get('/:id/members', async (req, res) => {
       }
     })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error fetching group members:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to fetch group members', code: 'INTERNAL_ERROR', status: 500 })
   }
 })

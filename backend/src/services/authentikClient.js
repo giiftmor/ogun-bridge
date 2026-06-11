@@ -99,6 +99,30 @@ export class AuthentikClient {
     return users.find(u => u.username === username) || null
   }
 
+  async getUserGroups(userIdentifier) {
+    const id = String(userIdentifier)
+
+    // Numeric PK works directly with Authentik's user detail endpoint
+    if (/^\d+$/.test(id)) {
+      const data = await this.request(`/api/v3/core/users/${id}/`)
+      return data.groups_obj || data.groups || []
+    }
+
+    // UUID/username/email — search first to get PK
+    const users = await this.getUsers({ search: id })
+    const user = users.length > 0
+      ? users.find(u => u.uuid === id || u.username === id || u.email === id) || users[0]
+      : null
+
+    if (!user) {
+      logger.warn('User not found for group lookup:', id)
+      return []
+    }
+
+    const data = await this.request(`/api/v3/core/users/${user.pk}/`)
+    return data.groups_obj || data.groups || []
+  }
+
   async deleteUser(userId) {
     return this.request('/api/v3/core/users/' + userId + '/', {
       method: 'DELETE',

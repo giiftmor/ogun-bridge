@@ -1,18 +1,54 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
 
+export const DEFAULT_TIMEOUT = 30000
+
 const getToken = () => {
   // Auth token is set as HTTP-only cookie on login; no localStorage needed.
   // Return null to rely on automatic cookie-based auth.
   return null
 }
 
+class ApiError extends Error {
+  constructor(code, message, status, details) {
+    super(message)
+    this.name = 'ApiError'
+    this.code = code
+    this.status = status
+    this.details = details
+  }
+}
+
+export function classifyError(error) {
+  if (error.name === 'AbortError') {
+    return { code: 'NETWORK_TIMEOUT', message: 'Request timed out' }
+  }
+  if (error instanceof TypeError) {
+    return { code: 'NETWORK_ERROR', message: 'Network error - check your connection' }
+  }
+  if (error instanceof ApiError) {
+    return {
+      code: error.code || 'UNKNOWN_ERROR',
+      message: error.message,
+      status: error.status,
+      details: error.details,
+    }
+  }
+  return {
+    code: error.code || 'UNKNOWN_ERROR',
+    message: error.message || 'An unexpected error occurred',
+  }
+}
+
 class ApiClient {
   async request(endpoint, options = {}) {
     const url = `${API_BASE_URL}${endpoint}`
     const token = getToken()
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT)
 
     const config = {
       ...options,
+      signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
@@ -22,28 +58,22 @@ class ApiClient {
 
     try {
       const response = await fetch(url, config)
+      clearTimeout(timeoutId)
 
-    if (response.status === 401) {
-      // Only redirect to login if it's a session/auth failure (not network error)
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}))
-        
-        // Only redirect for actual auth failures (cookie will be cleared server-side)
-        if (error.error?.includes('expired') || error.error?.includes('Invalid') || error.error?.includes('Not authenticated')) {
-          window.location.href = '/login'
-        }
-        // For other 401s, just throw without redirect
-        throw new Error(error.message || 'Authentication required')
+      if (response.status === 401) {
+        window.dispatchEvent(new CustomEvent('auth:unauthorized'))
+        const error = await response.json().catch(() => ({ message: response.statusText }))
+        throw new ApiError(error.code || 'UNAUTHORIZED', error.error || error.message || 'Authentication required', 401, error.details)
       }
-    }
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({ message: response.statusText }))
-        throw new Error(error.message || 'API request failed')
+        throw new ApiError(error.code || 'UNKNOWN_ERROR', error.error || error.message || 'API request failed', error.status || response.status, error.details)
       }
 
       return await response.json()
     } catch (error) {
+      clearTimeout(timeoutId)
       throw error
     }
   }

@@ -2,6 +2,7 @@ import crypto from 'crypto'
 import { pool } from '../lib/db.js'
 import { logger } from '../utils/logger.js'
 import { getUserOgunRole } from '../services/authorizer.js'
+import { createAuditLog } from '../services/auditService.js'
 
 const TOKEN_LENGTH = 64
 
@@ -9,9 +10,35 @@ export function generateToken() {
   return crypto.randomBytes(TOKEN_LENGTH).toString('hex')
 }
 
+function isTrue(val) {
+  return val === 'true' || val === '1' || val === true
+}
+
 export async function createSession(userId, ipAddress, userAgent, extraData = null) {
+  const maxSessions = parseInt(process.env.MAX_CONCURRENT_SESSIONS || '0', 10)
+
+  if (maxSessions > 0) {
+    const countResult = await pool.query(
+      'SELECT COUNT(*) as cnt FROM auth_sessions WHERE user_id = $1 AND expires_at > NOW()',
+      [userId]
+    )
+    const count = parseInt(countResult.rows[0]?.cnt || '0', 10)
+
+    if (count >= maxSessions) {
+      const evictCount = count - maxSessions + 1
+      await pool.query(
+        `DELETE FROM auth_sessions WHERE id IN (
+          SELECT id FROM auth_sessions WHERE user_id = $1 AND expires_at > NOW()
+          ORDER BY created_at ASC LIMIT $2
+        )`,
+        [userId, evictCount]
+      )
+      logger.info('Evicted old sessions', { userId, evictCount, maxSessions })
+    }
+  }
+
   const token = generateToken()
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
 
   await pool.query(
     `INSERT INTO auth_sessions (user_id, token, ip_address, user_agent, expires_at, data)
@@ -22,19 +49,51 @@ export async function createSession(userId, ipAddress, userAgent, extraData = nu
   return token
 }
 
-export async function validateSession(token) {
+export async function validateSession(token, options = {}) {
   if (!token) return null
 
   try {
     const result = await pool.query(
-      `SELECT s.id, s.user_id, s.expires_at, s.data, u.username, u.email, u.role, u.active
+      `SELECT s.id, s.user_id, s.expires_at, s.data, u.username, u.email, u.role, u.active,
+              s.ip_address, s.user_agent, s.created_at
        FROM auth_sessions s
        JOIN auth_users u ON s.user_id = u.id
        WHERE s.token = $1 AND s.expires_at > NOW() AND u.active = true`,
       [token]
     )
 
-    return result.rows[0] || null
+    const session = result.rows[0] || null
+    if (!session) return null
+
+    if (isTrue(process.env.SESSION_IP_BINDING) && options.ipAddress) {
+      if (session.ip_address && session.ip_address !== options.ipAddress) {
+        logger.warn('Session IP mismatch', { token: token.substring(0, 8), stored: session.ip_address, request: options.ipAddress })
+        return null
+      }
+    }
+
+    if (isTrue(process.env.SESSION_UA_BINDING) && options.userAgent) {
+      if (session.user_agent && session.user_agent !== options.userAgent) {
+        logger.warn('Session UA mismatch', { token: token.substring(0, 8), request: options.userAgent })
+        return null
+      }
+    }
+
+    const slidingMinutes = parseInt(process.env.SESSION_SLIDING_EXPIRY || '0', 10)
+    if (slidingMinutes > 0) {
+      const newExpiry = new Date(Date.now() + slidingMinutes * 60 * 1000)
+      const maxLifetimeHours = parseInt(process.env.SESSION_MAX_LIFETIME || '168', 10)
+      const created = session.created_at || new Date()
+      const maxExpiry = new Date(created.getTime() + maxLifetimeHours * 60 * 60 * 1000)
+      const capped = newExpiry > maxExpiry ? maxExpiry : newExpiry
+
+      await pool.query(
+        'UPDATE auth_sessions SET expires_at = $1 WHERE id = $2 AND expires_at < $1',
+        [capped, session.id]
+      )
+    }
+
+    return session
   } catch (error) {
     logger.error('Session validation error', { error: error.message })
     return null
@@ -65,7 +124,14 @@ export function authenticate(req, res, next) {
     return res.status(401).json({ error: 'Authentication required' })
   }
 
-  validateSession(token).then(session => {
+  const ipAddress = req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+                    req.headers['x-real-ip'] ||
+                    req.ip ||
+                    req.connection?.remoteAddress ||
+                    'unknown'
+  const userAgent = req.headers['user-agent'] || ''
+
+  validateSession(token, { ipAddress, userAgent }).then(session => {
     if (!session) {
       return res.status(401).json({ error: 'Invalid or expired session' })
     }
@@ -103,6 +169,15 @@ export function requireRole(...allowedRoles) {
         required: allowedRoles,
         path: req.path
       })
+      createAuditLog({
+        action: 'auth_role_denied',
+        actor: req.user.username || 'unknown',
+        entity_type: 'auth',
+        entity_id: req.path,
+        changes: { required: allowedRoles, actual: userRole },
+        source: 'middleware',
+        success: false,
+      })
       return res.status(403).json({ error: 'Insufficient permissions' })
     }
 
@@ -116,6 +191,20 @@ export function requireSuperAdmin(req, res, next) {
   }
   const role = req.user.roleDefinition?.name || req.user.role
   if (role !== 'super_admin') {
+    logger.warn('Super admin access denied', {
+      user: req.user.username,
+      role,
+      path: req.path,
+    })
+    createAuditLog({
+      action: 'auth_superadmin_denied',
+      actor: req.user.username || 'unknown',
+      entity_type: 'auth',
+      entity_id: req.path,
+      changes: { required: 'super_admin', actual: role },
+      source: 'middleware',
+      success: false,
+    })
     return res.status(403).json({ error: 'Super admin access required' })
   }
   next()
@@ -135,11 +224,29 @@ export function requireModule(module, action = null) {
     const permissions = req.user.permissions || {}
     const modulePerms = permissions[module]
     if (!modulePerms || !Array.isArray(modulePerms) || modulePerms.length === 0) {
-      return res.status(403).json({ error: `No access to module: ${module}` })
+      createAuditLog({
+        action: 'auth_module_denied',
+        actor: req.user.username || 'unknown',
+        entity_type: 'auth_module',
+        entity_id: module,
+        changes: { required: module, action, actualRole: role },
+        source: 'middleware',
+        success: false,
+      })
+      return res.status(403).json({ error: `No access to module: ${module}`, code: 'ACCESS_DENIED', status: 403 })
     }
 
     if (action && !modulePerms.includes(action)) {
-      return res.status(403).json({ error: `No ${action} permission on ${module}` })
+      createAuditLog({
+        action: 'auth_action_denied',
+        actor: req.user.username || 'unknown',
+        entity_type: 'auth_module',
+        entity_id: module,
+        changes: { required: action, actualRole: role, permissions: modulePerms },
+        source: 'middleware',
+        success: false,
+      })
+      return res.status(403).json({ error: `No ${action} permission on ${module}`, code: 'ACCESS_DENIED', status: 403 })
     }
 
     next()
@@ -154,7 +261,14 @@ export function optionalAuth(req, res, next) {
     return next()
   }
 
-  validateSession(token).then(session => {
+  const ipAddress = req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+                    req.headers['x-real-ip'] ||
+                    req.ip ||
+                    req.connection?.remoteAddress ||
+                    'unknown'
+  const userAgent = req.headers['user-agent'] || ''
+
+  validateSession(token, { ipAddress, userAgent }).then(session => {
     if (session) {
       req.user = {
         id: session.user_id,
@@ -182,7 +296,6 @@ export async function cleanupExpiredSessions() {
   }
 }
 
-// LDAP group membership check for RBAC
 import { LDAPClient } from '../services/ldapClient.js'
 
 function escapeLDAPDNValue(value) {
@@ -196,7 +309,6 @@ function escapeLDAPDNValue(value) {
 const ldapClient = new LDAPClient()
 const SYSTEM_ADMINS_GROUP = process.env.LDAP_SYSTEM_ADMINS_GROUP || 'cn=system_admins,ou=groups,dc=spectres,dc=co,dc=za'
 
-// Wrapper for async middleware to handle errors properly
 function asyncMiddleware(fn) {
   return (req, res, next) => {
     Promise.resolve(fn(req, res, next)).catch(next)
@@ -242,7 +354,6 @@ export function requireLDAPGroup(groupDN = SYSTEM_ADMINS_GROUP) {
       const username = req.user.username
       const userDN = `uid=${escapeLDAPDNValue(username)},ou=people,dc=spectres,dc=co,dc=za`
 
-      // Connect to LDAP and check group membership
       await ldapClient.connect()
 
       const { searchEntries } = await ldapClient.client.search(groupDN, {
@@ -267,7 +378,6 @@ export function requireLDAPGroup(groupDN = SYSTEM_ADMINS_GROUP) {
       next()
     } catch (error) {
       logger.error('LDAP group check error', { error: error.message, user: req.user.username })
-      // Fail secure - deny access on error
       return res.status(500).json({ error: 'Authorization check failed' })
     }
   })

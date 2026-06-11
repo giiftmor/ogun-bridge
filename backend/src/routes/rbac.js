@@ -1,11 +1,14 @@
 import express from "express"
 import { pool } from "../lib/db.js"
 import { requireAppApiKey } from "../middleware/apikey.js"
-import { requireSuperAdmin } from "../middleware/auth.js"
+import { requireSuperAdmin, requireModule } from "../middleware/auth.js"
 import { resolveRole, checkPermission, getAuthentikGroups, syncUsersForApp } from "../services/authorizer.js"
+import { notifyRoleChange, notifyAppSync } from "../services/roleWebhook.js"
 import { logger } from "../utils/logger.js"
 import { createAuditLog } from "../services/auditService.js"
 import crypto from "crypto"
+import bcrypt from "bcryptjs"
+import { AppError } from '../utils/AppError.js'
 
 export const rbacRouter = express.Router()
 
@@ -45,15 +48,16 @@ export async function registerApp(req, res) {
   try {
     const { name, slug, display_name, claim_name, authentik_slug, access_group, schema_endpoint } = req.body
     if (!name || !slug || !claim_name) {
-      return res.status(400).json({ error: "name, slug, and claim_name are required" })
+      throw new AppError('VALIDATION_ERROR', 'name, slug, and claim_name are required')
     }
 
-    const api_key = crypto.randomBytes(24).toString("hex")
+    const rawKey = crypto.randomBytes(24).toString("hex")
+    const api_key = await bcrypt.hash(rawKey, 12)
 
     const result = await pool.query(
       `INSERT INTO APPS (name, slug, display_name, api_key, claim_name, authentik_slug, access_group, schema_endpoint, is_active)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
-      RETURNING id, name, slug, display_name, authentik_slug, access_group, schema_endpoint, is_active, api_key
+      RETURNING id, name, slug, display_name, authentik_slug, access_group, schema_endpoint, is_active
     `, [name, slug, display_name || name, api_key, claim_name, authentik_slug || null, access_group || null, schema_endpoint || null])
 
     await createAuditLog({
@@ -67,13 +71,16 @@ export async function registerApp(req, res) {
     })
 
     logger.info("App self-registered", { slug, name })
-    return res.status(201).json(result.rows[0])
+    return res.status(201).json({ ...result.rows[0], api_key: rawKey })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     if (error.code === "23505") {
-      return res.status(409).json({ error: "An app with this slug already exists" })
+      return res.status(409).json({ error: "An app with this slug already exists", code: 'CONFLICT', status: 409 })
     }
     logger.error("App registration error", { error: error.message })
-    return res.status(500).json({ error: "Internal server error" })
+    return res.status(500).json({ error: "Internal server error", code: 'INTERNAL_ERROR', status: 500 })
   }
 }
 
@@ -82,11 +89,11 @@ export async function pushAppSchema(req, res) {
   try {
     const { appSlug } = req.params
     if (req.app && req.app.slug !== appSlug) {
-      return res.status(403).json({ error: 'API key does not match this app' })
+      throw new AppError('ACCESS_DENIED', 'API key does not match this app')
     }
     const { modules } = req.body
     if (!Array.isArray(modules)) {
-      return res.status(400).json({ error: 'modules must be an array' })
+      throw new AppError('VALIDATION_ERROR', 'modules must be an array')
     }
     await pool.query(
       `INSERT INTO app_schemas (app_slug, modules, source, last_synced, updated_at)
@@ -109,22 +116,28 @@ export async function pushAppSchema(req, res) {
     logger.info('Schema pushed by app', { appSlug, moduleCount: modules.length })
     return res.json({ success: true })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Push schema error', { error: error.message })
-    return res.status(500).json({ error: 'Internal server error' })
+    return res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR', status: 500 })
   }
 }
 
 // -- App schemas -----------------------------------------------------------------
 
-rbacRouter.get("/schema/:appSlug", async (req, res) => {
+rbacRouter.get("/schema/:appSlug", requireModule('rbac', 'read'), async (req, res) => {
   try {
     const { appSlug } = req.params
     const schema = await pool.query('SELECT modules, source, last_synced FROM app_schemas WHERE app_slug = $1', [appSlug])
     if (schema.rows.length === 0) return res.json({ modules: [], source: null })
     return res.json(schema.rows[0])
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error("Get schema error", { error: error.message })
-    return res.status(500).json({ error: "Internal server error" })
+    return res.status(500).json({ error: "Internal server error", code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -132,7 +145,7 @@ rbacRouter.post("/schema/:appSlug", requireSuperAdmin, async (req, res) => {
   try {
     const { appSlug } = req.params
     const { modules, source } = req.body
-    if (!Array.isArray(modules)) return res.status(400).json({ error: "modules must be an array" })
+    if (!Array.isArray(modules)) throw new AppError('VALIDATION_ERROR', 'modules must be an array')
 
     await pool.query(`
       INSERT INTO app_schemas (app_slug, modules, source, last_synced, updated_at)
@@ -157,14 +170,17 @@ rbacRouter.post("/schema/:appSlug", requireSuperAdmin, async (req, res) => {
     logger.info('Schema registered', { appSlug, moduleCount: modules.length })
     return res.json({ success: true })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Register schema error', { error: error.message })
-    return res.status(500).json({ error: 'Internal server error' })
+    return res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
 // -- Role definitions -------------------------------------------------------------
 
-rbacRouter.get("/roles/:appSlug", async (req, res) => {
+rbacRouter.get("/roles/:appSlug", requireModule('rbac', 'read'), async (req, res) => {
   try {
     const { appSlug } = req.params
     const roles = await pool.query(`
@@ -177,8 +193,11 @@ rbacRouter.get("/roles/:appSlug", async (req, res) => {
     `, [appSlug])
     return res.json(roles.rows)
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error("List roles error", { error: error.message })
-    return res.status(500).json({ error: "Internal server error" })
+    return res.status(500).json({ error: "Internal server error", code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -187,10 +206,10 @@ rbacRouter.post("/roles/:appSlug", requireSuperAdmin, async (req, res) => {
     const { appSlug } = req.params
     if (await isOgunApp(appSlug)) {
       await logOgunBlocked(req)
-      return res.status(403).json({ error: 'Ogun Bridge RBAC is managed by Authentik' })
+      throw new AppError('ACCESS_DENIED', 'Ogun Bridge RBAC is managed by Authentik')
     }
     const { name, display_name, description, base_role, is_default } = req.body
-    if (!name) return res.status(400).json({ error: 'name is required' })
+    if (!name) throw new AppError('VALIDATION_ERROR', 'name is required')
 
     const result = await pool.query(`
       INSERT INTO role_definitions (app_slug, name, display_name, description, base_role, is_default, updated_by)
@@ -215,9 +234,12 @@ rbacRouter.post("/roles/:appSlug", requireSuperAdmin, async (req, res) => {
     logger.info('Role created', { appSlug, role: name })
     return res.status(201).json(result.rows[0])
   } catch (error) {
-    if (error.code === '23505') return res.status(409).json({ error: 'Role already exists for this app' })
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
+    if (error.code === '23505') return res.status(409).json({ error: 'Role already exists for this app', code: 'CONFLICT', status: 409 })
     logger.error('Create role error', { error: error.message })
-    return res.status(500).json({ error: 'Internal server error' })
+    return res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -227,7 +249,7 @@ rbacRouter.put("/roles/:id", requireSuperAdmin, async (req, res) => {
     const appSlug = await getAppSlugFromRoleDef(id)
     if (await isOgunApp(appSlug)) {
       await logOgunBlocked(req)
-      return res.status(403).json({ error: 'Ogun Bridge RBAC is managed by Authentik' })
+      throw new AppError('ACCESS_DENIED', 'Ogun Bridge RBAC is managed by Authentik')
     }
     const { name, display_name, description, base_role, is_default, is_active } = req.body
 
@@ -245,7 +267,7 @@ rbacRouter.put("/roles/:id", requireSuperAdmin, async (req, res) => {
       RETURNING id, name, display_name, is_default, is_active
     `, [name || null, display_name || null, description !== undefined ? description : null, base_role || null, is_default !== undefined ? is_default : null, is_active !== undefined ? is_active : null, req.user?.username || 'system', id])
 
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Role not found' })
+    if (result.rows.length === 0) throw new AppError('NOT_FOUND', 'Role not found')
 
     if (is_default) {
       const role = result.rows[0]
@@ -264,8 +286,11 @@ rbacRouter.put("/roles/:id", requireSuperAdmin, async (req, res) => {
 
     return res.json(result.rows[0])
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Update role error', { error: error.message })
-    return res.status(500).json({ error: 'Internal server error' })
+    return res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -275,11 +300,11 @@ rbacRouter.delete("/roles/:id", requireSuperAdmin, async (req, res) => {
     const appSlug = await getAppSlugFromRoleDef(id)
     if (await isOgunApp(appSlug)) {
       await logOgunBlocked(req)
-      return res.status(403).json({ error: 'Ogun Bridge RBAC is managed by Authentik' })
+      throw new AppError('ACCESS_DENIED', 'Ogun Bridge RBAC is managed by Authentik')
     }
     const role = await pool.query('SELECT is_default, is_active FROM role_definitions WHERE id = $1', [id])
-    if (role.rows.length === 0) return res.status(404).json({ error: 'Role not found' })
-    if (role.rows[0].is_default) return res.status(400).json({ error: 'Cannot delete default role' })
+    if (role.rows.length === 0) throw new AppError('NOT_FOUND', 'Role not found')
+    if (role.rows[0].is_default) throw new AppError('VALIDATION_ERROR', 'Cannot delete default role')
 
     await pool.query('UPDATE role_definitions SET is_active = false WHERE id = $1', [id])
     
@@ -296,14 +321,17 @@ rbacRouter.delete("/roles/:id", requireSuperAdmin, async (req, res) => {
     logger.info('Role deactivated', { roleId: id })
     return res.json({ success: true })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Delete role error', { error: error.message })
-    return res.status(500).json({ error: 'Internal server error' })
+    return res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
 // -- Role permissions ---------------------------------------------------------
 
-rbacRouter.get("/roles/:id/permissions", async (req, res) => {
+rbacRouter.get("/roles/:id/permissions", requireModule('rbac', 'read'), async (req, res) => {
   try {
     const { id } = req.params
     const perms = await pool.query(
@@ -312,8 +340,11 @@ rbacRouter.get("/roles/:id/permissions", async (req, res) => {
     )
     return res.json(perms.rows)
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Get permissions error', { error: error.message })
-    return res.status(500).json({ error: 'Internal server error' })
+    return res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -323,10 +354,10 @@ rbacRouter.put("/roles/:id/permissions", requireSuperAdmin, async (req, res) => 
     const appSlug = await getAppSlugFromRoleDef(id)
     if (await isOgunApp(appSlug)) {
       await logOgunBlocked(req)
-      return res.status(403).json({ error: 'Ogun Bridge RBAC is managed by Authentik' })
+      throw new AppError('ACCESS_DENIED', 'Ogun Bridge RBAC is managed by Authentik')
     }
     const { permissions } = req.body
-    if (!Array.isArray(permissions)) return res.status(400).json({ error: 'permissions must be an array' })
+    if (!Array.isArray(permissions)) throw new AppError('VALIDATION_ERROR', 'permissions must be an array')
 
     const client = await pool.connect()
     try {
@@ -367,14 +398,17 @@ rbacRouter.put("/roles/:id/permissions", requireSuperAdmin, async (req, res) => 
     logger.info('Permissions updated', { roleDefinitionId: id, permissionCount: permissions.length })
     return res.json({ success: true })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Update permissions error', { error: error.message })
-    return res.status(500).json({ error: 'Internal server error' })
+    return res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
 // -- Group → Role mappings --------------------------------------------------
 
-rbacRouter.get("/mappings/:appSlug", async (req, res) => {
+rbacRouter.get("/mappings/:appSlug", requireModule('rbac', 'read'), async (req, res) => {
   try {
     const { appSlug } = req.params
     const mappings = await pool.query(`
@@ -387,8 +421,11 @@ rbacRouter.get("/mappings/:appSlug", async (req, res) => {
     `, [appSlug])
     return res.json(mappings.rows)
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error("List mappings error", { error: error.message })
-    return res.status(500).json({ error: "Internal server error" })
+    return res.status(500).json({ error: "Internal server error", code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -397,10 +434,10 @@ rbacRouter.post("/mappings/:appSlug", requireSuperAdmin, async (req, res) => {
     const { appSlug } = req.params
     if (await isOgunApp(appSlug)) {
       await logOgunBlocked(req)
-      return res.status(403).json({ error: 'Ogun Bridge RBAC is managed by Authentik' })
+      throw new AppError('ACCESS_DENIED', 'Ogun Bridge RBAC is managed by Authentik')
     }
     const { authentik_group, role_definition_id, priority, is_active } = req.body
-    if (!authentik_group || !role_definition_id) return res.status(400).json({ error: 'authentik_group and role_definition_id are required' })
+    if (!authentik_group || !role_definition_id) throw new AppError('VALIDATION_ERROR', 'authentik_group and role_definition_id are required')
 
     const result = await pool.query(`
       INSERT INTO group_role_mappings (app_slug, authentik_group, role_definition_id, priority, is_active, updated_by)
@@ -421,9 +458,12 @@ rbacRouter.post("/mappings/:appSlug", requireSuperAdmin, async (req, res) => {
     logger.info('Mapping created', { appSlug, group: authentik_group })
     return res.status(201).json(result.rows[0])
   } catch (error) {
-    if (error.code === '23505') return res.status(409).json({ error: 'Mapping already exists for this group' })
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
+    if (error.code === '23505') return res.status(409).json({ error: 'Mapping already exists for this group', code: 'CONFLICT', status: 409 })
     logger.error('Create mapping error', { error: error.message })
-    return res.status(500).json({ error: 'Internal server error' })
+    return res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -432,11 +472,11 @@ rbacRouter.post("/mappings/:appSlug/bulk", requireSuperAdmin, async (req, res) =
     const { appSlug } = req.params
     if (await isOgunApp(appSlug)) {
       await logOgunBlocked(req)
-      return res.status(403).json({ error: 'Ogun Bridge RBAC is managed by Authentik' })
+      throw new AppError('ACCESS_DENIED', 'Ogun Bridge RBAC is managed by Authentik')
     }
     const { groups, role_definition_id, priority, is_active } = req.body
     if (!Array.isArray(groups) || groups.length === 0 || !role_definition_id) {
-      return res.status(400).json({ error: 'groups (non-empty array) and role_definition_id are required' })
+      throw new AppError('VALIDATION_ERROR', 'groups (non-empty array) and role_definition_id are required')
     }
 
     const results = []
@@ -471,8 +511,11 @@ rbacRouter.post("/mappings/:appSlug/bulk", requireSuperAdmin, async (req, res) =
     logger.info('Bulk mappings created', { appSlug, created: results.length, failed: errors.length })
     return res.status(201).json({ created: results, errors, total: groups.length, successCount: results.length, errorCount: errors.length })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Bulk create mappings error', { error: error.message })
-    return res.status(500).json({ error: 'Internal server error' })
+    return res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -482,7 +525,7 @@ rbacRouter.put("/mappings/:id", requireSuperAdmin, async (req, res) => {
     const appSlug = await getAppSlugFromMapping(id)
     if (await isOgunApp(appSlug)) {
       await logOgunBlocked(req)
-      return res.status(403).json({ error: 'Ogun Bridge RBAC is managed by Authentik' })
+      throw new AppError('ACCESS_DENIED', 'Ogun Bridge RBAC is managed by Authentik')
     }
     const { authentik_group, role_definition_id, priority, is_active } = req.body
 
@@ -498,7 +541,7 @@ rbacRouter.put("/mappings/:id", requireSuperAdmin, async (req, res) => {
       RETURNING id, authentik_group, priority, is_active
     `, [authentik_group || null, role_definition_id || null, priority !== undefined ? priority : null, is_active !== undefined ? is_active : null, req.user?.username || 'system', id])
 
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Mapping not found' })
+    if (result.rows.length === 0) throw new AppError('NOT_FOUND', 'Mapping not found')
 
     await createAuditLog({
       action: 'rbac_mapping_updated',
@@ -512,8 +555,11 @@ rbacRouter.put("/mappings/:id", requireSuperAdmin, async (req, res) => {
 
     return res.json(result.rows[0])
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Update mapping error', { error: error.message })
-    return res.status(500).json({ error: 'Internal server error' })
+    return res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -523,7 +569,7 @@ rbacRouter.delete("/mappings/:id", requireSuperAdmin, async (req, res) => {
     const appSlug = await getAppSlugFromMapping(id)
     if (await isOgunApp(appSlug)) {
       await logOgunBlocked(req)
-      return res.status(403).json({ error: 'Ogun Bridge RBAC is managed by Authentik' })
+      throw new AppError('ACCESS_DENIED', 'Ogun Bridge RBAC is managed by Authentik')
     }
     await pool.query('DELETE FROM group_role_mappings WHERE id = $1', [id])
 
@@ -539,8 +585,11 @@ rbacRouter.delete("/mappings/:id", requireSuperAdmin, async (req, res) => {
 
     return res.json({ success: true })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Delete mapping error', { error: error.message })
-    return res.status(500).json({ error: 'Internal server error' })
+    return res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -549,33 +598,39 @@ rbacRouter.delete("/mappings/:id", requireSuperAdmin, async (req, res) => {
 rbacRouter.post("/resolve", requireAppApiKey, async (req, res) => {
   try {
     const { sub, email, groups, appSlug } = req.body
-    if (!sub || !appSlug) return res.status(400).json({ error: 'sub and appSlug are required' })
+    if (!sub || !appSlug) throw new AppError('VALIDATION_ERROR', 'sub and appSlug are required')
 
     const result = await resolveRole(sub, email || '', groups || [], appSlug)
-    if (result.error) return res.status(404).json(result)
+    if (result.error) throw new AppError('NOT_FOUND', result.error)
     return res.json(result)
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Resolve error', { error: error.message })
-    return res.status(500).json({ error: 'Internal server error' })
+    return res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
 rbacRouter.get("/check", requireAppApiKey, async (req, res) => {
   try {
     const { appSlug, sub, groups, module: requiredModule, action: requiredAction } = req.query
-    if (!appSlug || !sub || !requiredModule) return res.status(400).json({ error: 'appSlug, sub, and module are required' })
+    if (!appSlug || !sub || !requiredModule) throw new AppError('VALIDATION_ERROR', 'appSlug, sub, and module are required')
 
     const result = await checkPermission(sub, (groups || '').split(',').filter(Boolean), appSlug, requiredModule, requiredAction || null)
     return res.json(result)
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Check permission error', { error: error.message })
-    return res.status(500).json({ error: 'Internal server error' })
+    return res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
 // -- App users ---------------------------------------------------------------
 
-rbacRouter.get("/users/:appSlug", async (req, res) => {
+rbacRouter.get("/users/:appSlug", requireModule('rbac', 'read'), async (req, res) => {
   try {
     const { appSlug } = req.params
     const users = await pool.query(`
@@ -589,8 +644,11 @@ rbacRouter.get("/users/:appSlug", async (req, res) => {
     `, [appSlug])
     return res.json(users.rows)
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error("List app users error", { error: error.message })
-    return res.status(500).json({ error: "Internal server error" })
+    return res.status(500).json({ error: "Internal server error", code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -599,12 +657,12 @@ rbacRouter.put("/users/:appSlug/:sub/role", requireSuperAdmin, async (req, res) 
     const { appSlug, sub } = req.params
     if (await isOgunApp(appSlug)) {
       await logOgunBlocked(req)
-      return res.status(403).json({ error: 'Ogun Bridge RBAC is managed by Authentik' })
+      throw new AppError('ACCESS_DENIED', 'Ogun Bridge RBAC is managed by Authentik')
     }
     const { role_definition_id } = req.body
 
     const app = await pool.query('SELECT id FROM apps WHERE slug = $1', [appSlug])
-    if (app.rows.length === 0) return res.status(404).json({ error: 'App not found' })
+    if (app.rows.length === 0) throw new AppError('NOT_FOUND', 'App not found')
 
     const perms = role_definition_id
       ? (await pool.query('SELECT module_name, actions FROM role_permissions WHERE role_definition_id = $1', [role_definition_id])).rows
@@ -612,6 +670,12 @@ rbacRouter.put("/users/:appSlug/:sub/role", requireSuperAdmin, async (req, res) 
 
     const permissionsCache = {}
     for (const p of perms) permissionsCache[p.module_name] = p.actions
+
+    const before = await pool.query(
+      'SELECT role_definition_id FROM app_users WHERE app_id = $1 AND oidc_sub = $2',
+      [app.rows[0].id, sub]
+    )
+    const oldRoleId = before.rows[0]?.role_definition_id || null
 
     const isOverride = role_definition_id ? true : false
     await pool.query(`
@@ -631,10 +695,14 @@ rbacRouter.put("/users/:appSlug/:sub/role", requireSuperAdmin, async (req, res) 
     })
 
     logger.info('User role override', { appSlug, sub, roleDefinitionId: role_definition_id })
+    notifyRoleChange(appSlug, sub, null, oldRoleId, role_definition_id, null)
     return res.json({ success: true })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Override user role error', { error: error.message })
-    return res.status(500).json({ error: 'Internal server error' })
+    return res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -653,20 +721,24 @@ rbacRouter.post("/sync/:appSlug", requireSuperAdmin, async (req, res) => {
       success: true,
     })
 
+    notifyAppSync(appSlug, result)
     return res.json(result)
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Sync users error', { error: error.message })
-    return res.status(500).json({ error: error.message })
+    return res.status(500).json({ error: 'Failed to sync users', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
 // -- Apps management ---------------------------------------------------------
 
-rbacRouter.get("/apps", async (req, res) => {
+rbacRouter.get("/apps", requireModule('rbac', 'read'), async (req, res) => {
   try {
     const apps = await pool.query(`
       SELECT a.id, a.name, a.slug, a.display_name, a.authentik_slug, a.access_group,
-             a.schema_endpoint, a.is_active, a.created_at, a.api_key,
+             a.schema_endpoint, a.is_active, a.created_at,
              (SELECT COUNT(*) FROM app_users u WHERE u.app_id = a.id) AS user_count,
              (SELECT COUNT(*) FROM role_definitions rd WHERE rd.app_slug = a.slug AND rd.is_active = true) AS role_count,
              (SELECT COUNT(*) FROM group_role_mappings grm WHERE grm.app_slug = a.slug AND grm.is_active = true) AS mapping_count
@@ -675,8 +747,11 @@ rbacRouter.get("/apps", async (req, res) => {
     `)
     return res.json(apps.rows)
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error("List apps error", { error: error.message })
-    return res.status(500).json({ error: "Internal server error" })
+    return res.status(500).json({ error: "Internal server error", code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -685,19 +760,20 @@ rbacRouter.get("/apps", async (req, res) => {
 rbacRouter.post("/apps", requireSuperAdmin, async (req, res) => {
   try {
     const { name, slug, display_name, claim_name, authentik_slug, access_group, schema_endpoint, clone_from } = req.body
-    if (!name || !slug || !claim_name) return res.status(400).json({ error: 'name, slug, and claim_name are required' })
+    if (!name || !slug || !claim_name) throw new AppError('VALIDATION_ERROR', 'name, slug, and claim_name are required')
 
     if (clone_from) {
       const source = await pool.query('SELECT slug FROM apps WHERE slug = $1', [clone_from])
-      if (source.rows.length === 0) return res.status(404).json({ error: 'Source app not found' })
+      if (source.rows.length === 0) throw new AppError('NOT_FOUND', 'Source app not found')
     }
 
-    const api_key = crypto.randomBytes(24).toString('hex')
+    const rawKey = crypto.randomBytes(24).toString('hex')
+    const api_key = await bcrypt.hash(rawKey, 12)
 
     const result = await pool.query(`
       INSERT INTO apps (name, slug, display_name, api_key, claim_name, authentik_slug, access_group, schema_endpoint, is_active)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
-      RETURNING id, name, slug, display_name, authentik_slug, access_group, schema_endpoint, is_active, api_key
+      RETURNING id, name, slug, display_name, authentik_slug, access_group, schema_endpoint, is_active
     `, [name, slug, display_name || name, api_key, claim_name, authentik_slug || null, access_group || null, schema_endpoint || null])
 
     const newApp = result.rows[0]
@@ -793,11 +869,14 @@ rbacRouter.post("/apps", requireSuperAdmin, async (req, res) => {
     })
 
     logger.info('App created', { slug, name, clonedFrom: clone_from || null })
-    return res.status(201).json(newApp)
+    return res.status(201).json({ ...newApp, api_key: rawKey })
   } catch (error) {
-    if (error.code === '23505') return res.status(409).json({ error: 'An app with this slug already exists' })
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
+    if (error.code === '23505') return res.status(409).json({ error: 'An app with this slug already exists', code: 'CONFLICT', status: 409 })
     logger.error('Create app error', { error: error.message })
-    return res.status(500).json({ error: 'Internal server error' })
+    return res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -818,7 +897,7 @@ rbacRouter.put("/apps/:slug", requireSuperAdmin, async (req, res) => {
       RETURNING id, name, slug, authentik_slug, access_group, is_active
     `, [authentik_slug || null, access_group || null, schema_endpoint || null, is_active !== undefined ? is_active : null, display_name || null, slug])
 
-    if (result.rows.length === 0) return res.status(404).json({ error: 'App not found' })
+    if (result.rows.length === 0) throw new AppError('NOT_FOUND', 'App not found')
 
     await createAuditLog({
       action: 'rbac_app_updated',
@@ -832,31 +911,74 @@ rbacRouter.put("/apps/:slug", requireSuperAdmin, async (req, res) => {
 
     return res.json(result.rows[0])
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Update app error', { error: error.message })
-    return res.status(500).json({ error: 'Internal server error' })
+    return res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR', status: 500 })
+  }
+})
+
+// -- API key rotation -------------------------------------------------------
+
+rbacRouter.post("/apps/:slug/rotate-key", requireSuperAdmin, async (req, res) => {
+  try {
+    const { slug } = req.params
+    const app = await pool.query('SELECT id FROM apps WHERE slug = $1', [slug])
+    if (app.rows.length === 0) throw new AppError('NOT_FOUND', 'App not found')
+
+    const rawKey = crypto.randomBytes(24).toString('hex')
+    const api_key = await bcrypt.hash(rawKey, 12)
+
+    await pool.query('UPDATE apps SET api_key = $1, updated_at = NOW() WHERE slug = $2', [api_key, slug])
+
+    await createAuditLog({
+      action: 'rbac_api_key_rotated',
+      actor: req.user?.username || 'system',
+      entity_type: 'rbac_app',
+      entity_id: slug,
+      changes: { key_rotated: true },
+      source: 'api',
+      success: true,
+    })
+
+    logger.info('API key rotated', { slug, by: req.user?.username })
+    return res.json({ success: true, api_key: rawKey })
+  } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
+    logger.error('Rotate API key error', { error: error.message })
+    return res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
 // -- Authentik proxy -------------------------------------------------------
 
-rbacRouter.get("/authentik-groups", async (req, res) => {
+rbacRouter.get("/authentik-groups", requireModule('rbac', 'read'), async (req, res) => {
   try {
     const groups = await getAuthentikGroups()
     return res.json(groups)
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error("Fetch Authentik groups error", { error: error.message })
-    return res.status(502).json({ error: error.message })
+    return res.status(502).json({ error: 'Failed to fetch Authentik groups', code: 'DEPENDENCY_FAILURE', status: 502 })
   }
 })
 
 // -- Base roles (read-only) ------------------------------------------------
 
-rbacRouter.get("/base-roles", async (req, res) => {
+rbacRouter.get("/base-roles", requireModule('rbac', 'read'), async (req, res) => {
   try {
     const roles = await pool.query('SELECT id, name, display_name, priority, description FROM base_roles ORDER BY priority DESC')
     return res.json(roles.rows)
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('List base roles error', { error: error.message })
-    return res.status(500).json({ error: 'Internal server error' })
+    return res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR', status: 500 })
   }
 })

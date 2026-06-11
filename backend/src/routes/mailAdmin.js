@@ -3,6 +3,7 @@ import { logger } from '../utils/logger.js'
 import { MailserverIntegration } from '../services/mailserver.js'
 import { ldapClient } from '../services/ldapClient.js'
 import { authenticate, requireRole } from '../middleware/auth.js'
+import { AppError } from '../utils/AppError.js'
 
 export const mailAdminRouter = express.Router()
 
@@ -37,8 +38,11 @@ mailAdminRouter.get('/status', async (req, res) => {
       }),
     })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error getting mail status:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to get mail server status', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -47,7 +51,7 @@ mailAdminRouter.post('/mailbox', requireRole('admin'), async (req, res) => {
     const { username, email } = req.body
     
     if (!username || !email) {
-      return res.status(400).json({ error: 'Username and email are required' })
+      throw new AppError('VALIDATION_ERROR', 'Username and email are required')
     }
     
     const config = getMailserverConfig()
@@ -59,8 +63,11 @@ mailAdminRouter.post('/mailbox', requireRole('admin'), async (req, res) => {
     
     res.json({ success: true, email })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error creating mailbox:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to create mailbox', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -76,8 +83,11 @@ mailAdminRouter.delete('/mailbox/:email', requireRole('admin'), async (req, res)
     
     res.json({ success: true })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error deleting mailbox:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to delete mailbox', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -86,7 +96,7 @@ mailAdminRouter.post('/quota', requireRole('admin'), async (req, res) => {
     const { email, quotaInMB } = req.body
     
     if (!email || !quotaInMB) {
-      return res.status(400).json({ error: 'Email and quota are required' })
+      throw new AppError('VALIDATION_ERROR', 'Email and quota are required')
     }
     
     const config = getMailserverConfig()
@@ -96,8 +106,11 @@ mailAdminRouter.post('/quota', requireRole('admin'), async (req, res) => {
     
     res.json({ success: true })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error updating quota:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to update quota', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 

@@ -8,7 +8,8 @@ import { logger } from '../utils/logger.js'
 import { getAuditLogs, getLastAuditLogByAction, getLastPasswordAction } from '../services/auditService.js'
 import { addLogToCache } from '../services/logCache.js'
 import { createAuditLog } from '../services/auditService.js'
-import { authenticate } from '../middleware/auth.js'
+import { authenticate, requireModule } from '../middleware/auth.js'
+import { AppError } from '../utils/AppError.js'
 
 const publicListLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -56,8 +57,11 @@ usersRouter.get('/public-list', publicListLimiter, async (req, res) => {
     
     res.json(users)
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error fetching public user list:', error)
-    res.status(500).json({ error: 'Failed to fetch users' })
+    res.status(500).json({ error: 'Failed to fetch users', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -79,7 +83,7 @@ const isServiceAccount = (user) => {
   return false
 }
 
-usersRouter.get('/', async (req, res) => {
+usersRouter.get('/', requireModule('users', 'read'), async (req, res) => {
   try {
     const { search, status, limit } = req.query
     
@@ -147,12 +151,15 @@ usersRouter.get('/', async (req, res) => {
 
     res.json(filtered)
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error fetching users:', error)
-    res.status(500).json({ error: 'Failed to fetch users' })
+    res.status(500).json({ error: 'Failed to fetch users', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
-usersRouter.post('/:id/test-mapping', async (req, res) => {
+usersRouter.post('/:id/test-mapping', requireModule('users', 'write'), async (req, res) => {
   try {
     const aUser = await authentikClient.getUser(req.params.id)
     
@@ -185,12 +192,15 @@ usersRouter.post('/:id/test-mapping', async (req, res) => {
       validation,
     })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error testing mapping:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to test mapping', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
-usersRouter.get('/:username/detail', async (req, res) => {
+usersRouter.get('/:username/detail', requireModule('users', 'read'), async (req, res) => {
   try {
     const { username } = req.params
     
@@ -261,13 +271,16 @@ usersRouter.get('/:username/detail', async (req, res) => {
       })),
     })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error getting user detail:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to get user detail', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
 // Get users without passwords
-usersRouter.get('/no-password', async (req, res) => {
+usersRouter.get('/no-password', requireModule('users', 'read'), async (req, res) => {
   try {
     let authentikUsers = await authentikClient.getUsers()
     const ldapUsers = await ldapClient.getUsers()
@@ -294,13 +307,16 @@ usersRouter.get('/no-password', async (req, res) => {
     
     res.json(users)
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error getting users without passwords:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to get users without passwords', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
 // Get user profile with services access
-usersRouter.get('/:username/profile', async (req, res) => {
+usersRouter.get('/:username/profile', requireModule('users', 'read'), async (req, res) => {
   try {
     const { username } = req.params
     
@@ -320,7 +336,7 @@ usersRouter.get('/:username/profile', async (req, res) => {
     }
     
     if (!aUser && !lUser) {
-      return res.status(404).json({ error: 'User not found' })
+      throw new AppError('NOT_FOUND', 'User not found')
     }
     
     // Get user's groups from Authentik (original approach - more reliable)
@@ -453,20 +469,23 @@ usersRouter.get('/:username/profile', async (req, res) => {
       lastLogin: aUser?.last_login,
     })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error getting user profile:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to get user profile', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
 // Set alt-email for user
-usersRouter.put('/:username/alt-email', async (req, res) => {
+usersRouter.put('/:username/alt-email', requireModule('users', 'write'), async (req, res) => {
   try {
     const { username } = req.params
     const { altEmail } = req.body
     
     // Validate email format
     if (altEmail && !altEmail.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
-      return res.status(400).json({ error: 'Invalid email format' })
+      throw new AppError('VALIDATION_ERROR', 'Invalid email format')
     }
     
     // Update Authentik custom attributes
@@ -530,16 +549,19 @@ usersRouter.put('/:username/alt-email', async (req, res) => {
     
     res.json({ success: true, username, altEmail })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error setting alt-email:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to set alt-email', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
 // Create user in Authentik + LDAP
-usersRouter.post('/', async (req, res) => {
+usersRouter.post('/', requireModule('users', 'write'), async (req, res) => {
   try {
     const { username, name, email, groups } = req.body
-    if (!username) return res.status(400).json({ error: 'Username is required' })
+    if (!username) throw new AppError('VALIDATION_ERROR', 'Username is required')
 
     const authentikUser = await authentikClient.createUser({
       username,
@@ -578,13 +600,16 @@ usersRouter.post('/', async (req, res) => {
 
     res.json({ success: true, message: `User '${username}' created`, user: authentikUser })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error creating user:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to create user', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
 // Edit user name, email, is_active
-usersRouter.put('/:id', async (req, res) => {
+usersRouter.put('/:id', requireModule('users', 'write'), async (req, res) => {
   try {
     const { id } = req.params
     const { name, email, is_active } = req.body
@@ -608,13 +633,16 @@ usersRouter.put('/:id', async (req, res) => {
 
     res.json({ success: true, message: 'User updated', user: authentikUser })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error updating user:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to update user', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
 // Delete user
-usersRouter.delete('/:id', async (req, res) => {
+usersRouter.delete('/:id', requireModule('users', 'write'), async (req, res) => {
   try {
     const { id } = req.params
     const aUser = await authentikClient.getUser(id)
@@ -638,17 +666,20 @@ usersRouter.delete('/:id', async (req, res) => {
 
     res.json({ success: true, message: `User '${aUser.username}' deleted` })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error deleting user:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to delete user', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
 // List user's groups + available groups
-usersRouter.get('/:username/groups', async (req, res) => {
+usersRouter.get('/:username/groups', requireModule('users', 'read'), async (req, res) => {
   try {
     const { username } = req.params
     const aUser = await authentikClient.getUserByUsername(username)
-    if (!aUser) return res.status(404).json({ error: 'User not found' })
+    if (!aUser) throw new AppError('NOT_FOUND', 'User not found')
 
     const allGroups = await authentikClient.getGroups()
 
@@ -662,18 +693,21 @@ usersRouter.get('/:username/groups', async (req, res) => {
       availableGroups: availableGroups.map(g => ({ pk: g.pk, name: g.name })),
     })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error fetching user groups:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to fetch user groups', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
 // Add user to group
-usersRouter.post('/:username/groups', async (req, res) => {
+usersRouter.post('/:username/groups', requireModule('users', 'write'), async (req, res) => {
   try {
     const { username } = req.params
     const { group_pk } = req.body
 
-    if (!group_pk) return res.status(400).json({ error: 'group_pk is required' })
+    if (!group_pk) throw new AppError('VALIDATION_ERROR', 'group_pk is required')
 
     await authentikClient.addUserToGroup(group_pk, username)
 
@@ -688,13 +722,16 @@ usersRouter.post('/:username/groups', async (req, res) => {
 
     res.json({ success: true, message: 'User added to group' })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error adding user to group:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to add user to group', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
 // Remove user from group
-usersRouter.delete('/:username/groups/:groupId', async (req, res) => {
+usersRouter.delete('/:username/groups/:groupId', requireModule('users', 'write'), async (req, res) => {
   try {
     const { username, groupId } = req.params
 
@@ -711,15 +748,18 @@ usersRouter.delete('/:username/groups/:groupId', async (req, res) => {
 
     res.json({ success: true, message: 'User removed from group' })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error removing user from group:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to remove user from group', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
 // ── Bulk Import / Export ──────────────────────────────────────────────────
 
 // Export users as CSV
-usersRouter.get('/export/csv', async (req, res) => {
+usersRouter.get('/export/csv', requireModule('users', 'read'), async (req, res) => {
   try {
     const authentikUsers = await authentikClient.getUsers()
     const ldapUsers = await ldapClient.getUsers()
@@ -757,18 +797,21 @@ usersRouter.get('/export/csv', async (req, res) => {
     res.setHeader('Content-Disposition', 'attachment; filename="users.csv"')
     res.send(csvLines.join('\n'))
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error exporting users to CSV:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to export users', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
 // Import users from CSV
-usersRouter.post('/import/csv', async (req, res) => {
+usersRouter.post('/import/csv', requireModule('users', 'write'), async (req, res) => {
   try {
     const { rows } = req.body
 
     if (!Array.isArray(rows) || rows.length === 0) {
-      return res.status(400).json({ error: 'No rows provided' })
+      throw new AppError('VALIDATION_ERROR', 'No rows provided')
     }
 
     const results = []
@@ -873,7 +916,10 @@ usersRouter.post('/import/csv', async (req, res) => {
       results,
     })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error importing users from CSV:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to import users', code: 'INTERNAL_ERROR', status: 500 })
   }
 })

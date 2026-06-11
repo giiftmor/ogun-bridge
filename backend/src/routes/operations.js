@@ -1,4 +1,5 @@
 import express from 'express'
+import { AppError } from '../utils/AppError.js'
 import { loggingService, LOG_CATEGORIES } from '../services/loggingService.js'
 import { authenticate, requireRole } from '../middleware/auth.js'
 import { authentikClient } from '../services/authentikClient.js'
@@ -26,7 +27,10 @@ operationsRouter.get('/logs', async (req, res) => {
 
     res.json(logs)
   } catch (error) {
-    res.status(500).json({ error: error.message })
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ success: false, error: error.message, code: error.code, status: error.status })
+    }
+    res.status(500).json({ success: false, error: 'Failed to fetch logs', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -35,7 +39,10 @@ operationsRouter.get('/stats', async (req, res) => {
     const stats = loggingService.getStats()
     res.json(stats)
   } catch (error) {
-    res.status(500).json({ error: error.message })
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ success: false, error: error.message, code: error.code, status: error.status })
+    }
+    res.status(500).json({ success: false, error: 'Failed to fetch stats', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -51,7 +58,10 @@ operationsRouter.delete('/logs', requireRole('admin'), async (req, res) => {
 
     res.json({ success: true })
   } catch (error) {
-    res.status(500).json({ error: error.message })
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ success: false, error: error.message, code: error.code, status: error.status })
+    }
+    res.status(500).json({ success: false, error: 'Failed to clear logs', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 

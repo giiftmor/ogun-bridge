@@ -1,5 +1,6 @@
 import { pool } from "../lib/db.js"
 import { logger } from "../utils/logger.js"
+import bcrypt from "bcryptjs"
 
 export function requireRegistrationSecret(req, res, next) {
   const secret = req.headers.authorization?.replace("Bearer ", "")
@@ -23,19 +24,31 @@ export async function requireAppApiKey(req, res, next) {
   }
 
   try {
-    const result = await pool.query(
-      "SELECT id, name, slug, claim_name, role_mapping, is_active FROM apps WHERE api_key = $1",
-      [apiKey],
+    const apps = await pool.query(
+      "SELECT id, name, slug, claim_name, role_mapping, is_active, api_key FROM apps WHERE is_active = true",
     )
-    if (result.rows.length === 0) {
+
+    let matchedApp = null
+    for (const app of apps.rows) {
+      if (app.api_key.startsWith('$2')) {
+        if (await bcrypt.compare(apiKey, app.api_key)) {
+          matchedApp = app
+          break
+        }
+      } else {
+        if (apiKey === app.api_key) {
+          matchedApp = app
+          break
+        }
+      }
+    }
+
+    if (!matchedApp) {
       logger.warn("[SECURITY] Invalid API key attempt", { ip: req.ip, userAgent: req.headers["user-agent"] })
       return res.status(401).json({ error: "Invalid API key" })
     }
-    if (!result.rows[0].is_active) {
-      return res.status(403).json({ error: "App is inactive" })
-    }
 
-    req.app = result.rows[0]
+    req.app = matchedApp
     next()
   } catch (error) {
     logger.error("API key validation error", { error: error.message })

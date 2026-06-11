@@ -44,6 +44,7 @@ import { startSchemaDiscoveryService, stopSchemaDiscoveryService } from './servi
 import { addLogToCache } from './services/logCache.js'
 import { startSyncService, stopSyncService } from './services/syncService.js'
 import { logger } from './utils/logger.js'
+import { AppError } from './utils/AppError.js'
 import { initializeDatabase } from './lib/db.js'
 import { markSetupComplete, createSuperAdminIfNeeded } from './services/config.js'
 import { authenticate, cleanupExpiredSessions } from './middleware/auth.js'
@@ -113,14 +114,6 @@ app.use('/api/', globalLimiter)
 // WebSocket setup
 setupWebSocket(io)
 
-// Error handling
-app.use((err, req, res, next) => {
-  logger.error('Unhandled error:', { error: err.message, stack: err.stack })
-  res.status(500).json({
-    error: 'Internal server error',
-  })
-})
-
 // Graceful shutdown
 const shutdown = () => {
   logger.info('Shutting down gracefully...')
@@ -137,6 +130,7 @@ process.on('SIGINT', shutdown)
 
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled Rejection:', { reason: reason?.message || reason, stack: reason?.stack })
+  shutdown()
 })
 
 process.on('uncaughtException', (error) => {
@@ -184,6 +178,25 @@ function setupFullRoutes() {
   app.use('/api/onboarding', onboardingRouter)
   app.use('/api/operations', operationsRouter)
   app.use('/api/admin', authenticate, adminRouter)
+
+  // 404 catch-all
+  app.use('*', (req, res) => {
+    res.status(404).json({ error: `Route not found: ${req.method} ${req.path}`, code: 'NOT_FOUND', status: 404 })
+  })
+
+  // Error handler
+  app.use((err, req, res, next) => {
+    if (err instanceof AppError) {
+      return res.status(err.status).json({
+        error: err.message,
+        code: err.code,
+        status: err.status,
+        ...(Object.keys(err.details).length && { details: err.details }),
+      })
+    }
+    logger.error('Unhandled error:', { error: err.message, stack: err.stack })
+    res.status(500).json({ error: 'An unexpected error occurred', code: 'INTERNAL_ERROR', status: 500 })
+  })
 }
 
 // Limited Routes (God-mode only - NO sync, NO auth)
@@ -200,6 +213,25 @@ function setupLimitedRoutes() {
   app.use('/api/auth', authRouter)
   // Setup routes
   app.use('/api/setup', setupRouter)
+
+  // 404 catch-all
+  app.use('*', (req, res) => {
+    res.status(404).json({ error: `Route not found: ${req.method} ${req.path}`, code: 'NOT_FOUND', status: 404 })
+  })
+
+  // Error handler
+  app.use((err, req, res, next) => {
+    if (err instanceof AppError) {
+      return res.status(err.status).json({
+        error: err.message,
+        code: err.code,
+        status: err.status,
+        ...(Object.keys(err.details).length && { details: err.details }),
+      })
+    }
+    logger.error('Unhandled error:', { error: err.message, stack: err.stack })
+    res.status(500).json({ error: 'An unexpected error occurred', code: 'INTERNAL_ERROR', status: 500 })
+  })
 }
 
 // Start FULL server (frontend + API + Sync)

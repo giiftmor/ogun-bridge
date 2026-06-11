@@ -227,7 +227,7 @@ export async function getUserOgunRole(username) {
     if (result.rows.length > 0) return result.rows[0].role_name
 
     const authUrl = process.env.AUTHENTIK_URL || 'https://auth.spectres.co.za'
-    const token = process.env.AUTHENTIK_API_TOKEN
+    const token = process.env.AUTHENTIK_TOKEN
     if (!token) return null
 
     const userRes = await fetch(`${authUrl}/api/v3/core/users/?search=${encodeURIComponent(username)}`, {
@@ -256,7 +256,7 @@ export async function getUserOgunRole(username) {
 
 export async function getAuthentikGroups() {
   const authUrl = process.env.AUTHENTIK_URL || 'https://auth.spectres.co.za'
-  const token = process.env.AUTHENTIK_API_TOKEN
+  const token = process.env.AUTHENTIK_TOKEN
   if (!token) throw new Error('AUTHENTIK_API_TOKEN not configured')
 
   const res = await fetch(`${authUrl}/api/v3/core/groups/`, {
@@ -276,7 +276,7 @@ export async function syncUsersForApp(appSlug) {
   const { id: appId, access_group } = app.rows[0]
 
   const authUrl = process.env.AUTHENTIK_URL || 'https://auth.spectres.co.za'
-  const token = process.env.AUTHENTIK_API_TOKEN
+  const token = process.env.AUTHENTIK_TOKEN
   if (!token) throw new Error('AUTHENTIK_API_TOKEN not configured')
 
   if (!access_group) {

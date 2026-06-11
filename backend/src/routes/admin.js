@@ -2,6 +2,7 @@ import express from 'express'
 import { pool } from '../lib/db.js'
 import { requireSuperAdmin } from '../middleware/auth.js'
 import { logger } from '../utils/logger.js'
+import bcrypt from 'bcryptjs'
 
 export const adminRouter = express.Router()
 
@@ -25,10 +26,11 @@ adminRouter.post('/apps', async (req, res) => {
     if (!name || !slug || !claimName) {
       return res.status(400).json({ error: 'name, slug, and claimName are required' })
     }
+    const hashedKey = apiKey ? await bcrypt.hash(apiKey, 12) : null
     const result = await pool.query(
       `INSERT INTO apps (name, slug, claim_name, api_key, role_mapping)
        VALUES ($1, $2, $3, $4, $5) RETURNING id, name, slug, claim_name, created_at`,
-      [name, slug, claimName, apiKey || null, roleMapping ? JSON.stringify(roleMapping) : null]
+      [name, slug, claimName, hashedKey, roleMapping ? JSON.stringify(roleMapping) : null]
     )
     return res.status(201).json(result.rows[0])
   } catch (error) {
@@ -40,12 +42,13 @@ adminRouter.post('/apps', async (req, res) => {
 adminRouter.put('/apps/:id', async (req, res) => {
   try {
     const { name, slug, claimName, apiKey, roleMapping } = req.body
+    const hashedKey = apiKey ? await bcrypt.hash(apiKey, 12) : null
     const result = await pool.query(
       `UPDATE apps SET name = COALESCE($1, name), slug = COALESCE($2, slug),
        claim_name = COALESCE($3, claim_name), api_key = COALESCE($4, api_key),
        role_mapping = COALESCE($5::jsonb, role_mapping), updated_at = NOW()
        WHERE id = $6 RETURNING id, name, slug, claim_name, created_at`,
-      [name || null, slug || null, claimName || null, apiKey || null, roleMapping ? JSON.stringify(roleMapping) : null, req.params.id]
+      [name || null, slug || null, claimName || null, hashedKey, roleMapping ? JSON.stringify(roleMapping) : null, req.params.id]
     )
     if (result.rows.length === 0) return res.status(404).json({ error: 'App not found' })
     return res.json(result.rows[0])

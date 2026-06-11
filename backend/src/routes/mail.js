@@ -6,6 +6,7 @@ import { addLogToCache } from '../services/logCache.js'
 import { createAuditLog } from '../services/auditService.js'
 import { setServiceConfig } from '../services/config.js'
 import { authenticate } from '../middleware/auth.js'
+import { AppError } from '../utils/AppError.js'
 
 export const mailRouter = express.Router()
 
@@ -156,8 +157,11 @@ mailRouter.post('/config', async (req, res) => {
     
     res.json({ success: true })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error saving mail config:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to save mail config', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -200,11 +204,11 @@ mailRouter.post('/test', async (req, res) => {
       message: `Test email sent successfully (${info.messageId})` 
     })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error sending test email:', error)
-    res.status(500).json({ 
-      success: false, 
-      message: `Failed to send test email: ${error.message}` 
-    })
+    res.status(500).json({ error: 'Failed to send test email', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 

@@ -4,12 +4,13 @@ import { pool } from '../lib/db.js'
 import { ldapClient } from '../services/ldapClient.js'
 import { authentikClient } from '../services/authentikClient.js'
 import { logger } from '../utils/logger.js'
+import { AppError } from '../utils/AppError.js'
 import { sendPasswordCreationEmail, sendPasswordResetEmail, sendBulkPasswordEmails } from '../services/emailService.js'
 import { triggerWebhook, getWebhooks, createWebhook, deleteWebhook, testWebhook } from '../services/webhookService.js'
 import { ensureUserProfile, updateUserProfile } from '../services/userProfileService.js'
 import { loggingService } from '../services/loggingService.js'
 import { createAuditLog } from '../services/auditService.js'
-import { authenticate, requireRole, protectPasswordOperation, requireLDAPGroup } from '../middleware/auth.js'
+import { authenticate, requireRole, requireModule, protectPasswordOperation, requireLDAPGroup } from '../middleware/auth.js'
 import { validatePassword } from './password.js'
 
 export const inviteRouter = express.Router()
@@ -78,7 +79,7 @@ inviteRouter.post('/send/:username', requireRole('admin', 'password_manager'), a
     // Get user from Authentik
     const aUser = await authentikClient.getUserByUsername(username)
     if (!aUser) {
-      return res.status(404).json({ error: 'User not found in Authentik' })
+      throw new AppError('NOT_FOUND', 'User not found in Authentik')
     }
     
     // Get altEmail from Authentik attributes (primary source)
@@ -167,8 +168,11 @@ inviteRouter.post('/send/:username', requireRole('admin', 'password_manager'), a
       error: result.error,
     })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error sending password invite:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to send password invite', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -179,7 +183,7 @@ inviteRouter.post('/send-bulk', requireLDAPGroup(), async (req, res) => {
     const { usernames } = req.body
     
     if (!usernames || !Array.isArray(usernames)) {
-      return res.status(400).json({ error: 'usernames array is required' })
+      throw new AppError('VALIDATION_ERROR', 'usernames array is required')
     }
     
     const results = []
@@ -241,8 +245,11 @@ inviteRouter.post('/send-bulk', requireLDAPGroup(), async (req, res) => {
       results,
     })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error sending bulk password invites:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to send bulk password invites', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -252,8 +259,11 @@ inviteRouter.get('/webhooks', async (req, res) => {
     const webhooks = await getWebhooks()
     res.json(webhooks)
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error getting webhooks:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to get webhooks', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -263,14 +273,17 @@ inviteRouter.post('/webhooks', async (req, res) => {
     const { name, url, events } = req.body
     
     if (!name || !url) {
-      return res.status(400).json({ error: 'name and url are required' })
+      throw new AppError('VALIDATION_ERROR', 'name and url are required')
     }
     
     const webhook = await createWebhook(name, url, events || ['password_created'])
     res.json(webhook)
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error creating webhook:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to create webhook', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -281,8 +294,11 @@ inviteRouter.delete('/webhooks/:id', async (req, res) => {
     await deleteWebhook(id)
     res.json({ success: true })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error deleting webhook:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to delete webhook', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -293,8 +309,11 @@ inviteRouter.post('/webhooks/:id/test', async (req, res) => {
     const result = await testWebhook(parseInt(id))
     res.json(result)
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error testing webhook:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to test webhook', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -316,7 +335,7 @@ inviteRouter.post('/force-reset/:username', requireRole('admin', 'password_manag
     // Get user from Authentik
     const aUser = await authentikClient.getUserByUsername(username)
     if (!aUser) {
-      return res.status(404).json({ error: 'User not found in Authentik' })
+      throw new AppError('NOT_FOUND', 'User not found in Authentik')
     }
     
     // Get email from Authentik - prefer altEmail, fallback to primary
@@ -325,7 +344,7 @@ inviteRouter.post('/force-reset/:username', requireRole('admin', 'password_manag
     const sendToEmail = altEmail || primaryEmail
     
     if (!sendToEmail) {
-      return res.status(400).json({ error: 'User has no email address' })
+      throw new AppError('VALIDATION_ERROR', 'User has no email address')
     }
     
     // Generate secure reset token
@@ -394,7 +413,10 @@ inviteRouter.post('/force-reset/:username', requireRole('admin', 'password_manag
       message: `Password reset email sent to ${sendToEmail}`
     })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error force password reset:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to force password reset', code: 'INTERNAL_ERROR', status: 500 })
   }
 })

@@ -2,6 +2,7 @@ import express from 'express'
 import { pool } from '../lib/db.js'
 import { authentikClient } from '../services/authentikClient.js'
 import { logger } from '../utils/logger.js'
+import { AppError } from '../utils/AppError.js'
 import { authenticate } from '../middleware/auth.js'
 
 export const groupServicesRouter = express.Router()
@@ -23,8 +24,11 @@ groupServicesRouter.get('/services', async (req, res) => {
     )
     res.json(result.rows)
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error fetching services list:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to fetch services list', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -34,18 +38,18 @@ groupServicesRouter.post('/add-user/:username', async (req, res) => {
     const { group_name } = req.body
 
     if (!group_name) {
-      return res.status(400).json({ error: 'group_name is required' })
+      throw new AppError('VALIDATION_ERROR', 'group_name is required')
     }
 
     const aUser = await authentikClient.getUserByUsername(username)
     if (!aUser) {
-      return res.status(404).json({ error: 'User not found in Authentik' })
+      throw new AppError('NOT_FOUND', 'User not found in Authentik')
     }
 
     const groups = await authentikClient.getGroups()
     const targetGroup = groups.find(g => g.name === group_name)
     if (!targetGroup) {
-      return res.status(404).json({ error: 'Group not found in Authentik' })
+      throw new AppError('NOT_FOUND', 'Group not found in Authentik')
     }
 
     const currentUsers = targetGroup.users || []
@@ -58,8 +62,11 @@ groupServicesRouter.post('/add-user/:username', async (req, res) => {
     logger.info(`User ${username} added to group ${group_name}`)
     res.json({ success: true, message: `User added to group ${group_name}` })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error adding user to group:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to add user to group', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -69,7 +76,7 @@ groupServicesRouter.post('/services/:serviceName/assign-group', async (req, res)
     const { group_id } = req.body
 
     if (!group_id) {
-      return res.status(400).json({ error: 'group_id is required' })
+      throw new AppError('VALIDATION_ERROR', 'group_id is required')
     }
 
     const aGroup = await authentikClient.getGroup(group_id)
@@ -80,7 +87,7 @@ groupServicesRouter.post('/services/:serviceName/assign-group', async (req, res)
     )
 
     if (existing.rows.length === 0) {
-      return res.status(404).json({ error: 'Service not found' })
+      throw new AppError('NOT_FOUND', 'Service not found')
     }
 
     const tmpl = existing.rows[0]
@@ -105,8 +112,11 @@ groupServicesRouter.post('/services/:serviceName/assign-group', async (req, res)
 
     res.json({ success: true, message: `Service assigned to ${aGroup.name}` })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error assigning service to group:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to assign service to group', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -134,7 +144,7 @@ groupServicesRouter.put('/services/:serviceName', async (req, res) => {
     client.release()
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Service not found' })
+      throw new AppError('NOT_FOUND', 'Service not found')
     }
 
     // Also update Authentik group attributes for all groups with this service
@@ -167,8 +177,11 @@ groupServicesRouter.put('/services/:serviceName', async (req, res) => {
 
     res.json({ success: true, message: 'Service updated globally', updated: result.rows.length })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error updating service:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to update service', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -212,8 +225,11 @@ groupServicesRouter.delete('/services/:serviceName', async (req, res) => {
 
     res.json({ success: true, message: 'Service deleted globally', deleted: result.rows.length })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error deleting service:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to delete service', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -227,13 +243,16 @@ groupServicesRouter.delete('/services/:serviceName/unassign-group/:groupName', a
     )
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Assignment not found' })
+      throw new AppError('NOT_FOUND', 'Assignment not found')
     }
 
     res.json({ success: true, message: 'Service unassigned from group' })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error unassigning service from group:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to unassign service from group', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -252,8 +271,11 @@ groupServicesRouter.get('/:id/services', async (req, res) => {
 
     res.json(result.rows)
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error fetching group services:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to fetch group services', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -263,7 +285,7 @@ groupServicesRouter.post('/:id/services', async (req, res) => {
     const { service_name, service_url, service_type, description, icon, is_public } = req.body
 
     if (!service_name) {
-      return res.status(400).json({ error: 'service_name is required' })
+      throw new AppError('VALIDATION_ERROR', 'service_name is required')
     }
 
     const aGroup = await authentikClient.getGroup(id)
@@ -294,8 +316,11 @@ groupServicesRouter.post('/:id/services', async (req, res) => {
 
     res.json({ success: true, service_name })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error adding group service:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to add group service', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -315,7 +340,7 @@ groupServicesRouter.delete('/:id/services/:serviceId', async (req, res) => {
     client.release()
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Service not found' })
+      throw new AppError('NOT_FOUND', 'Service not found')
     }
 
     const serviceName = result.rows[0].service_name
@@ -327,8 +352,11 @@ groupServicesRouter.delete('/:id/services/:serviceId', async (req, res) => {
 
     res.json({ success: true })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error removing group service:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to remove group service', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -359,7 +387,7 @@ groupServicesRouter.post('/health/:serviceName', async (req, res) => {
     )
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Service not found' })
+      throw new AppError('NOT_FOUND', 'Service not found')
     }
 
     const serviceUrl = result.rows[0].service_url
@@ -369,7 +397,7 @@ groupServicesRouter.post('/health/:serviceName', async (req, res) => {
 
     // SSRF protection
     if (isInternalUrl(serviceUrl)) {
-      return res.status(400).json({ error: 'Internal URLs cannot be health checked' })
+      throw new AppError('VALIDATION_ERROR', 'Internal URLs cannot be health checked')
     }
 
     const start = Date.now()
@@ -417,7 +445,10 @@ groupServicesRouter.post('/health/:serviceName', async (req, res) => {
       checkedAt: new Date().toISOString(),
     })
   } catch (err) {
+    if (err instanceof AppError) {
+      return res.status(err.status).json({ error: err.message, code: err.code, status: err.status })
+    }
     logger.error('Service health check error', { error: err.message, serviceName: req.params.serviceName })
-    res.status(500).json({ error: 'Health check failed' })
+    res.status(500).json({ error: 'Health check failed', code: 'INTERNAL_ERROR', status: 500 })
   }
 })

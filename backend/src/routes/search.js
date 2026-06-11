@@ -3,6 +3,7 @@ import { pool } from '../lib/db.js'
 import { authentikClient } from '../services/authentikClient.js'
 import { logger } from '../utils/logger.js'
 import { authenticate } from '../middleware/auth.js'
+import { AppError } from '../utils/AppError.js'
 
 export const searchRouter = express.Router()
 
@@ -61,7 +62,10 @@ searchRouter.get('/', async (req, res) => {
 
     res.json({ users, groups, services })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Search error:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to perform search', code: 'INTERNAL_ERROR', status: 500 })
   }
 })

@@ -5,6 +5,7 @@ import { ldapClient } from '../services/ldapClient.js'
 import { logger } from '../utils/logger.js'
 import { authenticate } from '../middleware/auth.js'
 import { createAuditLog } from '../services/auditService.js'
+import { AppError } from '../utils/AppError.js'
 
 export const groupManagementRouter = express.Router()
 
@@ -24,7 +25,7 @@ async function snapshotGroup(id) {
 groupManagementRouter.post('/groups', async (req, res) => {
   try {
     const { name, description, parent } = req.body
-    if (!name) return res.status(400).json({ error: 'Group name is required' })
+    if (!name) throw new AppError('VALIDATION_ERROR', 'Group name is required')
 
     const groupData = { name, description: description || '' }
     if (parent) groupData.parent = parent
@@ -49,8 +50,11 @@ groupManagementRouter.post('/groups', async (req, res) => {
 
     res.json({ success: true, message: `Group '${name}' created`, group: authentikGroup })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error creating group:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to create group', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -87,8 +91,11 @@ groupManagementRouter.put('/groups/:id', async (req, res) => {
 
     res.json({ success: true, message: 'Group updated', group: authentikGroup })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error updating group:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to update group', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -118,8 +125,11 @@ groupManagementRouter.delete('/groups/:id', async (req, res) => {
 
     res.json({ success: true, message: `Group '${groupName}' deleted` })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error deleting group:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to delete group', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -129,7 +139,7 @@ groupManagementRouter.post('/groups/:id/members', async (req, res) => {
     const { usernames } = req.body
 
     if (!usernames || !Array.isArray(usernames) || usernames.length === 0) {
-      return res.status(400).json({ error: 'usernames array is required' })
+      throw new AppError('VALIDATION_ERROR', 'usernames array is required')
     }
 
     const aGroup = await authentikClient.getGroup(id)
@@ -155,8 +165,11 @@ groupManagementRouter.post('/groups/:id/members', async (req, res) => {
 
     res.json({ success: true, message: `Added ${results.filter(r => r.success).length} member(s)`, results })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error adding group members:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to add group members', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -178,7 +191,10 @@ groupManagementRouter.delete('/groups/:id/members/:username', async (req, res) =
 
     res.json({ success: true, message: `User '${username}' removed from group` })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error removing group member:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to remove group member', code: 'INTERNAL_ERROR', status: 500 })
   }
 })

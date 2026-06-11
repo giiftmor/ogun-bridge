@@ -45,7 +45,14 @@ const queryClient = new QueryClient({
 function ProtectedRoute({ children }) {
   const [loading, setLoading] = useState(true)
   const [authenticated, setAuthenticated] = useState(false)
+  const [authRetry, setAuthRetry] = useState(0)
   const location = useLocation()
+
+  useEffect(() => {
+    const onUnauthorized = () => setAuthRetry((n) => n + 1)
+    window.addEventListener('auth:unauthorized', onUnauthorized)
+    return () => window.removeEventListener('auth:unauthorized', onUnauthorized)
+  }, [])
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -67,7 +74,7 @@ function ProtectedRoute({ children }) {
     }
 
     checkAuth()
-  }, [location.pathname])
+  }, [location.pathname, authRetry])
 
   if (loading) {
     return (

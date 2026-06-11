@@ -5,6 +5,7 @@ import { ldapClient } from '../services/ldapClient.js'
 import { logger } from '../utils/logger.js'
 import { authenticate } from '../middleware/auth.js'
 import { createAuditLog } from '../services/auditService.js'
+import { AppError } from '../utils/AppError.js'
 import { sendPasswordCreationEmail } from '../services/emailService.js'
 import crypto from 'crypto'
 
@@ -16,7 +17,7 @@ onboardingRouter.post('/', async (req, res) => {
   try {
     const { username, name, email, groupPks, sendInvite } = req.body
 
-    if (!username) return res.status(400).json({ error: 'Username is required' })
+    if (!username) throw new AppError('VALIDATION_ERROR', 'Username is required')
 
     // Step 1: Create user in Authentik
     const authentikUser = await authentikClient.createUser({
@@ -111,8 +112,11 @@ onboardingRouter.post('/', async (req, res) => {
       inviteError: inviteResult?.error || null,
     })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Onboarding error:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to onboard user', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 

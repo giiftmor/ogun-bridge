@@ -1,6 +1,7 @@
 import express from 'express'
 import bcrypt from 'bcryptjs'
 import { logger } from '../utils/logger.js'
+import { AppError } from '../utils/AppError.js'
 import {
   getSetupStatus,
   isSetupComplete,
@@ -179,8 +180,11 @@ setupRouter.post('/config/database', async (req, res) => {
     logger.info('Database reconfigured via setup wizard', { host, database, user })
     res.json({ success: true, message: 'Database connection successful! Config saved.' })
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Failed to configure database', { error: error.message })
-    res.status(500).json({ success: false, message: error.message })
+    res.status(500).json({ error: 'Failed to configure database', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 
@@ -378,8 +382,11 @@ setupRouter.post('/test/:service', requireSetupNotComplete, async (req, res) => 
     
     res.json(result)
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Service test failed', { service: req.params.service, error: error.message })
-    res.status(500).json({ success: false, message: error.message })
+    res.status(500).json({ error: 'Service test failed', code: 'INTERNAL_ERROR', status: 500 })
   }
 })
 

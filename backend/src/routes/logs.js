@@ -2,6 +2,7 @@ import express from 'express'
 import { getCachedLogs, searchLogs } from '../services/logCache.js'
 import { logger } from '../utils/logger.js'
 import { authenticate } from '../middleware/auth.js'
+import { AppError } from '../utils/AppError.js'
 
 export const logsRouter = express.Router()
 
@@ -20,7 +21,10 @@ logsRouter.get('/', async (req, res) => {
     
     res.json(logs)
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
     logger.error('Error fetching logs:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: 'Failed to fetch logs', code: 'INTERNAL_ERROR', status: 500 })
   }
 })

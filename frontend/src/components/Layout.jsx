@@ -7,6 +7,8 @@ import { Sidebar } from './Sidebar'
 import { CmdPalette } from './CmdPalette'
 import { apiClient } from '@/services/api'
 
+import { ErrorBoundary } from './ErrorBoundary'
+
 export function Layout() {
   const { sidebarOpen, toggleSidebar, theme, toggleTheme, logout: clearUserState, currentUser } = useAppStore()
   const [moreOpen, setMoreOpen] = useState(false)
@@ -152,16 +154,9 @@ export function Layout() {
               onClick={async () => {
                 clearUserState()
                 try {
-                  const res = await apiClient.logout()
-                  const data = await res.json()
-                  if (data.loginType === 'sso' && data.logoutUrl) {
-                    window.location.href = data.logoutUrl
-                  } else {
-                    window.location.href = '/login?logged_out=true'
-                  }
-                } catch {
-                  window.location.href = '/login?logged_out=true'
-                }
+                  await apiClient.logout()
+                } catch {}
+                window.location.href = '/login?logged_out=true'
               }}
               className="hidden lg:flex items-center justify-center w-8 h-8 rounded-sm bg-page border border-border text-secondary hover:bg-subtle hover:text-primary transition-[background,color] duration-150"
             >
@@ -187,7 +182,9 @@ export function Layout() {
       >
         <div className="rounded-3xl sm:mr-6 sm:mb-8 flex-1 bg-page">
           <main className="p-8 max-w-7xl mx-auto w-full">
-            <Outlet />
+            <ErrorBoundary>
+              <Outlet />
+            </ErrorBoundary>
           </main>
         </div>
       </div>
