@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Search, User, UserCircle, Key, Users, Shield, Clock, Mail,
-  CheckCircle, XCircle, ExternalLink, Copy, Loader2, RefreshCw,
+  CheckCircle, XCircle, ExternalLink, Copy, Loader2, RefreshCw, AlertCircle,
   Terminal, Plus, Server, Play, Cloud, Network, ArrowLeft, Edit3, Trash2,
   Download, Upload,
 } from 'lucide-react'

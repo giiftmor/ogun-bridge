@@ -19,6 +19,46 @@ import { toast } from 'react-hot-toast'
 import { useAppStore } from '@/store/useAppStore'
 import { RequireRole } from '@/components/RequireRole'
 
+function ModuleTreeNode({ mod, effectivePerms, togglePermAction, depth }) {
+  const [expanded, setExpanded] = useState(true)
+  const hasChildren = mod.children && mod.children.length > 0
+  const indent = depth * 16
+
+  return (
+    <div style={{ marginLeft: indent }}>
+      <div className="border border-border rounded-sm p-3">
+        <div className="flex items-center gap-2 mb-2">
+          {hasChildren && (
+            <button onClick={() => setExpanded(!expanded)} className="text-muted-foreground hover:text-foreground p-0.5">
+              <ChevronDown className={"h-3.5 w-3.5 transition-transform " + (expanded ? "" : "-rotate-90")} />
+            </button>
+          )}
+          <span className="text-sm font-medium">{mod.name}</span>
+          {mod.description && <span className="text-xs text-muted-foreground">— {mod.description}</span>}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {(mod.actions || []).map(action => (
+            <label key={action} className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
+              <Checkbox
+                checked={(effectivePerms[mod.name] || []).includes(action)}
+                onCheckedChange={() => togglePermAction(mod.name, action)}
+              />
+              {action}
+            </label>
+          ))}
+        </div>
+      </div>
+      {hasChildren && expanded && (
+        <div className="ml-4 space-y-3 mt-3">
+          {mod.children.map(child => (
+            <ModuleTreeNode key={child.name} mod={child} effectivePerms={effectivePerms} togglePermAction={togglePermAction} depth={depth + 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function LoadingSpinner() {
   return (
     <div className="flex items-center justify-center py-12">
@@ -744,25 +784,9 @@ export function AppRoleDetail() {
             <div className="text-center py-8 text-tertiary text-[13px]">No modules registered for this app yet</div>
           ) : (
             <div>
-              <div className="space-y-3 max-h-96 overflow-y-auto">
+              <div className="max-h-96 overflow-y-auto space-y-1">
                 {modules.map(mod => (
-                  <div key={mod.name} className="border border-border rounded-sm p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium">{mod.name}</span>
-                      {mod.description && <span className="text-xs text-muted-foreground">— {mod.description}</span>}
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {(mod.actions || []).map(action => (
-                        <label key={action} className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
-                          <Checkbox
-                            checked={(getEffectivePerms()[mod.name] || []).includes(action)}
-                            onCheckedChange={() => togglePermAction(mod.name, action)}
-                          />
-                          {action}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
+                  <ModuleTreeNode key={mod.name} mod={mod} effectivePerms={getEffectivePerms()} togglePermAction={togglePermAction} depth={0} />
                 ))}
               </div>
               <DialogFooter className="mt-4">

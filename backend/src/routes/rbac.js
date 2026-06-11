@@ -1,7 +1,7 @@
 import express from "express"
 import { pool } from "../lib/db.js"
 import { requireAppApiKey } from "../middleware/apikey.js"
-import { requireSuperAdmin, requireModule } from "../middleware/auth.js"
+import { requireModule } from "../middleware/auth.js"
 import { resolveRole, checkPermission, getAuthentikGroups, syncUsersForApp } from "../services/authorizer.js"
 import { notifyRoleChange, notifyAppSync } from "../services/roleWebhook.js"
 import { logger } from "../utils/logger.js"
@@ -141,7 +141,7 @@ rbacRouter.get("/schema/:appSlug", requireModule('rbac', 'read'), async (req, re
   }
 })
 
-rbacRouter.post("/schema/:appSlug", requireSuperAdmin, async (req, res) => {
+rbacRouter.post("/schema/:appSlug", requireModule('rbac', 'write'), async (req, res) => {
   try {
     const { appSlug } = req.params
     const { modules, source } = req.body
@@ -201,7 +201,7 @@ rbacRouter.get("/roles/:appSlug", requireModule('rbac', 'read'), async (req, res
   }
 })
 
-rbacRouter.post("/roles/:appSlug", requireSuperAdmin, async (req, res) => {
+rbacRouter.post("/roles/:appSlug", requireModule('rbac', 'write'), async (req, res) => {
   try {
     const { appSlug } = req.params
     if (await isOgunApp(appSlug)) {
@@ -243,7 +243,7 @@ rbacRouter.post("/roles/:appSlug", requireSuperAdmin, async (req, res) => {
   }
 })
 
-rbacRouter.put("/roles/:id", requireSuperAdmin, async (req, res) => {
+rbacRouter.put("/roles/:id", requireModule('rbac', 'write'), async (req, res) => {
   try {
     const { id } = req.params
     const appSlug = await getAppSlugFromRoleDef(id)
@@ -294,7 +294,7 @@ rbacRouter.put("/roles/:id", requireSuperAdmin, async (req, res) => {
   }
 })
 
-rbacRouter.delete("/roles/:id", requireSuperAdmin, async (req, res) => {
+rbacRouter.delete("/roles/:id", requireModule('rbac', 'write'), async (req, res) => {
   try {
     const { id } = req.params
     const appSlug = await getAppSlugFromRoleDef(id)
@@ -348,7 +348,7 @@ rbacRouter.get("/roles/:id/permissions", requireModule('rbac', 'read'), async (r
   }
 })
 
-rbacRouter.put("/roles/:id/permissions", requireSuperAdmin, async (req, res) => {
+rbacRouter.put("/roles/:id/permissions", requireModule('rbac', 'write'), async (req, res) => {
   try {
     const { id } = req.params
     const appSlug = await getAppSlugFromRoleDef(id)
@@ -429,7 +429,7 @@ rbacRouter.get("/mappings/:appSlug", requireModule('rbac', 'read'), async (req, 
   }
 })
 
-rbacRouter.post("/mappings/:appSlug", requireSuperAdmin, async (req, res) => {
+rbacRouter.post("/mappings/:appSlug", requireModule('rbac', 'write'), async (req, res) => {
   try {
     const { appSlug } = req.params
     if (await isOgunApp(appSlug)) {
@@ -467,7 +467,7 @@ rbacRouter.post("/mappings/:appSlug", requireSuperAdmin, async (req, res) => {
   }
 })
 
-rbacRouter.post("/mappings/:appSlug/bulk", requireSuperAdmin, async (req, res) => {
+rbacRouter.post("/mappings/:appSlug/bulk", requireModule('rbac', 'write'), async (req, res) => {
   try {
     const { appSlug } = req.params
     if (await isOgunApp(appSlug)) {
@@ -519,7 +519,7 @@ rbacRouter.post("/mappings/:appSlug/bulk", requireSuperAdmin, async (req, res) =
   }
 })
 
-rbacRouter.put("/mappings/:id", requireSuperAdmin, async (req, res) => {
+rbacRouter.put("/mappings/:id", requireModule('rbac', 'write'), async (req, res) => {
   try {
     const { id } = req.params
     const appSlug = await getAppSlugFromMapping(id)
@@ -563,7 +563,7 @@ rbacRouter.put("/mappings/:id", requireSuperAdmin, async (req, res) => {
   }
 })
 
-rbacRouter.delete("/mappings/:id", requireSuperAdmin, async (req, res) => {
+rbacRouter.delete("/mappings/:id", requireModule('rbac', 'write'), async (req, res) => {
   try {
     const { id } = req.params
     const appSlug = await getAppSlugFromMapping(id)
@@ -652,7 +652,7 @@ rbacRouter.get("/users/:appSlug", requireModule('rbac', 'read'), async (req, res
   }
 })
 
-rbacRouter.put("/users/:appSlug/:sub/role", requireSuperAdmin, async (req, res) => {
+rbacRouter.put("/users/:appSlug/:sub/role", requireModule('rbac', 'write'), async (req, res) => {
   try {
     const { appSlug, sub } = req.params
     if (await isOgunApp(appSlug)) {
@@ -706,7 +706,7 @@ rbacRouter.put("/users/:appSlug/:sub/role", requireSuperAdmin, async (req, res) 
   }
 })
 
-rbacRouter.post("/sync/:appSlug", requireSuperAdmin, async (req, res) => {
+rbacRouter.post("/sync/:appSlug", requireModule('rbac', 'write'), async (req, res) => {
   try {
     const { appSlug } = req.params
     const result = await syncUsersForApp(appSlug)
@@ -757,7 +757,7 @@ rbacRouter.get("/apps", requireModule('rbac', 'read'), async (req, res) => {
 
 
 
-rbacRouter.post("/apps", requireSuperAdmin, async (req, res) => {
+rbacRouter.post("/apps", requireModule('rbac', 'write'), async (req, res) => {
   try {
     const { name, slug, display_name, claim_name, authentik_slug, access_group, schema_endpoint, clone_from } = req.body
     if (!name || !slug || !claim_name) throw new AppError('VALIDATION_ERROR', 'name, slug, and claim_name are required')
@@ -880,7 +880,7 @@ rbacRouter.post("/apps", requireSuperAdmin, async (req, res) => {
   }
 })
 
-rbacRouter.put("/apps/:slug", requireSuperAdmin, async (req, res) => {
+rbacRouter.put("/apps/:slug", requireModule('rbac', 'write'), async (req, res) => {
   try {
     const { slug } = req.params
     const { authentik_slug, access_group, schema_endpoint, is_active, display_name } = req.body
@@ -921,7 +921,7 @@ rbacRouter.put("/apps/:slug", requireSuperAdmin, async (req, res) => {
 
 // -- API key rotation -------------------------------------------------------
 
-rbacRouter.post("/apps/:slug/rotate-key", requireSuperAdmin, async (req, res) => {
+rbacRouter.post("/apps/:slug/rotate-key", requireModule('rbac', 'write'), async (req, res) => {
   try {
     const { slug } = req.params
     const app = await pool.query('SELECT id FROM apps WHERE slug = $1', [slug])

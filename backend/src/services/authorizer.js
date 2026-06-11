@@ -187,6 +187,20 @@ async function upsertAppUser(appId, oidcSub, email, roleDefinitionId, permission
   }
 }
 
+function resolveModulePermission(permissions, moduleName) {
+  const exact = permissions[moduleName]
+  if (exact && exact.length > 0) return exact
+
+  const dotIndex = moduleName.indexOf(".")
+  if (dotIndex > 0) {
+    const parentName = moduleName.substring(0, dotIndex)
+    const parentPerms = permissions[parentName]
+    if (parentPerms && parentPerms.length > 0) return parentPerms
+  }
+
+  return null
+}
+
 export async function checkPermission(sub, groups, appSlug, requiredModule, requiredAction, preResolvedRole = null) {
   const resolved = await resolveRole(sub, null, groups, appSlug, preResolvedRole)
   if (resolved.error) return { authorized: false, error: resolved.error }
@@ -199,7 +213,7 @@ export async function checkPermission(sub, groups, appSlug, requiredModule, requ
     return { authorized: true, permissions: resolved.permissions, roleDefinition: resolved.roleDefinition }
   }
 
-  const modulePerms = resolved.permissions[requiredModule]
+  const modulePerms = resolveModulePermission(resolved.permissions, requiredModule)
   if (!modulePerms || modulePerms.length === 0) {
     return { authorized: false, permissions: resolved.permissions, roleDefinition: resolved.roleDefinition }
   }
