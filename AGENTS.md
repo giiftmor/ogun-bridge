@@ -78,3 +78,14 @@ Browser → spectres:3331 (React)
 - All session auth is via HTTP-only cookies, not localStorage
 - Version control features are degraded — we only compare users/groups across providers
 - Mailserver integration docs have been removed — Ogun Bridge sends email via Thoth ESU Gateway SMTP
+
+## 📝 Changelog
+
+**MANDATORY: Update CHANGELOG.md on every task completion.**
+
+After any meaningful change:
+1. Open `CHANGELOG.md` and add an entry under `[Unreleased]`
+2. Section: Added / Changed / Fixed / Removed / Deprecated / Security
+3. Format: `- Brief description ([#ref](link))`
+4. If no CHANGELOG.md exists, create from template
+5. **Also** add a one-line summary to the central changelog at ~/projects/tailnet-changelog/CHANGELOG.md on evo
