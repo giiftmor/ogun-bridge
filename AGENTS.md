@@ -86,6 +86,7 @@ Browser → spectres:3331 (React)
 After any meaningful change:
 1. Open `CHANGELOG.md` and add an entry under `[Unreleased]`
 2. Section: Added / Changed / Fixed / Removed / Deprecated / Security
-3. Format: `- Brief description ([#ref](link))`
-4. If no CHANGELOG.md exists, create from template
-5. **Also** add a one-line summary to the central changelog at ~/projects/tailnet-changelog/CHANGELOG.md on evo
+3. Format: `- YYYY-MM-DD: Brief description ([#ref](link))`
+4. When changes are verified working (run tests if available), run `~/.agents/scripts/release.sh` to stamp as a versioned release
+5. If no CHANGELOG.md exists, copy from `~/.agents/templates/CHANGELOG.md`
+6. **Also** add a one-line summary to the central changelog at ~/projects/tailnet-changelog/CHANGELOG.md on evo
