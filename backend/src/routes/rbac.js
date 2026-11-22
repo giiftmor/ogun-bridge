@@ -9,6 +9,7 @@ import { createAuditLog } from "../services/auditService.js"
 import crypto from "crypto"
 import bcrypt from "bcryptjs"
 import { AppError } from '../utils/AppError.js'
+import { sendApiKeyEmail } from '../services/emailService.js'
 
 export const rbacRouter = express.Router()
 
@@ -956,7 +957,11 @@ rbacRouter.put("/apps/:slug", requireModule('rbac', 'write'), async (req, res) =
 rbacRouter.post("/apps/:slug/rotate-key", requireModule('rbac', 'write'), async (req, res) => {
   try {
     const { slug } = req.params
-    const app = await pool.query('SELECT id FROM apps WHERE slug = $1', [slug])
+    const { email } = req.body || {}
+    const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (email && !EMAIL_RE.test(email)) throw new AppError('VALIDATION_ERROR', 'A valid email address is required')
+
+    const app = await pool.query('SELECT id, name FROM apps WHERE slug = $1', [slug])
     if (app.rows.length === 0) throw new AppError('NOT_FOUND', 'App not found')
 
     const rawKey = crypto.randomBytes(24).toString('hex')
@@ -964,18 +969,39 @@ rbacRouter.post("/apps/:slug/rotate-key", requireModule('rbac', 'write'), async 
 
     await pool.query('UPDATE apps SET api_key = $1, updated_at = NOW() WHERE slug = $2', [api_key, slug])
 
+    let delivery = { sent: false, error: null }
+    if (email) {
+      delivery = await sendApiKeyEmail({
+        to: email,
+        appName: app.rows[0].name || slug,
+        slug,
+        rawKey,
+        actor: req.user?.username || 'system',
+      })
+    }
+
     await createAuditLog({
       action: 'rbac_api_key_rotated',
       actor: req.user?.username || 'system',
       entity_type: 'rbac_app',
       entity_id: slug,
-      changes: { key_rotated: true },
+      changes: {
+        key_rotated: true,
+        email_requested: !!email,
+        delivered: delivery.sent,
+        deliveryError: delivery.error || null,
+      },
       source: 'api',
       success: true,
     })
 
     logger.info('API key rotated', { slug, by: req.user?.username })
-    return res.json({ success: true, api_key: rawKey })
+    return res.json({
+      success: true,
+      api_key: rawKey,
+      emailSent: delivery.sent,
+      ...(delivery.error ? { emailError: delivery.error } : {}),
+    })
   } catch (error) {
     if (error instanceof AppError) {
       return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
