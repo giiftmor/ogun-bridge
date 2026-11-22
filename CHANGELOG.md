@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- 2026-11-22: Add admin UI on /roles/:slug to rotate an app's RBAC API key, optionally email it to a developer, and copy a POST /api/authorize integration snippet
 - 2026-07-05: Add `ldapClient.createUser()` — creates LDAP entry via `client.add()` with SSHA temp password, uidNumber auto-assignment, and all required posixAccount attributes
 - 2026-06-29: Add DELETE endpoint for app_users removal (`DELETE /api/rbac/users/:appSlug/:sub`)
 - 2026-06-29: Add "Remove" button in RBAC app Users table with confirmation dialog
