@@ -187,6 +187,16 @@ async function upsertAppUser(appId, oidcSub, email, roleDefinitionId, permission
   }
 }
 
+export async function deleteAppUser(appSlug, oidcSub) {
+  const result = await pool.query(`
+    DELETE FROM app_users
+    WHERE app_id = (SELECT id FROM apps WHERE slug = $1)
+      AND oidc_sub = $2
+    RETURNING id, email
+  `, [appSlug, oidcSub])
+  return result.rows[0] || null
+}
+
 function resolveModulePermission(permissions, moduleName) {
   const exact = permissions[moduleName]
   if (exact && exact.length > 0) return exact
@@ -252,12 +262,12 @@ export async function getUserOgunRole(username) {
     const user = userData.results?.[0]
     if (!user?.pk) return null
 
-    const groupsRes = await fetch(`${authUrl}/api/v3/core/users/${user.pk}/groups/`, {
+    const groupsRes = await fetch(`${authUrl}/api/v3/core/users/${user.pk}/`, {
       headers: { Authorization: `Bearer ${token}` },
     })
     if (!groupsRes.ok) return null
-    const groups = await groupsRes.json()
-    const groupNames = (groups.results || []).map(g => g.name)
+    const userDetail = await groupsRes.json()
+    const groupNames = (userDetail.groups_obj || []).map(g => g.name)
 
     if (groupNames.includes('systems_admins')) return 'admin'
     if (groupNames.includes('password_manager')) return 'password_manager'
@@ -271,7 +281,7 @@ export async function getUserOgunRole(username) {
 export async function getAuthentikGroups() {
   const authUrl = process.env.AUTHENTIK_URL || 'https://auth.spectres.co.za'
   const token = process.env.AUTHENTIK_TOKEN
-  if (!token) throw new Error('AUTHENTIK_API_TOKEN not configured')
+  if (!token) throw new Error('AUTHENTIK_TOKEN not configured')
 
   const res = await fetch(`${authUrl}/api/v3/core/groups/`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -291,7 +301,7 @@ export async function syncUsersForApp(appSlug) {
 
   const authUrl = process.env.AUTHENTIK_URL || 'https://auth.spectres.co.za'
   const token = process.env.AUTHENTIK_TOKEN
-  if (!token) throw new Error('AUTHENTIK_API_TOKEN not configured')
+  if (!token) throw new Error('AUTHENTIK_TOKEN not configured')
 
   if (!access_group) {
     return { synced: 0, total: 0, note: 'No access_group configured for this app' }
@@ -305,24 +315,27 @@ export async function syncUsersForApp(appSlug) {
   const group = data.results[0]
   if (!group) throw new Error(`Group '${access_group}' not found in Authentik`)
 
-  const membersRes = await fetch(`${authUrl}/api/v3/core/groups/${group.pk}/users/`, {
+  const groupDetailRes = await fetch(`${authUrl}/api/v3/core/groups/${group.pk}/`, {
     headers: { Authorization: `Bearer ${token}` },
   })
-  if (!membersRes.ok) throw new Error(`Failed to fetch group members: ${membersRes.status}`)
-  const members = await membersRes.json()
+  if (!groupDetailRes.ok) throw new Error(`Failed to fetch group members: ${groupDetailRes.status}`)
+  const groupDetail = await groupDetailRes.json()
+  const members = { results: groupDetail.users_obj || [] }
 
   let synced = 0
-  for (const user of members.results || []) {
+  for (const user of members.results) {
     const sub = user?.pk?.toString() || user?.uuid
     if (!sub) continue
 
     try {
-      // Skip re-resolution for manually overridden users
-      const skipOverride = await pool.query(
-        'SELECT id FROM app_users WHERE app_id = $1 AND oidc_sub = $2 AND is_override = true',
+      // Check if user already exists in app_users by OIDC sub
+      const existing = await pool.query(
+        'SELECT id, is_override FROM app_users WHERE app_id = $1 AND oidc_sub = $2',
         [appId, sub]
       )
-      if (skipOverride.rows.length > 0) {
+      const exists = existing.rows.length > 0
+
+      if (exists && existing.rows[0].is_override) {
         await pool.query(
           'UPDATE app_users SET last_sync = NOW() WHERE app_id = $1 AND oidc_sub = $2',
           [appId, sub]
@@ -331,14 +344,18 @@ export async function syncUsersForApp(appSlug) {
         continue
       }
 
-      const groupsRes = await fetch(`${authUrl}/api/v3/core/users/${user.pk}/groups/`, {
+      const userDetailRes = await fetch(`${authUrl}/api/v3/core/users/${user.pk}/`, {
         headers: { Authorization: `Bearer ${token}` },
       })
-      const userGroups = groupsRes.ok
-        ? (await groupsRes.json()).results?.map(g => g.name) || []
+      const userGroups = userDetailRes.ok
+        ? (await userDetailRes.json()).groups_obj?.map(g => g.name) || []
         : []
 
-      await resolveRole(sub, user.email || '', userGroups, appSlug)
+      const resolved = await resolveRole(sub, user.email || '', userGroups, appSlug)
+      if (resolved.error) {
+        logger.warn('Sync: resolveRole failed for user', { sub, error: resolved.error })
+        continue
+      }
 
       await pool.query(
         'UPDATE app_users SET last_sync = NOW() WHERE app_id = $1 AND oidc_sub = $2',

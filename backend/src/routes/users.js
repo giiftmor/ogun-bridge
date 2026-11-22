@@ -570,7 +570,8 @@ usersRouter.post('/', requireModule('users', 'write'), async (req, res) => {
     })
 
     try {
-      await ldapClient.updateUser(username, {
+      await ldapClient.createUser(username, {
+        name: name || username,
         cn: name || username,
         sn: name || username,
         mail: email || `${username}@spectres.co.za`,

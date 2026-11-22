@@ -51,6 +51,12 @@ export async function getAuditLogs(filters = {}) {
       paramCount++
     }
 
+    if (filters.entity_id) {
+      query += ` AND entity_id = $${paramCount}`
+      params.push(filters.entity_id)
+      paramCount++
+    }
+
     if (filters.actor) {
       query += ` AND actor = $${paramCount}`
       params.push(filters.actor)

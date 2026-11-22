@@ -4,9 +4,9 @@ import { logger } from '../utils/logger.js'
 
 export async function notifyRoleChange(appSlug, sub, email, oldRole, newRole, groups) {
   try {
-    const app = await pool.query('SELECT slug, api_key, schema_endpoint FROM apps WHERE slug = $1', [appSlug])
+    const app = await pool.query('SELECT slug, api_key, webhook_secret, schema_endpoint FROM apps WHERE slug = $1', [appSlug])
     if (app.rows.length === 0) return
-    const { api_key, schema_endpoint } = app.rows[0]
+    const { webhook_secret, schema_endpoint } = app.rows[0]
     if (!schema_endpoint) return
 
     const webhookUrl = `${schema_endpoint.replace(/\/+$/, '')}/role-change`
@@ -22,12 +22,14 @@ export async function notifyRoleChange(appSlug, sub, email, oldRole, newRole, gr
       timestamp: new Date().toISOString(),
     }
 
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(webhook_secret ? { 'X-Webhook-Secret': webhook_secret } : {}),
+    }
+
     const response = await fetch(webhookUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Api-Key': api_key,
-      },
+      headers,
       body: JSON.stringify(body),
       timeout: 10000,
     })
@@ -44,9 +46,9 @@ export async function notifyRoleChange(appSlug, sub, email, oldRole, newRole, gr
 
 export async function notifyAppSync(appSlug, results) {
   try {
-    const app = await pool.query('SELECT slug, api_key, schema_endpoint FROM apps WHERE slug = $1', [appSlug])
+    const app = await pool.query('SELECT slug, api_key, webhook_secret, schema_endpoint FROM apps WHERE slug = $1', [appSlug])
     if (app.rows.length === 0) return
-    const { api_key, schema_endpoint } = app.rows[0]
+    const { webhook_secret, schema_endpoint } = app.rows[0]
     if (!schema_endpoint) return
 
     const webhookUrl = `${schema_endpoint.replace(/\/+$/, '')}/sync-notify`
@@ -58,12 +60,14 @@ export async function notifyAppSync(appSlug, results) {
       timestamp: new Date().toISOString(),
     }
 
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(webhook_secret ? { 'X-Webhook-Secret': webhook_secret } : {}),
+    }
+
     fetch(webhookUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Api-Key': api_key,
-      },
+      headers,
       body: JSON.stringify(body),
       timeout: 10000,
     }).catch(err => {

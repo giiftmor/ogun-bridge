@@ -2,13 +2,14 @@ import express from "express"
 import { pool } from "../lib/db.js"
 import { requireAppApiKey } from "../middleware/apikey.js"
 import { requireModule } from "../middleware/auth.js"
-import { resolveRole, checkPermission, getAuthentikGroups, syncUsersForApp } from "../services/authorizer.js"
+import { resolveRole, checkPermission, getAuthentikGroups, syncUsersForApp, deleteAppUser } from "../services/authorizer.js"
 import { notifyRoleChange, notifyAppSync } from "../services/roleWebhook.js"
 import { logger } from "../utils/logger.js"
 import { createAuditLog } from "../services/auditService.js"
 import crypto from "crypto"
 import bcrypt from "bcryptjs"
 import { AppError } from '../utils/AppError.js'
+import { sendApiKeyEmail } from '../services/emailService.js'
 
 export const rbacRouter = express.Router()
 
@@ -706,6 +707,38 @@ rbacRouter.put("/users/:appSlug/:sub/role", requireModule('rbac', 'write'), asyn
   }
 })
 
+rbacRouter.delete("/users/:appSlug/:sub", requireModule('rbac', 'write'), async (req, res) => {
+  try {
+    const { appSlug, sub } = req.params
+    if (await isOgunApp(appSlug)) {
+      await logOgunBlocked(req)
+      throw new AppError('ACCESS_DENIED', 'Ogun Bridge RBAC is managed by Authentik')
+    }
+
+    const deleted = await deleteAppUser(appSlug, sub)
+    if (!deleted) throw new AppError('NOT_FOUND', 'User not found in this app')
+
+    await createAuditLog({
+      action: 'rbac_user_removed',
+      actor: req.user?.username || 'system',
+      entity_type: 'rbac_user',
+      entity_id: sub,
+      changes: { appSlug, email: deleted.email },
+      source: 'api',
+      success: true,
+    })
+
+    logger.info('App user removed', { appSlug, sub })
+    return res.json({ success: true })
+  } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })
+    }
+    logger.error('Remove app user error', { error: error.message })
+    return res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR', status: 500 })
+  }
+})
+
 rbacRouter.post("/sync/:appSlug", requireModule('rbac', 'write'), async (req, res) => {
   try {
     const { appSlug } = req.params
@@ -924,7 +957,11 @@ rbacRouter.put("/apps/:slug", requireModule('rbac', 'write'), async (req, res) =
 rbacRouter.post("/apps/:slug/rotate-key", requireModule('rbac', 'write'), async (req, res) => {
   try {
     const { slug } = req.params
-    const app = await pool.query('SELECT id FROM apps WHERE slug = $1', [slug])
+    const { email } = req.body || {}
+    const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (email && !EMAIL_RE.test(email)) throw new AppError('VALIDATION_ERROR', 'A valid email address is required')
+
+    const app = await pool.query('SELECT id, name FROM apps WHERE slug = $1', [slug])
     if (app.rows.length === 0) throw new AppError('NOT_FOUND', 'App not found')
 
     const rawKey = crypto.randomBytes(24).toString('hex')
@@ -932,18 +969,39 @@ rbacRouter.post("/apps/:slug/rotate-key", requireModule('rbac', 'write'), async 
 
     await pool.query('UPDATE apps SET api_key = $1, updated_at = NOW() WHERE slug = $2', [api_key, slug])
 
+    let delivery = { sent: false, error: null }
+    if (email) {
+      delivery = await sendApiKeyEmail({
+        to: email,
+        appName: app.rows[0].name || slug,
+        slug,
+        rawKey,
+        actor: req.user?.username || 'system',
+      })
+    }
+
     await createAuditLog({
       action: 'rbac_api_key_rotated',
       actor: req.user?.username || 'system',
       entity_type: 'rbac_app',
       entity_id: slug,
-      changes: { key_rotated: true },
+      changes: {
+        key_rotated: true,
+        email_requested: !!email,
+        delivered: delivery.sent,
+        deliveryError: delivery.error || null,
+      },
       source: 'api',
       success: true,
     })
 
     logger.info('API key rotated', { slug, by: req.user?.username })
-    return res.json({ success: true, api_key: rawKey })
+    return res.json({
+      success: true,
+      api_key: rawKey,
+      emailSent: delivery.sent,
+      ...(delivery.error ? { emailError: delivery.error } : {}),
+    })
   } catch (error) {
     if (error instanceof AppError) {
       return res.status(error.status).json({ error: error.message, code: error.code, status: error.status })

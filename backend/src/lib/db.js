@@ -746,13 +746,17 @@ async function initializeTables() {
     const existingApps = await pool.query('SELECT COUNT(*) FROM apps')
     if (parseInt(existingApps.rows[0].count) === 0) {
       await pool.query(`
-        INSERT INTO apps (name, slug, display_name, api_key, claim_name, authentik_slug, access_group, schema_endpoint, is_active) VALUES
-        ('Groove Payroll', 'groove', 'Groove Payroll', $1, 'groove_role', 'groove-payroll', 'groove-payroll', 'http://groove:5005/api/rbac/schema', true),
-        ('Spectres Pantheon', 'spectres', 'Spectres Pantheon', $2, 'spectre_role', 'spectres-pantheon', 'spectres-pantheon', 'http://spectres:8764/api/rbac/schema', true),
-        ('Thoth ESU Gateway', 'thoth', 'Thoth ESU Gateway', $3, 'thoth_role', 'thoth-esu-gateway', 'thoth-esu-gateway', 'http://api:3010/api/rbac/schema', true),
-        ('Ogun Bridge', 'ogun', 'Ogun Bridge', $4, 'ogun_role', 'ogun-bridge', 'ogun-bridge', null, true)
+        INSERT INTO apps (name, slug, display_name, api_key, webhook_secret, claim_name, authentik_slug, access_group, schema_endpoint, is_active) VALUES
+        ('Groove Payroll', 'groove', 'Groove Payroll', $1, $5, 'groove_role', 'groove-payroll', 'groove-payroll', 'http://groove:5005/api/rbac/schema', true),
+        ('Spectres Pantheon', 'spectres', 'Spectres Pantheon', $2, $6, 'spectre_role', 'spectres-pantheon', 'spectres-pantheon', 'http://100.96.233.80:8764/api/schema', true),
+        ('Thoth ESU Gateway', 'thoth', 'Thoth ESU Gateway', $3, $7, 'thoth_role', 'thoth-esu-gateway', 'thoth-esu-gateway', 'http://api:3010/api/rbac/schema', true),
+        ('Ogun Bridge', 'ogun', 'Ogun Bridge', $4, $8, 'ogun_role', 'ogun-bridge', 'ogun-bridge', null, true)
         ON CONFLICT (slug) DO NOTHING
       `, [
+        crypto.randomBytes(24).toString('hex'),
+        crypto.randomBytes(24).toString('hex'),
+        crypto.randomBytes(24).toString('hex'),
+        crypto.randomBytes(24).toString('hex'),
         crypto.randomBytes(24).toString('hex'),
         crypto.randomBytes(24).toString('hex'),
         crypto.randomBytes(24).toString('hex'),

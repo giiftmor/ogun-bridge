@@ -28,7 +28,8 @@ onboardingRouter.post('/', async (req, res) => {
 
     let ldapCreated = false
     try {
-      await ldapClient.updateUser(username, {
+      await ldapClient.createUser(username, {
+        name: name || username,
         cn: name || username,
         sn: name || username,
         mail: email || `${username}@spectres.co.za`,

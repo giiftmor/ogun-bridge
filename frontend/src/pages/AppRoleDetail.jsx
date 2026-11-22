@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Shield, Plus, Edit2, Trash2, RefreshCw, ChevronDown,
-  Folder, Search, History, Users, Key, ExternalLink, ArrowLeft,
+  Folder, Search, History, Users, Key, ExternalLink, ArrowLeft, Copy,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -15,6 +15,7 @@ import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogContent, Di
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { apiClient } from '@/services/api'
+import { buildAuthorizeSnippet } from '@/lib/rbacSnippet'
 import { toast } from 'react-hot-toast'
 import { useAppStore } from '@/store/useAppStore'
 import { RequireRole } from '@/components/RequireRole'
@@ -99,6 +100,9 @@ export function AppRoleDetail() {
   const [overrideUser, setOverrideUser] = useState(null)
   const [overrideRole, setOverrideRole] = useState('')
   const [deleteConfirm, setDeleteConfirm] = useState({ open: false, onConfirm: null, title: '', description: '' })
+  const [selectedUsers, setSelectedUsers] = useState(new Set())
+  const [bulkOverrideDialog, setBulkOverrideDialog] = useState(false)
+  const [bulkOverrideRoleId, setBulkOverrideRoleId] = useState('')
   const [groupSearch, setGroupSearch] = useState('')
   const [bulkGroupSearch, setBulkGroupSearch] = useState('')
   const [bulkSelectedGroups, setBulkSelectedGroups] = useState([])
@@ -123,9 +127,22 @@ export function AppRoleDetail() {
   const [editRoleDefault, setEditRoleDefault] = useState(false)
 
   const [permEditor, setPermEditor] = useState({})
-  const [showApiKey, setShowApiKey] = useState(false)
+  const [keyDialogOpen, setKeyDialogOpen] = useState(false)
+  const [keyEmail, setKeyEmail] = useState('')
+  const [rotatedKey, setRotatedKey] = useState(null)
   const [editApp, setEditApp] = useState(false)
   const [appForm, setAppForm] = useState({})
+
+  const authorizeSnippet = buildAuthorizeSnippet(window.location.origin, slug)
+
+  const copyToClipboard = async (value) => {
+    try {
+      await navigator.clipboard.writeText(value)
+      toast.success('Copied to clipboard')
+    } catch {
+      toast.error('Could not copy — select the text manually')
+    }
+  }
 
   const isOgun = slug === 'ogun'
 
@@ -173,13 +190,27 @@ export function AppRoleDetail() {
 
   const { data: auditLogs = [], isLoading: auditLoading } = useQuery({
     queryKey: ['rbac-audit', slug],
-    queryFn: () => apiClient.getAuditLogs({ entity_type: slug, limit: 20 }),
+    queryFn: () => apiClient.getAuditLogs({ entity_type: 'rbac_app', entity_id: slug, limit: 20 }),
     enabled: !!slug,
   })
 
   const updateApp = useMutation({
     mutationFn: ({ slug, data }) => apiClient.updateRbacApp(slug, data),
     onSuccess: () => { toast.success('App updated'); setEditApp(false); queryClient.invalidateQueries({ queryKey: ['rbac-apps'] }) },
+    onError: (e) => toast.error(e.message),
+  })
+
+  const rotateKey = useMutation({
+    mutationFn: ({ slug, email }) => apiClient.rotateRbacAppKey(slug, email),
+    onSuccess: (data) => {
+      setRotatedKey(data.api_key)
+      setKeyDialogOpen(false)
+      setKeyEmail('')
+      queryClient.invalidateQueries({ queryKey: ['rbac-audit', slug] })
+      if (data.emailSent) toast.success('Key rotated and emailed to the developer')
+      else if (keyEmail) toast.success('Key rotated — email failed: ' + (data.emailError || 'unknown error'))
+      else toast.success('Key rotated — copy it now')
+    },
     onError: (e) => toast.error(e.message),
   })
 
@@ -245,6 +276,46 @@ export function AppRoleDetail() {
     onSuccess: () => { toast.success('Role override saved'); setOverrideUser(null); setOverrideRole(''); refetchUsers() },
     onError: (e) => toast.error(e.message),
   })
+
+  const removeUserMutation = useMutation({
+    mutationFn: (sub) => apiClient.deleteRbacUser(slug, sub),
+    onSuccess: () => { toast.success('User removed from app'); refetchUsers() },
+    onError: (e) => toast.error(e.message),
+  })
+
+  const toggleSelectUser = (sub) => {
+    setSelectedUsers(prev => {
+      const next = new Set(prev)
+      if (next.has(sub)) next.delete(sub); else next.add(sub)
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    if (selectedUsers.size === users.length) {
+      setSelectedUsers(new Set())
+    } else {
+      setSelectedUsers(new Set(users.map(u => u.oidc_sub)))
+    }
+  }
+
+  const handleBulkDelete = () => {
+    const count = selectedUsers.size
+    confirmDelete(`Remove ${count} user${count !== 1 ? 's' : ''}`, `Remove ${count} user${count !== 1 ? 's' : ''} from this app?`, () => {
+      Array.from(selectedUsers).forEach(sub => removeUserMutation.mutate(sub))
+      setSelectedUsers(new Set())
+      setDeleteConfirm({ open: false })
+    })
+  }
+
+  const handleBulkOverride = () => {
+    Array.from(selectedUsers).forEach(sub => {
+      overrideMutation.mutate({ sub, role_definition_id: bulkOverrideRoleId ? parseInt(bulkOverrideRoleId) : null })
+    })
+    setBulkOverrideDialog(false)
+    setBulkOverrideRoleId('')
+    setSelectedUsers(new Set())
+  }
 
   const handleCreateRoleSubmit = () => {
     if (!roleName.trim()) { toast.error('Role name is required'); return }
@@ -387,8 +458,8 @@ export function AppRoleDetail() {
               <Button variant="ghost" size="sm" onClick={() => { setEditApp(true); setAppForm({ authentik_slug: selectedApp?.authentik_slug || '', access_group: selectedApp?.access_group || '', schema_endpoint: selectedApp?.schema_endpoint || '', is_active: selectedApp?.is_active !== false, display_name: selectedApp?.display_name || '' }) }}>
                 <Edit2 className="h-3.5 w-3.5 mr-1" /> Edit
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => setShowApiKey(!showApiKey)}>
-                <Key className="h-3.5 w-3.5 mr-1" /> {showApiKey ? 'Hide' : 'Show'} API Key
+              <Button variant="ghost" size="sm" onClick={() => { setRotatedKey(null); setKeyDialogOpen(true) }}>
+                <Key className="h-3.5 w-3.5 mr-1" /> Rotate &amp; send API Key
               </Button>
               {slug !== 'ogun' && (
                 <Button variant="ghost" size="sm" onClick={() => window.open(selectedApp?.schema_endpoint || '#', '_blank')} disabled={!selectedApp?.schema_endpoint}>
@@ -397,9 +468,28 @@ export function AppRoleDetail() {
               )}
             </div>
           )}
-          {showApiKey && selectedApp?.api_key && (
-            <div className="mt-2 text-sm">
-              <code className="bg-muted px-2 py-1 rounded text-xs font-mono select-all break-all">{selectedApp.api_key}</code>
+          {rotatedKey && (
+            <div className="mt-3 pt-3 border-t space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">New API key — shown once</span>
+                <Button variant="ghost" size="sm" onClick={() => copyToClipboard(rotatedKey)}>
+                  <Copy className="h-3.5 w-3.5 mr-1" /> Copy
+                </Button>
+              </div>
+              <code className="block bg-muted px-2 py-2 rounded text-xs font-mono select-all break-all">{rotatedKey}</code>
+              <p className="text-[11px] text-muted-foreground">Copy it now. The old key stopped working immediately and this key cannot be retrieved later.</p>
+            </div>
+          )}
+          {!isOgun && (
+            <div className="mt-3 pt-3 border-t space-y-2">
+              <span className="text-xs text-muted-foreground">Integration — {slug}</span>
+              <div className="flex items-start gap-2">
+                <pre className="flex-1 bg-muted px-2 py-2 rounded text-[11px] font-mono whitespace-pre-wrap break-all">{authorizeSnippet}</pre>
+                <Button variant="ghost" size="sm" onClick={() => copyToClipboard(authorizeSnippet)}>
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <p className="text-[11px] text-muted-foreground">Replace &lt;API_KEY&gt; with the key above and send the OIDC user sub, email and groups from your app's callback.</p>
             </div>
           )}
           {editApp && (
@@ -528,6 +618,21 @@ export function AppRoleDetail() {
               <CardDescription>Users who have authenticated to this app</CardDescription>
             </CardHeader>
             <CardContent>
+              {selectedUsers.size > 0 && !isOgun && (
+                <div className="flex items-center gap-2 mb-3 p-2 bg-accent/10 border border-accent/20 rounded-sm">
+                  <span className="text-sm font-medium">{selectedUsers.size} selected</span>
+                  <div className="flex-1" />
+                  <Button size="sm" variant="ghost" onClick={handleBulkDelete} className="text-destructive hover:text-destructive">
+                    <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => { setBulkOverrideDialog(true); setBulkOverrideRoleId('') }}>
+                    Override Role
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setSelectedUsers(new Set())}>
+                    Clear
+                  </Button>
+                </div>
+              )}
               {usersLoading ? <LoadingSpinner /> : users.length === 0 ? (
                 <EmptyState message="No users have authenticated to this app yet" />
               ) : (
@@ -535,6 +640,14 @@ export function AppRoleDetail() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-muted/50">
+                        {!isOgun && (
+                          <th className="px-4 py-2.5 w-10">
+                            <Checkbox
+                              checked={users.length > 0 && selectedUsers.size === users.length}
+                              onCheckedChange={toggleSelectAll}
+                            />
+                          </th>
+                        )}
                         <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Email / Sub</th>
                         <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Role</th>
                         <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Last Auth</th>
@@ -545,7 +658,15 @@ export function AppRoleDetail() {
                     </thead>
                     <tbody>
                       {users.map(u => (
-                        <tr key={u.oidc_sub} className="border-t border-border hover:bg-muted/30">
+                        <tr key={u.oidc_sub} className={`border-t border-border hover:bg-muted/30 ${selectedUsers.has(u.oidc_sub) ? 'bg-accent/5' : ''}`}>
+                          {!isOgun && (
+                            <td className="px-4 py-2.5">
+                              <Checkbox
+                                checked={selectedUsers.has(u.oidc_sub)}
+                                onCheckedChange={() => toggleSelectUser(u.oidc_sub)}
+                              />
+                            </td>
+                          )}
                           <td className="px-4 py-2.5">{u.email || u.oidc_sub}</td>
                           <td className="px-4 py-2.5">
                             <Badge variant="default">{u.role_name || 'viewer'}</Badge>
@@ -558,7 +679,10 @@ export function AppRoleDetail() {
                           </td>
                           {!isOgun && (
                             <td className="px-4 py-2.5 text-right">
-                              <button onClick={() => { setOverrideUser(u); setOverrideRole('') }} className="text-xs text-accent hover:text-accent-hover">Override Role</button>
+                              <button onClick={() => { setOverrideUser(u); setOverrideRole('') }} className="text-xs text-accent hover:text-accent-hover mr-3">Override Role</button>
+                              <button onClick={() => confirmDelete('Remove User', `Remove ${u.email || u.oidc_sub} from this app?`, () => { removeUserMutation.mutate(u.oidc_sub); setDeleteConfirm({ open: false }) })} className="text-muted-foreground hover:text-destructive" title="Remove from app">
+                                <Trash2 className="h-4 w-4" />
+                              </button>
                             </td>
                           )}
                         </tr>
@@ -910,6 +1034,61 @@ export function AppRoleDetail() {
               <Button variant="ghost" onClick={() => { setOverrideUser(null); setOverrideRole('') }}>Cancel</Button>
               <Button onClick={() => overrideMutation.mutate({ sub: overrideUser.oidc_sub, role_definition_id: overrideRole ? parseInt(overrideRole) : null })} disabled={overrideMutation.isPending}>
                 {overrideMutation.isPending ? 'Saving...' : 'Save Override'}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={bulkOverrideDialog} onClose={() => { setBulkOverrideDialog(false); setBulkOverrideRoleId('') }}>
+        <DialogHeader>
+          <DialogTitle>Override Role for {selectedUsers.size} user{selectedUsers.size !== 1 ? 's' : ''}</DialogTitle>
+          <DialogDescription>Assign a role override to all selected users</DialogDescription>
+        </DialogHeader>
+        <DialogContent>
+          <div className="space-y-3 py-2">
+            <div>
+              <label className="text-xs text-muted-foreground">New Role</label>
+              <Select value={bulkOverrideRoleId} onValueChange={setBulkOverrideRoleId}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Select role..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Clear override</SelectItem>
+                  {roles.map(r => (<SelectItem key={r.id} value={String(r.id)}>{r.display_name || r.name}</SelectItem>))}
+                </SelectContent>
+              </Select>
+            </div>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => { setBulkOverrideDialog(false); setBulkOverrideRoleId('') }}>Cancel</Button>
+              <Button onClick={handleBulkOverride} disabled={overrideMutation.isPending}>
+                {overrideMutation.isPending ? 'Saving...' : `Apply to ${selectedUsers.size} user${selectedUsers.size !== 1 ? 's' : ''}`}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={keyDialogOpen} onClose={() => { setKeyDialogOpen(false); setKeyEmail('') }}>
+        <DialogHeader>
+          <DialogTitle>Rotate API Key for {selectedApp?.display_name || selectedApp?.name || slug}</DialogTitle>
+          <DialogDescription>The current key stops working immediately. Leave the email blank to rotate without sending.</DialogDescription>
+        </DialogHeader>
+        <DialogContent>
+          <div className="space-y-3 py-2">
+            <div>
+              <label className="text-xs text-muted-foreground">Developer email (optional)</label>
+              <Input
+                type="email"
+                placeholder="developer@example.com"
+                value={keyEmail}
+                onChange={e => setKeyEmail(e.target.value)}
+                className="mt-1"
+              />
+            </div>
+            <p className="text-[11px] text-muted-foreground">The new key is shown once on this page and cannot be recovered later. Email delivery is best-effort; if SMTP is unavailable the key still rotates and is shown here.</p>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => { setKeyDialogOpen(false); setKeyEmail('') }}>Cancel</Button>
+              <Button onClick={() => rotateKey.mutate({ slug, email: keyEmail || undefined })} disabled={rotateKey.isPending}>
+                {rotateKey.isPending ? 'Rotating...' : 'Rotate & send'}
               </Button>
             </DialogFooter>
           </div>

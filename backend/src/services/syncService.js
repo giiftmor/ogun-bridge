@@ -1,6 +1,5 @@
 import { Client, Attribute, Change } from 'ldapts'
 import crypto from 'crypto'
-import bcrypt from 'bcryptjs'
 import { pool } from '../lib/db.js'
 import { logger } from '../utils/logger.js'
 import { MailserverIntegration } from './mailserver.js'
@@ -12,9 +11,13 @@ import { alertService } from './alertService.js'
 import { syncUsersForApp } from './authorizer.js'
 import { notifyAppSync } from './roleWebhook.js'
 
-// Password hashing using bcrypt (production) or fallback for temp passwords
-async function hashPasswordBcrypt(password) {
-  return bcrypt.hash(password, 10)
+// SSHA password hashing for LDAP userPassword (consistent with ldapClient)
+function hashPasswordLDAP(password) {
+  const salt = crypto.randomBytes(8)
+  const hash = crypto.createHash('sha1').update(Buffer.concat([Buffer.from(password), salt])).digest()
+  const saltedHash = Buffer.concat([hash, salt])
+  const encoded = saltedHash.toString('base64')
+  return '{SSHA}' + encoded
 }
 
 // LDAP sanitization - remove special characters to prevent injection
@@ -226,7 +229,7 @@ async function createLDAPUser(client, user, config, io, existingUsers = []) {
     return uid > max ? uid : max
   }, 1000)
   const nextUid = maxUid + 1
-  const tempPassword = await hashPasswordBcrypt(`${user.username}:${Date.now()}`)
+  const tempPassword = hashPasswordLDAP(`${user.username}:${Date.now()}`)
 
   const nameParts = (user.name || user.username).split(' ')
   const entry = {

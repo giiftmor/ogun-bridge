@@ -1,6 +1,7 @@
 import winston from 'winston'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { inspect } from 'util'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -17,6 +18,13 @@ function formatTZDate() {
   return iso.replace('Z', `${sign}${h}:${m}`)
 }
 
+function formatConsoleMeta(info) {
+  const splat = info[Symbol.for('splat')]
+  if (!splat || splat.length === 0) return ''
+  const meta = splat.length === 1 ? splat[0] : splat
+  return ' ' + inspect(meta, { colors: false, depth: 2, breakLength: 200 })
+}
+
 export const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
   format: winston.format.combine(
@@ -29,8 +37,9 @@ export const logger = winston.createLogger({
     new winston.transports.Console({
       format: winston.format.combine(
         winston.format.timestamp({ format: formatTZDate }),
-        winston.format.printf(({ level, message, timestamp }) => {
-          return `${timestamp} [${level}]: ${message}`
+        winston.format.printf((info) => {
+          const { level, message, timestamp } = info
+          return `${timestamp} [${level}]: ${message}${formatConsoleMeta(info)}`
         })
       ),
     }),

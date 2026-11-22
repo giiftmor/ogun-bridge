@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import bcrypt from 'bcryptjs'
 
 const mockPoolQuery = vi.fn()
 
@@ -18,16 +19,7 @@ vi.mock('../src/services/auditService.js', () => ({
 }))
 
 vi.mock('../src/middleware/auth.js', () => ({
-  authenticate: (req, res, next) => {
-    if (!req.user) req.user = { role: 'super_admin', username: 'testadmin' }
-    next()
-  },
-  requireSuperAdmin: (req, res, next) => {
-    req.user = req.user || { role: 'super_admin', username: 'testadmin' }
-    next()
-  },
-  requireAppApiKey: (req, res, next) => next(),
-  requireRole: () => (req, res, next) => next(),
+  requireModule: () => (req, res, next) => next(),
 }))
 
 let rbacRouter
@@ -65,6 +57,16 @@ function findRoute(method, path) {
   )
 }
 
+async function expectStoredApiKeyIsHash(queryMock, rawKey) {
+  const insertCall = queryMock.mock.calls.find(
+    (call) => typeof call[0] === 'string' && /INSERT INTO\s+apps/i.test(call[0]) && call[0].includes('api_key')
+  )
+  expect(insertCall, 'app INSERT with api_key').toBeTruthy()
+  expect(insertCall[1][3]).toMatch(/^\$2[aby]\$/)
+  expect(insertCall[1][3]).not.toBe(rawKey)
+  expect(await bcrypt.compare(rawKey, insertCall[1][3])).toBe(true)
+}
+
 async function callRoute(method, path, reqOverrides) {
   const route = findRoute(method, path)
   if (!route) throw new Error(`Route ${method} ${path} not found`)
@@ -72,19 +74,19 @@ async function callRoute(method, path, reqOverrides) {
   const handlers = route.route.stack.map((s) => s.handle)
   const req = makeReq(reqOverrides)
   const res = makeRes()
+  const pending = []
 
-  // Chain the handlers: each calls next() to invoke the next in line
-  function createNext(index) {
-    return () => {
-      if (index < handlers.length) {
-        handlers[index](req, res, createNext(index + 1))
-      }
-    }
+  // Handlers may be async; keep every returned promise until the chain settles
+  // so one test's delayed DB work cannot leak into the next test.
+  function invoke(index) {
+    if (index >= handlers.length) return
+    const result = handlers[index](req, res, () => invoke(index + 1))
+    if (result && typeof result.then === 'function') pending.push(result)
   }
 
-  // Start the chain
-  if (handlers.length > 0) {
-    await handlers[0](req, res, createNext(1))
+  invoke(0)
+  while (pending.length > 0) {
+    await Promise.all(pending.splice(0))
   }
 
   return { req, res }
@@ -138,7 +140,13 @@ describe('POST /apps', () => {
     const { res } = await callRoute('post', '/apps', { body: validBody })
 
     expect(res.status).toHaveBeenCalledWith(201)
-    expect(res.status().json).toHaveBeenCalledWith(fakeInsert)
+    expect(res.status().json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ...fakeInsert,
+        api_key: expect.stringMatching(/^[0-9a-f]{48}$/),
+      })
+    )
+    await expectStoredApiKeyIsHash(mockPoolQuery, res.status().json.mock.calls[0][0].api_key)
     expect(mockPoolQuery).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO apps'),
       expect.arrayContaining(['test-app', 'Test App'])
@@ -273,7 +281,13 @@ describe('POST /apps with clone_from', () => {
     await flush()
 
     expect(res.status).toHaveBeenCalledWith(201)
-    expect(res.status().json).toHaveBeenCalledWith(newAppRow)
+    expect(res.status().json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ...newAppRow,
+        api_key: expect.stringMatching(/^[0-9a-f]{48}$/),
+      })
+    )
+    await expectStoredApiKeyIsHash(mockPoolQuery, res.status().json.mock.calls[0][0].api_key)
 
     // Verify clone audit log was created
     expect(mockCreateAuditLog).toHaveBeenCalledWith(
@@ -619,7 +633,13 @@ describe("registerApp handler", () => {
     await registerApp(makeReq(validBody), res)
 
     expect(res.status).toHaveBeenCalledWith(201)
-    expect(res.status().json).toHaveBeenCalledWith(fakeInsert)
+    expect(res.status().json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ...fakeInsert,
+        api_key: expect.stringMatching(/^[0-9a-f]{48}$/),
+      })
+    )
+    await expectStoredApiKeyIsHash(mockPoolQuery, res.status().json.mock.calls[0][0].api_key)
     expect(mockCreateAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "rbac_app_registered",

@@ -5,7 +5,7 @@ import { getServiceConfig, SERVICE_LDAP } from '../services/config.js'
 
 function hashPasswordLDAP(password) {
   const salt = crypto.randomBytes(8)
-  const hash = crypto.createHash('sha1').update(password + salt.toString('binary')).digest()
+  const hash = crypto.createHash('sha1').update(Buffer.concat([Buffer.from(password), salt])).digest()
   const saltedHash = Buffer.concat([hash, salt])
   const encoded = saltedHash.toString('base64')
   return '{SSHA}' + encoded
@@ -337,6 +337,50 @@ export class LDAPClient {
       }
     }
     return tree
+  }
+
+  async createUser(uid, attributes = {}) {
+    await this.connect()
+
+    const baseDN = await this.getBaseDN()
+    const dn = 'uid=' + escapeLDAPDNValue(uid) + ',ou=people,' + baseDN
+
+    const tempPassword = hashPasswordLDAP(crypto.randomBytes(16).toString('hex'))
+
+    let uidNumber = 2001
+    try {
+      const users = await this.getUsers()
+      const maxUid = users.reduce((max, u) => {
+        const n = parseInt(u.uidNumber?.[0] || '0', 10)
+        return n > max ? n : max
+      }, 2000)
+      uidNumber = maxUid + 1
+    } catch (e) {
+      logger.warn('Could not determine next uidNumber, using default', { uid, error: e.message })
+    }
+
+    const nameParts = (attributes.name || uid).split(' ')
+    const entry = {
+      objectClass: ['inetOrgPerson', 'organizationalPerson', 'person', 'top', 'posixAccount'],
+      uid,
+      cn: attributes.cn || uid,
+      sn: attributes.sn || uid,
+      givenName: nameParts[0] || uid,
+      mail: attributes.mail || uid + '@spectres.co.za',
+      userPassword: tempPassword,
+      uidNumber: uidNumber.toString(),
+      gidNumber: uidNumber.toString(),
+      homeDirectory: '/var/mail/' + uid,
+    }
+
+    try {
+      await this.client.add(dn, entry)
+      logger.info('Created LDAP user ' + uid)
+      return true
+    } catch (error) {
+      logger.error('Failed to create LDAP user ' + uid + ':', error.message)
+      throw error
+    }
   }
 
   async updateUser(uid, attributes) {

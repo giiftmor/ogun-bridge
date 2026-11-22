@@ -40,13 +40,15 @@ import { setupRouter } from './routes/setup.js'
 import { adminRouter } from './routes/admin.js'
 import { setupWebSocket } from './services/websocket.js'
 import { startSchemaDiscoveryService, stopSchemaDiscoveryService } from './services/schemaDiscoveryService.js'
+import { verifyCriticalServices } from './services/startupHealth.js'
+import { getLivenessResponse } from './services/liveness.js'
 
 import { addLogToCache } from './services/logCache.js'
 import { startSyncService, stopSyncService } from './services/syncService.js'
 import { logger } from './utils/logger.js'
 import { AppError } from './utils/AppError.js'
 import { initializeDatabase } from './lib/db.js'
-import { markSetupComplete, createSuperAdminIfNeeded } from './services/config.js'
+import { markSetupComplete, createSuperAdminIfNeeded, verifyEnvVars } from './services/config.js'
 import { authenticate, cleanupExpiredSessions } from './middleware/auth.js'
 
 const app = express()
@@ -114,12 +116,21 @@ app.use('/api/', globalLimiter)
 // WebSocket setup
 setupWebSocket(io)
 
-// Graceful shutdown
+// Graceful shutdown. Socket.IO connections can keep httpServer.close() waiting
+// forever, so force an exit after a short grace period.
+let shuttingDown = false
 const shutdown = () => {
+  if (shuttingDown) return
+  shuttingDown = true
   logger.info('Shutting down gracefully...')
   stopSyncService()
   stopSchemaDiscoveryService()
+  io.close()
+  httpServer.closeAllConnections?.()
+  const forceExit = setTimeout(() => process.exit(0), 5000)
+  forceExit.unref()
   httpServer.close(() => {
+    clearTimeout(forceExit)
     logger.info('Server closed')
     process.exit(0)
   })
@@ -128,9 +139,9 @@ const shutdown = () => {
 process.on('SIGTERM', shutdown)
 process.on('SIGINT', shutdown)
 
+// A single unawaited promise must not take the central authorizer offline.
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled Rejection:', { reason: reason?.message || reason, stack: reason?.stack })
-  shutdown()
 })
 
 process.on('uncaughtException', (error) => {
@@ -142,11 +153,8 @@ process.on('uncaughtException', (error) => {
 function setupFullRoutes() {
   // Health check (full mode)
   app.get('/health', (req, res) => {
-    res.json({
-      status: 'healthy',
-      service: 'ogun-bridge-backend',
-      timestamp: new Date().toISOString(),
-    })
+    const { httpStatus, body } = getLivenessResponse('full')
+    res.status(httpStatus).json(body)
   })
   app.use('/api/health', healthRouter)
   app.use('/api/setup', setupRouter)
@@ -201,13 +209,10 @@ function setupFullRoutes() {
 
 // Limited Routes (God-mode only - NO sync, NO auth)
 function setupLimitedRoutes() {
-  // Override /health to show limited status
+  // Override /health to show limited status (503 so Docker sees the outage)
   app.get('/health', (req, res) => {
-    res.json({
-      status: 'limited',
-      service: 'ogun-bridge-backend',
-      timestamp: new Date().toISOString(),
-    })
+    const { httpStatus, body } = getLivenessResponse('limited')
+    res.status(httpStatus).json(body)
   })
   // Auth routes (admin-login + providers work even in limited mode)
   app.use('/api/auth', authRouter)
@@ -275,6 +280,25 @@ function startFullServer() {
   })
 }
 
+// A transient dependency outage at boot must not strand the app in limited
+// mode until someone restarts the container by hand.
+function scheduleLimitedModeRecovery() {
+  const timer = setInterval(async () => {
+    try {
+      const health = await verifyEnvVars()
+      if (!health.db || !health.authentik) return
+
+      clearInterval(timer)
+      await markSetupComplete()
+      logger.info('Services recovered - restarting into full mode')
+      shutdown()
+    } catch (error) {
+      logger.warn('Limited-mode recovery check failed:', { error: error.message })
+    }
+  }, 60 * 1000)
+  timer.unref()
+}
+
 // Start LIMITED server (frontend + /api/setup/* only)
 async function startLimitedServer() {
   // Auto-create super admin from env vars so setup wizard skips the admin step
@@ -301,6 +325,7 @@ async function startLimitedServer() {
     }
     
     logger.info('Sync service disabled until setup complete')
+    scheduleLimitedModeRecovery()
   })
 }
 
@@ -338,8 +363,7 @@ async function startServer() {
     }
 
     // 4. Health check critical services (BEFORE HTTP server starts)
-    const { verifyEnvVars } = await import('./services/config.js')
-    const health = await verifyEnvVars()
+    const health = await verifyCriticalServices(verifyEnvVars, { attempts: 3, delayMs: 3000 })
     
     const criticalHealthy = health.db && health.authentik
     
@@ -365,7 +389,6 @@ async function startServer() {
       logger.warn('⚠️  SMTP not available (optional)')
     }
     
-    const { markSetupComplete } = await import('./services/config.js')
     await markSetupComplete()
     logger.info('God-mode auto-disabled - setup complete!')
 

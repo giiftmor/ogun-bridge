@@ -195,7 +195,7 @@ passwordRouter.post('/sync/:username', requireRole('admin', 'password_manager'),
       actor: 'api',
       entity_type: 'user',
       entity_id: username,
-      changes: { ldap: 'success', authentik: authentikResult, expirationDays },
+      changes: { ldap: isValid ? 'success' : 'verify_failed', authentik: authentikResult, expirationDays },
       source: 'api',
       success: authentikResult === 'success',
     })
