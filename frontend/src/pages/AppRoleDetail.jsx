@@ -16,6 +16,7 @@ import { ConfirmDialog } from '@/components/ui/dialog'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { apiClient } from '@/services/api'
 import { buildAuthorizeSnippet } from '@/lib/rbacSnippet'
+import { getEffectiveRole } from '@/lib/authRole'
 import { toast } from 'react-hot-toast'
 import { useAppStore } from '@/store/useAppStore'
 import { RequireRole } from '@/components/RequireRole'
@@ -453,7 +454,7 @@ export function AppRoleDetail() {
               <p><Badge variant={selectedApp?.is_active !== false ? 'default' : 'secondary'}>{selectedApp?.is_active !== false ? 'Active' : 'Inactive'}</Badge></p>
             </div>
           </div>
-          {currentUser?.role === 'super_admin' && (
+          {getEffectiveRole(currentUser) === 'super_admin' && (
             <div className="mt-3 pt-3 border-t flex gap-2">
               <Button variant="ghost" size="sm" onClick={() => { setEditApp(true); setAppForm({ authentik_slug: selectedApp?.authentik_slug || '', access_group: selectedApp?.access_group || '', schema_endpoint: selectedApp?.schema_endpoint || '', is_active: selectedApp?.is_active !== false, display_name: selectedApp?.display_name || '' }) }}>
                 <Edit2 className="h-3.5 w-3.5 mr-1" /> Edit

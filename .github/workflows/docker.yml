@@ -33,6 +33,10 @@ jobs:
         working-directory: ./frontend
         run: npm run lint || true
 
+      - name: Run frontend tests
+        working-directory: ./frontend
+        run: npm test
+
       - name: Build frontend
         working-directory: ./frontend
         run: npm run build
@@ -121,11 +125,16 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # Deploy to server (manual trigger)
+  # Deploy to server. Add "[skip deploy]" to the commit message (or PR title
+  # for squash merges) to publish images without touching the host.
   deploy:
     needs: docker-build
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.event_name != 'pull_request' &&
+      !contains(github.event.head_commit.message, '[skip deploy]') &&
+      !contains(github.event.head_commit.message, '[skip-deploy]')
     steps:
       - name: Deploy to server
         uses: appleboy/ssh-action@v1
