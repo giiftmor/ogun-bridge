@@ -9,7 +9,7 @@ vi.mock("../src/lib/db.js", () => ({
   pool: { query: mockPoolQuery },
 }))
 
-let resolveRole, checkPermission, syncUsersForApp
+let resolveRole, checkPermission, syncUsersForApp, getAuthentikGroups
 
 beforeEach(async () => {
   vi.resetAllMocks()
@@ -17,6 +17,7 @@ beforeEach(async () => {
   resolveRole = mod.resolveRole
   checkPermission = mod.checkPermission
   syncUsersForApp = mod.syncUsersForApp
+  getAuthentikGroups = mod.getAuthentikGroups
 })
 
 describe("resolveRole", () => {
@@ -41,6 +42,7 @@ describe("resolveRole", () => {
   it("resolves role via preResolvedRole", async () => {
     mockPoolQuery
       .mockResolvedValueOnce({ rows: appRows })
+      .mockResolvedValueOnce({ rows: [] }) // no manual override
       .mockResolvedValueOnce({ rows: [{ id: 10, name: "admin", display_name: "Admin", base_role: "admin" }] })
       .mockResolvedValueOnce({ rows: [{ module_name: "dashboard", actions: ["read", "write"] }] })
       .mockResolvedValueOnce({ rows: [] })
@@ -61,6 +63,7 @@ describe("resolveRole", () => {
   it("resolves role via group mapping", async () => {
     mockPoolQuery
       .mockResolvedValueOnce({ rows: appRows })
+      .mockResolvedValueOnce({ rows: [] }) // no manual override
       .mockResolvedValueOnce({
         rows: [
           {
@@ -81,6 +84,7 @@ describe("resolveRole", () => {
   it("falls back to default role when no group match", async () => {
     mockPoolQuery
       .mockResolvedValueOnce({ rows: appRows })
+      .mockResolvedValueOnce({ rows: [] }) // no manual override
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ id: 30, name: "viewer", display_name: "Viewer", base_role: "viewer" }] })
       .mockResolvedValueOnce({ rows: [{ module_name: "dashboard", actions: ["read"] }] })
@@ -94,6 +98,7 @@ describe("resolveRole", () => {
   it("upserts app_user record on role resolution", async () => {
     mockPoolQuery
       .mockResolvedValueOnce({ rows: appRows })
+      .mockResolvedValueOnce({ rows: [] }) // no manual override
       .mockResolvedValueOnce({
         rows: [
           {
@@ -128,6 +133,7 @@ describe("checkPermission", () => {
   it("grants super_admin full access regardless of permissions", async () => {
     mockPoolQuery
       .mockResolvedValueOnce({ rows: appRows })
+      .mockResolvedValueOnce({ rows: [] }) // no manual override
       .mockResolvedValueOnce({
         rows: [
           {
@@ -146,6 +152,7 @@ describe("checkPermission", () => {
   it("returns authorized when no requiredModule", async () => {
     mockPoolQuery
       .mockResolvedValueOnce({ rows: appRows })
+      .mockResolvedValueOnce({ rows: [] }) // no manual override
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ id: 30, name: "viewer", display_name: "Viewer", base_role: "viewer" }] })
       .mockResolvedValueOnce({ rows: [] })
@@ -156,6 +163,7 @@ describe("checkPermission", () => {
   it("returns unauthorized when module not in permissions", async () => {
     mockPoolQuery
       .mockResolvedValueOnce({ rows: appRows })
+      .mockResolvedValueOnce({ rows: [] }) // no manual override
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ id: 30, name: "viewer", display_name: "Viewer", base_role: "viewer" }] })
       .mockResolvedValueOnce({ rows: [] })
@@ -166,6 +174,7 @@ describe("checkPermission", () => {
   it("returns authorized when action is in permissions", async () => {
     mockPoolQuery
       .mockResolvedValueOnce({ rows: appRows })
+      .mockResolvedValueOnce({ rows: [] }) // no manual override
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ id: 30, name: "admin", display_name: "Admin", base_role: "admin" }] })
       .mockResolvedValueOnce({ rows: [{ module_name: "dashboard", actions: ["read", "write"] }] })
@@ -177,6 +186,7 @@ describe("checkPermission", () => {
   it("returns unauthorized when action not in permissions", async () => {
     mockPoolQuery
       .mockResolvedValueOnce({ rows: appRows })
+      .mockResolvedValueOnce({ rows: [] }) // no manual override
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ id: 30, name: "admin", display_name: "Admin", base_role: "admin" }] })
       .mockResolvedValueOnce({ rows: [{ module_name: "dashboard", actions: ["read"] }] })
@@ -186,9 +196,20 @@ describe("checkPermission", () => {
   })
 })
 
+describe("getAuthentikGroups", () => {
+  it("throws when AUTHENTIK_TOKEN not configured", async () => {
+    vi.stubEnv("AUTHENTIK_TOKEN", "")
+    try {
+      await expect(getAuthentikGroups()).rejects.toThrow("AUTHENTIK_TOKEN not configured")
+    } finally {
+      vi.stubEnv("AUTHENTIK_TOKEN", "test-token")
+    }
+  })
+})
+
 describe("syncUsersForApp", () => {
   beforeAll(() => {
-    vi.stubEnv("AUTHENTIK_API_TOKEN", "test-token")
+    vi.stubEnv("AUTHENTIK_TOKEN", "test-token")
   })
 
   afterAll(() => {
@@ -200,11 +221,14 @@ describe("syncUsersForApp", () => {
     await expect(syncUsersForApp("nonexistent")).rejects.toThrow("App not found")
   })
 
-  it("throws when AUTHENTIK_API_TOKEN not configured", async () => {
-    vi.stubEnv("AUTHENTIK_API_TOKEN", "")
+  it("throws when AUTHENTIK_TOKEN not configured", async () => {
+    vi.stubEnv("AUTHENTIK_TOKEN", "")
     mockPoolQuery.mockResolvedValue({ rows: [{ id: 1, authentik_slug: "test", access_group: "test-users" }] })
-    await expect(syncUsersForApp("test-app")).rejects.toThrow("AUTHENTIK_API_TOKEN not configured")
-    vi.stubEnv("AUTHENTIK_API_TOKEN", "test-token")
+    try {
+      await expect(syncUsersForApp("test-app")).rejects.toThrow("AUTHENTIK_TOKEN not configured")
+    } finally {
+      vi.stubEnv("AUTHENTIK_TOKEN", "test-token")
+    }
   })
 
   it("returns synced count 0 when no access_group", async () => {
@@ -221,22 +245,25 @@ describe("syncUsersForApp", () => {
       .mockResolvedValueOnce({ ok: true, json: async () => ({ results: [{ pk: 10, name: "test-users" }] }) })
       .mockResolvedValueOnce({
         ok: true, json: async () => ({
-          results: [
+          users_obj: [
             { pk: 101, uuid: "uuid-101", email: "user1@test.com" },
             { pk: 102, uuid: "uuid-102", email: "user2@test.com" },
           ],
         }),
       })
-      // User 1: fetch groups
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ results: [{ name: "test-users" }, { name: "managers" }] }) })
-      // User 2: fetch groups
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ results: [{ name: "test-users" }] }) })
+      // User 1: fetch user detail (groups live on the user object in Authentik)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ groups_obj: [{ name: "test-users" }, { name: "managers" }] }) })
+      // User 2: fetch user detail
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ groups_obj: [{ name: "test-users" }] }) })
 
     const appRows = [{ id: 1, slug: "test-app", name: "Test App", access_group: "test-users", authentik_slug: "test-app", is_active: true }]
 
     mockPoolQuery
+      // User 1: find-then-act existence check (no existing record)
+      .mockResolvedValueOnce({ rows: [] })
       // User 1 resolveRole calls:
       .mockResolvedValueOnce({ rows: appRows })          // get app
+      .mockResolvedValueOnce({ rows: [] })                // no manual override
       .mockResolvedValueOnce({                            // get mappings
         rows: [{ id: 20, authentik_group: "managers", priority: 10, role_definition_id: 10, rd_id: 10, rd_name: "manager", rd_display_name: "Manager", rd_base_role: "admin" }],
       })
@@ -244,8 +271,11 @@ describe("syncUsersForApp", () => {
       .mockResolvedValueOnce({ rows: [] })                // upsert app_user
       // User 1: update last_sync
       .mockResolvedValueOnce({ rows: [] })
+      // User 2: find-then-act existence check
+      .mockResolvedValueOnce({ rows: [] })
       // User 2 resolveRole calls:
       .mockResolvedValueOnce({ rows: appRows })          // get app
+      .mockResolvedValueOnce({ rows: [] })                // no manual override
       .mockResolvedValueOnce({ rows: [] })                // get mappings (no match)
       .mockResolvedValueOnce({ rows: [{ id: 30, name: "viewer", display_name: "Viewer", base_role: "viewer" }] }) // default role
       .mockResolvedValueOnce({ rows: [{ module_name: "dashboard", actions: ["read"] }] }) // permissions

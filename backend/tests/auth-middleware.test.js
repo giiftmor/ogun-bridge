@@ -9,6 +9,10 @@ vi.mock("../src/lib/db.js", () => ({
   pool: { query: mockPoolQuery },
 }))
 
+vi.mock("../src/services/auditService.js", () => ({
+  createAuditLog: vi.fn(),
+}))
+
 vi.mock("../src/services/ldapClient.js", () => ({
   LDAPClient: function () {
     this.client = { search: mockLDAPSearch }

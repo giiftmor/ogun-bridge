@@ -281,7 +281,7 @@ export async function getUserOgunRole(username) {
 export async function getAuthentikGroups() {
   const authUrl = process.env.AUTHENTIK_URL || 'https://auth.spectres.co.za'
   const token = process.env.AUTHENTIK_TOKEN
-  if (!token) throw new Error('AUTHENTIK_API_TOKEN not configured')
+  if (!token) throw new Error('AUTHENTIK_TOKEN not configured')
 
   const res = await fetch(`${authUrl}/api/v3/core/groups/`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -301,7 +301,7 @@ export async function syncUsersForApp(appSlug) {
 
   const authUrl = process.env.AUTHENTIK_URL || 'https://auth.spectres.co.za'
   const token = process.env.AUTHENTIK_TOKEN
-  if (!token) throw new Error('AUTHENTIK_API_TOKEN not configured')
+  if (!token) throw new Error('AUTHENTIK_TOKEN not configured')
 
   if (!access_group) {
     return { synced: 0, total: 0, note: 'No access_group configured for this app' }

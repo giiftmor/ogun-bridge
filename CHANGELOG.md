@@ -15,6 +15,7 @@
 - 2026-06-29: Restructure `syncUsersForApp()` to use explicit find-then-act pattern — always query existing user by OIDC sub before acting, skip users with failed resolveRole
 
 ### Fixed
+- 2026-11-22: Fix red CI backend suite (164/164 tests now pass) — stale test mocks and an unconsumed async handler were masking regressions in RBAC routes, authorizer role resolution, and Authentik sync; the missing-token error now names the real `AUTHENTIK_TOKEN` env var
 - 2026-11-22: Fix backend silently entering god-mode after a transient Authentik failure at boot — critical service verification is now retried 3 times, limited mode self-recovers every 60s and reports HTTP 503 instead of 200, shutdown is hardened against stuck Socket.IO connections, and stray unhandled rejections no longer stop the server
 - 2026-07-05: Fix SSHA hash encoding bug in `ldapClient.js` and `syncService.js` — `salt.toString('binary')` caused bytes > 127 to expand to multi-byte UTF-8, making LDAP password verification always fail 0x31; replaced with `Buffer.concat([Buffer.from(password), salt])` to preserve raw bytes
 - 2026-07-05: Fix audit log at `password.js:198` — `ldap` field now reflects `verifyPassword()` result instead of being hardcoded to `'success'`
