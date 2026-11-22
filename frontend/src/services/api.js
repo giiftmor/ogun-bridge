@@ -771,6 +771,7 @@ class ApiClient {
   async getRbacApps() { return this.request('/rbac/apps') }
   async getRbacApp(appSlug) { return this.request(`/rbac/apps/${appSlug}`) }
   async updateRbacApp(slug, data) { return this.request(`/rbac/apps/${slug}`, { method: 'PUT', body: JSON.stringify(data) }) }
+  async rotateRbacAppKey(slug, email) { return this.request(`/rbac/apps/${slug}/rotate-key`, { method: 'POST', body: JSON.stringify({ email }) }) }
   async getRbacRoles(appSlug) { return this.request(`/rbac/roles/${appSlug}`) }
   async createRbacRole(appSlug, data) { return this.request(`/rbac/roles/${appSlug}`, { method: 'POST', body: JSON.stringify(data) }) }
   async updateRbacRole(id, data) { return this.request(`/rbac/roles/${id}`, { method: 'PUT', body: JSON.stringify(data) }) }

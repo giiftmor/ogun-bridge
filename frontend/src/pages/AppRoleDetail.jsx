@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Shield, Plus, Edit2, Trash2, RefreshCw, ChevronDown,
-  Folder, Search, History, Users, Key, ExternalLink, ArrowLeft,
+  Folder, Search, History, Users, Key, ExternalLink, ArrowLeft, Copy,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -15,6 +15,7 @@ import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogContent, Di
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { apiClient } from '@/services/api'
+import { buildAuthorizeSnippet } from '@/lib/rbacSnippet'
 import { toast } from 'react-hot-toast'
 import { useAppStore } from '@/store/useAppStore'
 import { RequireRole } from '@/components/RequireRole'
@@ -126,9 +127,22 @@ export function AppRoleDetail() {
   const [editRoleDefault, setEditRoleDefault] = useState(false)
 
   const [permEditor, setPermEditor] = useState({})
-  const [showApiKey, setShowApiKey] = useState(false)
+  const [keyDialogOpen, setKeyDialogOpen] = useState(false)
+  const [keyEmail, setKeyEmail] = useState('')
+  const [rotatedKey, setRotatedKey] = useState(null)
   const [editApp, setEditApp] = useState(false)
   const [appForm, setAppForm] = useState({})
+
+  const authorizeSnippet = buildAuthorizeSnippet(window.location.origin, slug)
+
+  const copyToClipboard = async (value) => {
+    try {
+      await navigator.clipboard.writeText(value)
+      toast.success('Copied to clipboard')
+    } catch {
+      toast.error('Could not copy — select the text manually')
+    }
+  }
 
   const isOgun = slug === 'ogun'
 
@@ -183,6 +197,20 @@ export function AppRoleDetail() {
   const updateApp = useMutation({
     mutationFn: ({ slug, data }) => apiClient.updateRbacApp(slug, data),
     onSuccess: () => { toast.success('App updated'); setEditApp(false); queryClient.invalidateQueries({ queryKey: ['rbac-apps'] }) },
+    onError: (e) => toast.error(e.message),
+  })
+
+  const rotateKey = useMutation({
+    mutationFn: ({ slug, email }) => apiClient.rotateRbacAppKey(slug, email),
+    onSuccess: (data) => {
+      setRotatedKey(data.api_key)
+      setKeyDialogOpen(false)
+      setKeyEmail('')
+      queryClient.invalidateQueries({ queryKey: ['rbac-audit', slug] })
+      if (data.emailSent) toast.success('Key rotated and emailed to the developer')
+      else if (keyEmail) toast.success('Key rotated — email failed: ' + (data.emailError || 'unknown error'))
+      else toast.success('Key rotated — copy it now')
+    },
     onError: (e) => toast.error(e.message),
   })
 
@@ -430,8 +458,8 @@ export function AppRoleDetail() {
               <Button variant="ghost" size="sm" onClick={() => { setEditApp(true); setAppForm({ authentik_slug: selectedApp?.authentik_slug || '', access_group: selectedApp?.access_group || '', schema_endpoint: selectedApp?.schema_endpoint || '', is_active: selectedApp?.is_active !== false, display_name: selectedApp?.display_name || '' }) }}>
                 <Edit2 className="h-3.5 w-3.5 mr-1" /> Edit
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => setShowApiKey(!showApiKey)}>
-                <Key className="h-3.5 w-3.5 mr-1" /> {showApiKey ? 'Hide' : 'Show'} API Key
+              <Button variant="ghost" size="sm" onClick={() => { setRotatedKey(null); setKeyDialogOpen(true) }}>
+                <Key className="h-3.5 w-3.5 mr-1" /> Rotate &amp; send API Key
               </Button>
               {slug !== 'ogun' && (
                 <Button variant="ghost" size="sm" onClick={() => window.open(selectedApp?.schema_endpoint || '#', '_blank')} disabled={!selectedApp?.schema_endpoint}>
@@ -440,9 +468,28 @@ export function AppRoleDetail() {
               )}
             </div>
           )}
-          {showApiKey && selectedApp?.api_key && (
-            <div className="mt-2 text-sm">
-              <code className="bg-muted px-2 py-1 rounded text-xs font-mono select-all break-all">{selectedApp.api_key}</code>
+          {rotatedKey && (
+            <div className="mt-3 pt-3 border-t space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">New API key — shown once</span>
+                <Button variant="ghost" size="sm" onClick={() => copyToClipboard(rotatedKey)}>
+                  <Copy className="h-3.5 w-3.5 mr-1" /> Copy
+                </Button>
+              </div>
+              <code className="block bg-muted px-2 py-2 rounded text-xs font-mono select-all break-all">{rotatedKey}</code>
+              <p className="text-[11px] text-muted-foreground">Copy it now. The old key stopped working immediately and this key cannot be retrieved later.</p>
+            </div>
+          )}
+          {!isOgun && (
+            <div className="mt-3 pt-3 border-t space-y-2">
+              <span className="text-xs text-muted-foreground">Integration — {slug}</span>
+              <div className="flex items-start gap-2">
+                <pre className="flex-1 bg-muted px-2 py-2 rounded text-[11px] font-mono whitespace-pre-wrap break-all">{authorizeSnippet}</pre>
+                <Button variant="ghost" size="sm" onClick={() => copyToClipboard(authorizeSnippet)}>
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <p className="text-[11px] text-muted-foreground">Replace &lt;API_KEY&gt; with the key above and send the OIDC user sub, email and groups from your app's callback.</p>
             </div>
           )}
           {editApp && (
@@ -1014,6 +1061,34 @@ export function AppRoleDetail() {
               <Button variant="ghost" onClick={() => { setBulkOverrideDialog(false); setBulkOverrideRoleId('') }}>Cancel</Button>
               <Button onClick={handleBulkOverride} disabled={overrideMutation.isPending}>
                 {overrideMutation.isPending ? 'Saving...' : `Apply to ${selectedUsers.size} user${selectedUsers.size !== 1 ? 's' : ''}`}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={keyDialogOpen} onClose={() => { setKeyDialogOpen(false); setKeyEmail('') }}>
+        <DialogHeader>
+          <DialogTitle>Rotate API Key for {selectedApp?.display_name || selectedApp?.name || slug}</DialogTitle>
+          <DialogDescription>The current key stops working immediately. Leave the email blank to rotate without sending.</DialogDescription>
+        </DialogHeader>
+        <DialogContent>
+          <div className="space-y-3 py-2">
+            <div>
+              <label className="text-xs text-muted-foreground">Developer email (optional)</label>
+              <Input
+                type="email"
+                placeholder="developer@example.com"
+                value={keyEmail}
+                onChange={e => setKeyEmail(e.target.value)}
+                className="mt-1"
+              />
+            </div>
+            <p className="text-[11px] text-muted-foreground">The new key is shown once on this page and cannot be recovered later. Email delivery is best-effort; if SMTP is unavailable the key still rotates and is shown here.</p>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => { setKeyDialogOpen(false); setKeyEmail('') }}>Cancel</Button>
+              <Button onClick={() => rotateKey.mutate({ slug, email: keyEmail || undefined })} disabled={rotateKey.isPending}>
+                {rotateKey.isPending ? 'Rotating...' : 'Rotate & send'}
               </Button>
             </DialogFooter>
           </div>
